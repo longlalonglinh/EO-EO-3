@@ -171,3 +171,5 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
     </div>
   );
 };
+export { ListeningModule };
+export default ListeningModule;
