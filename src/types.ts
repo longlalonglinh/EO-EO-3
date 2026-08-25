@@ -1,21 +1,65 @@
-export type QuestionType = 'multiple_choice' | 'fill_in_blank' | 'true_false_not_given' | 'matching';
+export * from './types/practice';
+
+export type QuestionType =
+  // Listening & Reading shared
+  | 'multiple_choice'
+  | 'multiple_choice_multi'
+  | 'matching'
+  | 'plan_map_diagram_labelling'
+  | 'form_note_table_flowchart_completion'
+  | 'sentence_completion'
+  | 'short_answer_questions'
+  | 'true_false_not_given'
+  | 'yes_no_not_given'
+  // Reading specialized
+  | 'matching_headings'
+  | 'matching_information'
+  | 'matching_features'
+  | 'matching_sentence_endings'
+  | 'diagram_label_completion'
+  | 'summary_completion'
+  // Fallbacks & aliases
+  | 'fill_in_blank';
+
+export interface MatchingOption {
+  id: string; // e.g. "A", "i", "1"
+  text: string;
+}
 
 export interface Question {
   question_id: string;
   section: 'listening' | 'reading';
+  part?: 1 | 2 | 3 | 4; // Listening Part 1, 2, 3, 4 (10 questions each)
+  passage_index?: 1 | 2 | 3; // Reading Passage 1, 2, 3
   question_text: string;
   question_type: QuestionType;
-  options?: string[];
-  correct_answer?: string; // e.g. "A", "library", "TRUE"
+  instruction?: string; // e.g. "Write NO MORE THAN TWO WORDS AND/OR A NUMBER"
+  word_limit?: string; // e.g. "NO MORE THAN TWO WORDS"
+  options?: string[]; // Multiple choice options ["A. Option 1", "B. Option 2", ...]
+  headings_list?: MatchingOption[]; // For Matching Headings: [{ id: "i", text: "..." }, ...]
+  matching_options?: MatchingOption[]; // For Matching Features/Endings: [{ id: "A", text: "..." }, ...]
+  diagram_image_url?: string; // For Diagram/Map/Plan Labelling
+  diagram_labels?: string[]; // Labels available on diagram (e.g. ["A", "B", "C", "D", "E"])
+  correct_answer?: string; // e.g. "A", "library", "TRUE", "YES", "iii"
+  correct_answers_multi?: string[]; // e.g. ["B", "D"] for choose 2 out of 5
   max_score: number;
   image_url?: string;
+}
+
+export interface ReadingPassageItem {
+  passage_index: 1 | 2 | 3;
+  title: string;
+  text: string;
 }
 
 export interface ExamData {
   exam_code: string;
   title: string;
   test_type?: 'TEST' | 'PRACTICE';
-  duration_mins?: number;
+  duration_mins?: number; // Total exam duration in minutes (default 120 or 150)
+  listening_duration_mins?: number; // Default 30-40 mins
+  reading_duration_mins?: number; // Default 60 mins
+  writing_duration_mins?: number; // Default 60 mins
   audio_url?: string;
   audio_title?: string;
   image_url?: string;
@@ -24,6 +68,7 @@ export interface ExamData {
   reading_passage_title?: string;
   passage_text?: string;
   reading_passage?: string;
+  passages?: ReadingPassageItem[]; // Multi-passage support (Passage 1, 2, 3)
   reading_questions?: Question[];
   questions?: Question[];
   writing_task1_prompt?: string;

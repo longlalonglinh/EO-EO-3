@@ -8,7 +8,7 @@ interface UploadModuleProps {
 }
 
 export const UploadModule: React.FC<UploadModuleProps> = ({ onParsedData }) => {
-  const [apiKey, setApiKey] = useState('');
+  const [apiKey, setApiKey] = useState('AQ.Ab8RN6J8TwSqeuTmSr4Jg_CcHeJ7smPZleTAm3obPxLmEPSqYA');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [base64Data, setBase64Data] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -35,7 +35,7 @@ export const UploadModule: React.FC<UploadModuleProps> = ({ onParsedData }) => {
 
   const handleProcessPdf = async () => {
     if (!base64Data) {
-      setErrorMsg('Vui lòng chọn 1 file PDF đề thi IELTS.');
+      setErrorMsg('Please select an IELTS examination PDF file.');
       return;
     }
 
@@ -59,7 +59,7 @@ export const UploadModule: React.FC<UploadModuleProps> = ({ onParsedData }) => {
       onParsedData(parsedExamData);
     } catch (err: any) {
       console.error('Error parsing PDF with Gemini:', err);
-      setErrorMsg(err.message || 'Lỗi bóc tách PDF bằng Gemini API. Vui lòng kiểm tra lại file hoặc API Key.');
+      setErrorMsg(err.message || 'Error parsing PDF with Gemini API. Please check your file or API key.');
     } finally {
       setLoading(false);
     }
@@ -73,10 +73,10 @@ export const UploadModule: React.FC<UploadModuleProps> = ({ onParsedData }) => {
         <div>
           <h2 className="text-xl font-extrabold text-[#3C2A63] flex items-center gap-2">
             <Cpu className="w-6 h-6 text-[#6B51A5]" />
-            <span>Upload & Bóc Tách Đề Thi Tự Động Bằng Gemini API</span>
+            <span>Automated Exam Extraction via Gemini API</span>
           </h2>
           <p className="text-xs text-[#7C68A5] font-medium mt-1">
-            Tải file PDF đề IELTS để AI tự động chuyển đổi sang cấu trúc chuẩn JSON Schema.
+            Upload IELTS examination PDF files to automatically structure and parse them into standard JSON Schema.
           </p>
         </div>
 
@@ -95,7 +95,7 @@ export const UploadModule: React.FC<UploadModuleProps> = ({ onParsedData }) => {
           <div className="space-y-1.5">
             <label className="text-xs font-extrabold text-[#3C2A63] flex items-center justify-between">
               <span>Google Gemini API Key (Optional):</span>
-              <span className="text-[10px] text-[#7C68A5] font-medium">(Tự động dùng default nếu bỏ trống)</span>
+              <span className="text-[10px] text-[#7C68A5] font-medium">(Uses system default if left empty)</span>
             </label>
             <input
               type="password"
@@ -108,7 +108,7 @@ export const UploadModule: React.FC<UploadModuleProps> = ({ onParsedData }) => {
 
           {/* PDF Drag & Drop File Selector */}
           <div className="space-y-1.5">
-            <label className="text-xs font-extrabold text-[#3C2A63]">Chọn File Đề Thi IELTS (.PDF):</label>
+            <label className="text-xs font-extrabold text-[#3C2A63]">Select IELTS Exam Document (.PDF):</label>
             <div className="border-2 border-dashed border-purple-200 hover:border-[#6B51A5] rounded-3xl p-6 text-center bg-[#F8F6FC] transition-all cursor-pointer relative">
               <input
                 type="file"
@@ -124,8 +124,8 @@ export const UploadModule: React.FC<UploadModuleProps> = ({ onParsedData }) => {
                 </div>
               ) : (
                 <div className="space-y-1">
-                  <p className="text-xs font-extrabold text-[#3C2A63]">Kéo thả file PDF đề thi vào đây</p>
-                  <p className="text-[10px] text-[#7C68A5] font-medium">Hỗ trợ các dạng đề thi IELTS PDF Tiếng Anh</p>
+                  <p className="text-xs font-extrabold text-[#3C2A63]">Drag &amp; drop your exam PDF file here</p>
+                  <p className="text-[10px] text-[#7C68A5] font-medium">Supports complete IELTS Listening, Reading &amp; Writing PDF materials</p>
                 </div>
               )}
             </div>
@@ -147,7 +147,7 @@ export const UploadModule: React.FC<UploadModuleProps> = ({ onParsedData }) => {
             className="w-full py-3.5 bg-[#6B51A5] hover:bg-[#583F8F] text-white font-extrabold text-xs rounded-2xl shadow-lg shadow-purple-950/10 flex items-center justify-center space-x-2 transition cursor-pointer disabled:opacity-50"
           >
             <Sparkles className="w-4 h-4" />
-            <span>{loading ? 'Đang Bóc Tách PDF Bằng AI Gemini...' : 'Bắt Đầu Bóc Tách Đề Thi sang JSON'}</span>
+            <span>{loading ? 'Extracting PDF Structure via Gemini AI...' : 'Parse & Extract Exam to JSON'}</span>
           </button>
         </div>
 
@@ -156,12 +156,12 @@ export const UploadModule: React.FC<UploadModuleProps> = ({ onParsedData }) => {
           <div className="border-b border-purple-100 pb-3 flex items-center justify-between">
             <h4 className="text-xs font-extrabold text-[#6B51A5] uppercase tracking-wider flex items-center gap-2">
               <FileCode className="w-4 h-4" />
-              <span>Kết Quả JSON Bóc Tách Thô</span>
+              <span>Raw JSON Extraction Output</span>
             </h4>
             {rawJsonOutput && (
               <span className="text-[10px] bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full border border-emerald-200 font-extrabold flex items-center gap-1">
                 <CheckCircle2 className="w-3 h-3 text-emerald-700" />
-                Parsed Success
+                Parsed Successfully
               </span>
             )}
           </div>
@@ -174,7 +174,7 @@ export const UploadModule: React.FC<UploadModuleProps> = ({ onParsedData }) => {
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-[#7C68A5] text-xs text-center space-y-2 py-12">
                 <Cpu className="w-12 h-12 text-[#6B51A5]/50 animate-pulse" />
-                <p className="font-medium">Kích hoạt bóc tách để xem dữ liệu JSON Schema chuẩn hóa từ AI Gemini 1.5 Flash.</p>
+                <p className="font-medium">Trigger extraction to inspect standardized JSON Schema output from Gemini 1.5 Flash.</p>
               </div>
             )}
           </div>

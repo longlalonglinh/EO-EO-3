@@ -3,9 +3,9 @@ import { ShieldAlert, BookOpen, UserCheck, FileText, Upload, Edit3, Settings, Ma
 
 interface NavbarProps {
   activeView: 'student' | 'admin';
-  adminTab: 'dashboard' | 'grading' | 'upload' | 'preview' | 'gas_setup';
+  adminTab: 'dashboard' | 'grading' | 'upload' | 'preview' | 'gas_setup' | 'custom_practice';
   setActiveView: (view: 'student' | 'admin') => void;
-  setAdminTab: (tab: 'dashboard' | 'grading' | 'upload' | 'preview' | 'gas_setup') => void;
+  setAdminTab: (tab: 'dashboard' | 'grading' | 'upload' | 'preview' | 'gas_setup' | 'custom_practice') => void;
   studentMode?: 'TEST' | 'PRACTICE';
   sbd?: string;
   examCode?: string;
@@ -44,7 +44,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 EO EO Testing
               </h1>
               <p className="text-xs font-medium text-[#7C68A5]">
-                {activeView === 'student' ? 'Giao Diện Thí Sinh Làm Bài' : 'Giao Diện Quản Lý Giáo Viên'}
+                {activeView === 'student' ? 'Student Exam Interface' : 'Teacher & Admin Interface'}
               </p>
             </div>
           </div>
@@ -53,11 +53,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           {activeView === 'student' && sbd && examCode && (
             <div className="hidden md:flex items-center space-x-3 bg-[#F5F2F9] px-4 py-1.5 rounded-2xl border border-purple-100">
               <span className="text-xs font-medium text-[#503A7A]">
-                SBD: <strong className="text-[#3C2A63] font-bold">{sbd}</strong>
+                Candidate ID: <strong className="text-[#3C2A63] font-bold">{sbd}</strong>
               </span>
               <span className="text-purple-200">|</span>
               <span className="text-xs font-medium text-[#503A7A]">
-                Mã đề: <strong className="text-[#6B51A5] font-bold">{examCode}</strong>
+                Exam Code: <strong className="text-[#6B51A5] font-bold">{examCode}</strong>
               </span>
               <span className="text-purple-200">|</span>
               <span className={`text-xs px-2.5 py-0.5 rounded-full font-extrabold uppercase ${
@@ -80,7 +80,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
               >
                 <ShieldAlert className="w-3.5 h-3.5" />
-                Giám Sát & Logs
+                Monitoring & Logs
               </button>
 
               <button
@@ -90,7 +90,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
               >
                 <Edit3 className="w-3.5 h-3.5" />
-                Chấm Bài Writing
+                Grade Writing
               </button>
 
               <button
@@ -100,7 +100,17 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
               >
                 <Upload className="w-3.5 h-3.5" />
-                Upload Đề (AI)
+                AI Exam Generator
+              </button>
+
+              <button
+                onClick={() => setAdminTab('custom_practice')}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  adminTab === 'custom_practice' ? 'bg-[#6B51A5] text-white shadow-md' : 'text-[#3C2A63] hover:text-[#503A7A]'
+                }`}
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                Custom Practice Sets
               </button>
 
               <button
@@ -110,7 +120,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
               >
                 <FileText className="w-3.5 h-3.5" />
-                Preview Đề Thi
+                Exam Preview
               </button>
 
               <button
@@ -120,7 +130,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
               >
                 <Settings className="w-3.5 h-3.5" />
-                Cấu Hình GAS
+                GAS Config
               </button>
             </div>
           )}
@@ -132,17 +142,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 onClick={() => setActiveView('student')}
                 className="px-3.5 py-1.5 rounded-2xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-sm bg-purple-100 text-[#503A7A] border border-purple-300/80 hover:bg-purple-200"
-                title="Quay lại giao diện thí sinh"
+                title="Return to Student View"
               >
                 <BookOpen className="w-3.5 h-3.5" />
-                <span>Về Giao Diện Thí Sinh</span>
+                <span>Student View</span>
               </button>
             )}
 
             <button
               onClick={toggleFullscreen}
               className="p-2 rounded-xl bg-[#E2DDEC] hover:bg-[#D9D3E4] text-[#3C2A63] transition-all cursor-pointer"
-              title="Toàn màn hình"
+              title="Fullscreen"
             >
               <Maximize2 className="w-4 h-4" />
             </button>

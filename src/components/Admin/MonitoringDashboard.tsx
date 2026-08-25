@@ -63,10 +63,10 @@ export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({ apiUrl
         <div>
           <h2 className="text-xl font-extrabold text-[#3C2A63] flex items-center gap-2">
             <Users className="w-6 h-6 text-[#6B51A5]" />
-            <span>Bảng Giám Sát Thí Sinh & Nhật Ký Vi Phạm</span>
+            <span>Candidate Live Proctoring &amp; Monitoring Dashboard</span>
           </h2>
           <p className="text-xs text-[#7C68A5] font-medium mt-1">
-            Dữ liệu fetch trực tiếp từ Google Apps Script backend REST API.
+            Real-time examination records synchronized directly with Google Apps Script REST backend.
           </p>
         </div>
 
@@ -77,7 +77,7 @@ export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({ apiUrl
           className="px-6 py-3 bg-[#6B51A5] hover:bg-[#583F8F] text-white font-extrabold text-xs rounded-2xl shadow-lg shadow-purple-950/10 flex items-center space-x-2 transition cursor-pointer disabled:opacity-50"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          <span>{loading ? 'Đang Tải Dữ Liệu...' : 'Làm Mới Dữ Liệu (Refresh)'}</span>
+          <span>{loading ? 'Loading Data...' : 'Refresh Records'}</span>
         </button>
       </div>
 
@@ -95,7 +95,7 @@ export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({ apiUrl
             }`}
           >
             <FileText className="w-4 h-4" />
-            <span>Bài Nộp ({submissions.length})</span>
+            <span>Submissions ({submissions.length})</span>
           </button>
 
           <button
@@ -107,7 +107,7 @@ export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({ apiUrl
             }`}
           >
             <ShieldAlert className="w-4 h-4" />
-            <span>Log Gian Lận ({cheatLogs.length})</span>
+            <span>Security Violations ({cheatLogs.length})</span>
           </button>
         </div>
 
@@ -118,7 +118,7 @@ export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({ apiUrl
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Tìm theo SBD, Mã Đề..."
+            placeholder="Search by ID, Exam Code..."
             className="w-full pl-10 pr-4 py-2.5 bg-white border border-purple-200/80 rounded-2xl text-xs text-[#3C2A63] font-medium placeholder-[#7C68A5] focus:outline-none focus:ring-2 focus:ring-[#6B51A5] transition-all shadow-sm"
           />
         </div>
@@ -132,19 +132,19 @@ export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({ apiUrl
               <thead className="bg-[#F8F6FC] border-b border-purple-100 text-[#503A7A] font-extrabold uppercase tracking-wider">
                 <tr>
                   <th className="py-4 px-5">Submission ID</th>
-                  <th className="py-4 px-5">SBD</th>
-                  <th className="py-4 px-5">Mã Đề</th>
+                  <th className="py-4 px-5">Candidate ID</th>
+                  <th className="py-4 px-5">Exam Code</th>
                   <th className="py-4 px-5">Listening</th>
                   <th className="py-4 px-5">Reading</th>
                   <th className="py-4 px-5">Writing Status</th>
-                  <th className="py-4 px-5">Thời Gian Nộp</th>
+                  <th className="py-4 px-5">Submission Time</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-purple-100/60">
                 {filteredSubmissions.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="text-center py-8 text-[#7C68A5] italic">
-                      Chưa có dữ liệu bài nộp nào.
+                      No candidate submissions found.
                     </td>
                   </tr>
                 ) : (
@@ -193,17 +193,17 @@ export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({ apiUrl
               <thead className="bg-[#F8F6FC] border-b border-purple-100 text-[#503A7A] font-extrabold uppercase tracking-wider">
                 <tr>
                   <th className="py-4 px-5">Log ID</th>
-                  <th className="py-4 px-5">SBD</th>
-                  <th className="py-4 px-5">Mã Đề</th>
-                  <th className="py-4 px-5">Loại Vi Phạm (CheatLog)</th>
-                  <th className="py-4 px-5">Thời Gian Ghi Nhận</th>
+                  <th className="py-4 px-5">Candidate ID</th>
+                  <th className="py-4 px-5">Exam Code</th>
+                  <th className="py-4 px-5">Violation Type</th>
+                  <th className="py-4 px-5">Recorded Timestamp</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-purple-100/60">
                 {filteredLogs.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="text-center py-8 text-[#7C68A5] italic">
-                      Không có vi phạm gian lận nào được ghi nhận.
+                      No proctoring violations recorded.
                     </td>
                   </tr>
                 ) : (

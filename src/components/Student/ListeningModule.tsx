@@ -1,175 +1,449 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Clock, AlertTriangle, Play, Pause, BellRing, Hourglass } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Question } from '../../types';
+import { 
+  Play, 
+  Pause, 
+  Volume2, 
+  VolumeX, 
+  RotateCcw, 
+  Headphones, 
+  CheckCircle2, 
+  AlertTriangle,
+  Sparkles,
+  ChevronRight,
+  Info
+} from 'lucide-react';
+import { CountdownTimer } from './CountdownTimer';
+import { GeminiAnalysisModal } from './Practice/GeminiAnalysisModal';
 
-interface CountdownTimerProps {
-  initialMinutes: number;
+interface ListeningModuleProps {
+  audioUrl?: string;
+  questions: Question[];
+  userAnswers: Record<string, string>;
+  onAnswerChange: (questionId: string, value: string) => void;
   testMode?: 'TEST' | 'PRACTICE';
-  sectionName?: string;
-  onTimeExpire?: () => void;
-  className?: string;
-  compact?: boolean;
+  durationMins?: number;
 }
 
-export const CountdownTimer: React.FC<CountdownTimerProps> = ({
-  initialMinutes,
+export const ListeningModule: React.FC<ListeningModuleProps> = ({
+  audioUrl = 'https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=ambient-piano-amp-strings-10711.mp3',
+  questions,
+  userAnswers,
+  onAnswerChange,
   testMode = 'TEST',
-  sectionName,
-  onTimeExpire,
-  className = '',
-  compact = false
+  durationMins = 30
 }) => {
-  const [secondsLeft, setSecondsLeft] = useState<number>(Math.max(1, initialMinutes * 60));
-  const [isPaused, setIsPaused] = useState<boolean>(false);
-  const [hasWarned5Min, setHasWarned5Min] = useState<boolean>(false);
-  const hasExpiredRef = useRef(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [playbackRate, setPlaybackRate] = useState(1);
+  const [volume, setVolume] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
+  const [activePart, setActivePart] = useState<1 | 2 | 3 | 4>(1);
 
-  // Sync if initialMinutes changes significantly
+  // Gemini Analysis State
+  const [isGeminiOpen, setIsGeminiOpen] = useState(false);
+  const [selectedGeminiSentence, setSelectedGeminiSentence] = useState('');
+  const [selectedGeminiContext, setSelectedGeminiContext] = useState<string | undefined>(undefined);
+
+  const handleAskGemini = (sentence: string, context?: string) => {
+    setSelectedGeminiSentence(sentence);
+    setSelectedGeminiContext(context);
+    setIsGeminiOpen(true);
+  };
+
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Group questions into IELTS Parts (Part 1, 2, 3, 4)
+  const getPartForQuestion = (q: Question, idx: number): 1 | 2 | 3 | 4 => {
+    if (q.part && [1, 2, 3, 4].includes(q.part)) return q.part as 1 | 2 | 3 | 4;
+    if (idx < 10) return 1;
+    if (idx < 20) return 2;
+    if (idx < 30) return 3;
+    return 4;
+  };
+
+  const questionsWithPart = questions.map((q, idx) => ({
+    ...q,
+    computedPart: getPartForQuestion(q, idx)
+  }));
+
+  const filteredQuestions = questionsWithPart.filter(q => q.computedPart === activePart);
+
+  // Calculate answered stats
+  const totalQuestions = questions.length;
+  const answeredCount = questions.filter(q => Boolean(userAnswers[q.question_id]?.trim())).length;
+
   useEffect(() => {
-    setSecondsLeft(Math.max(1, initialMinutes * 60));
-    hasExpiredRef.current = false;
-    setHasWarned5Min(false);
-  }, [initialMinutes]);
+    const audio = audioRef.current;
+    if (!audio) return;
 
-  useEffect(() => {
-    if (isPaused) return;
+    const updateTime = () => setCurrentTime(audio.currentTime);
+    const updateDuration = () => setDuration(audio.duration || 0);
+    const onEnded = () => setIsPlaying(false);
 
-    const interval = setInterval(() => {
-      setSecondsLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          if (!hasExpiredRef.current) {
-            hasExpiredRef.current = true;
-            if (onTimeExpire) {
-              onTimeExpire();
-            }
-          }
-          return 0;
-        }
+    audio.addEventListener('timeupdate', updateTime);
+    audio.addEventListener('loadedmetadata', updateDuration);
+    audio.addEventListener('ended', onEnded);
 
-        // Trigger subtle beep or warning at 5 minutes mark
-        if (prev === 300 && !hasWarned5Min) {
-          setHasWarned5Min(true);
-          try {
-            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.frequency.value = 520;
-            gain.gain.setValueAtTime(0.1, ctx.currentTime);
-            osc.start();
-            osc.stop(ctx.currentTime + 0.3);
-          } catch (e) {
-            // AudioContext not allowed or silent
-          }
-        }
+    return () => {
+      audio.removeEventListener('timeupdate', updateTime);
+      audio.removeEventListener('loadedmetadata', updateDuration);
+      audio.removeEventListener('ended', onEnded);
+    };
+  }, []);
 
-        return prev - 1;
-      });
-    }, 1000);
+  const togglePlay = () => {
+    if (!audioRef.current) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      audioRef.current.play().catch(e => console.warn('Audio play prevented:', e));
+      setIsPlaying(true);
+    }
+  };
 
-    return () => clearInterval(interval);
-  }, [isPaused, onTimeExpire, hasWarned5Min]);
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const time = parseFloat(e.target.value);
+    setCurrentTime(time);
+    if (audioRef.current) {
+      audioRef.current.currentTime = time;
+    }
+  };
 
-  const hours = Math.floor(secondsLeft / 3600);
-  const minutes = Math.floor((secondsLeft % 3600) / 60);
-  const seconds = secondsLeft % 60;
+  const handleRateChange = (rate: number) => {
+    setPlaybackRate(rate);
+    if (audioRef.current) {
+      audioRef.current.playbackRate = rate;
+    }
+  };
 
-  const formattedTime = hours > 0
-    ? `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
-    : `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  const toggleMute = () => {
+    if (!audioRef.current) return;
+    audioRef.current.muted = !isMuted;
+    setIsMuted(!isMuted);
+  };
 
-  const isCritical = secondsLeft <= 300; // <= 5 mins
-  const isWarning = secondsLeft > 300 && secondsLeft <= 600; // <= 10 mins
-
-  if (compact) {
-    return (
-      <div className={`flex items-center space-x-2 px-3 py-1.5 rounded-2xl text-xs font-black transition-all ${
-        isCritical
-          ? 'bg-rose-100 text-rose-700 border border-rose-300 animate-pulse shadow-sm shadow-rose-200'
-          : isWarning
-          ? 'bg-amber-100 text-amber-800 border border-amber-300'
-          : 'bg-[#E2DDEC] text-[#3C2A63] border border-purple-200/80'
-      } ${className}`}>
-        {isCritical ? (
-          <AlertTriangle className="w-3.5 h-3.5 text-rose-600 animate-bounce" />
-        ) : (
-          <Clock className="w-3.5 h-3.5 text-[#6B51A5]" />
-        )}
-        <span className="font-mono text-xs tracking-wider">{formattedTime}</span>
-        {sectionName && <span className="text-[10px] opacity-75 hidden sm:inline">({sectionName})</span>}
-      </div>
-    );
-  }
+  const formatTime = (secs: number) => {
+    if (isNaN(secs)) return '00:00';
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
 
   return (
-    <div className={`bg-white border rounded-2xl p-3.5 shadow-md flex items-center justify-between gap-4 transition-all ${
-      isCritical
-        ? 'border-rose-300 bg-rose-50/50 shadow-rose-100 ring-2 ring-rose-400/40'
-        : isWarning
-        ? 'border-amber-300 bg-amber-50/40'
-        : 'border-purple-100 bg-white'
-    } ${className}`}>
+    <div className="space-y-4">
       
-      {/* Left info */}
-      <div className="flex items-center space-x-3">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-          isCritical
-            ? 'bg-rose-100 text-rose-700 animate-pulse'
-            : isWarning
-            ? 'bg-amber-100 text-amber-700'
-            : 'bg-purple-100 text-[#6B51A5]'
-        }`}>
-          {isCritical ? (
-            <BellRing className="w-5 h-5 text-rose-600 animate-bounce" />
-          ) : (
-            <Hourglass className="w-5 h-5" />
-          )}
+      {/* TOP COUNTDOWN TIMER BAR */}
+      <CountdownTimer
+        initialMinutes={durationMins}
+        testMode={testMode}
+        sectionName="ACADEMIC LISTENING (40 Questions / 4 Parts)"
+      />
+
+      {/* AUDIO PLAYER & CONTROLS BANNER */}
+      <div className="bg-white border border-purple-100/80 rounded-3xl p-5 shadow-xl shadow-purple-950/5 flex flex-col md:flex-row items-center justify-between gap-4">
+        
+        {/* Playback Controls & Progress */}
+        <div className="flex items-center space-x-3 w-full md:w-auto flex-1 max-w-2xl">
+          <button
+            type="button"
+            onClick={togglePlay}
+            className="w-12 h-12 rounded-2xl bg-[#6B51A5] hover:bg-[#503A7A] text-white flex items-center justify-center shadow-lg shadow-purple-950/10 transition shrink-0 active:scale-95 cursor-pointer"
+            title={isPlaying ? 'Tạm dừng Audio' : 'Phát Audio'}
+          >
+            {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5 fill-current" />}
+          </button>
+
+          <audio ref={audioRef} src={audioUrl} preload="metadata" />
+
+          <div className="flex-1 min-w-[180px]">
+            <div className="flex justify-between text-[11px] font-mono font-bold text-[#7C68A5] mb-1.5">
+              <span>{formatTime(currentTime)}</span>
+              <span className="flex items-center gap-1">
+                <Headphones className="w-3 h-3 text-[#6B51A5]" />
+                {formatTime(duration)}
+              </span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={duration || 100}
+              value={currentTime}
+              onChange={handleSeek}
+              className="w-full h-2 bg-[#E2DDEC] rounded-lg appearance-none cursor-pointer accent-[#6B51A5]"
+            />
+          </div>
+
+          {/* Playback Speed & Volume */}
+          <div className="flex items-center space-x-2 shrink-0">
+            <select
+              value={playbackRate}
+              onChange={(e) => handleRateChange(parseFloat(e.target.value))}
+              className="bg-[#F5F2F9] border border-purple-100 text-[#503A7A] text-xs font-bold rounded-xl px-2.5 py-2 focus:outline-none focus:border-[#6B51A5] font-mono cursor-pointer"
+              title="Tốc độ phát audio"
+            >
+              <option value={0.75}>0.75x</option>
+              <option value={1}>1.0x</option>
+              <option value={1.25}>1.25x</option>
+              <option value={1.5}>1.5x</option>
+            </select>
+
+            <button
+              type="button"
+              onClick={toggleMute}
+              className="p-2 text-[#503A7A] hover:bg-[#E2DDEC] rounded-xl transition cursor-pointer"
+              title={isMuted ? 'Bật âm thanh' : 'Tắt tiếng'}
+            >
+              {isMuted ? <VolumeX className="w-4 h-4 text-rose-500" /> : <Volume2 className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
 
-        <div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#7C68A5]">
-              {sectionName ? `Time Remaining: ${sectionName}` : 'Exam Time Remaining'}
-            </span>
-            {testMode === 'TEST' && (
-              <span className="text-[9px] px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 font-extrabold border border-rose-200">
-                LOCKED
-              </span>
-            )}
-          </div>
-          <div className="flex items-baseline space-x-2">
-            <span className={`font-mono text-xl sm:text-2xl font-black tracking-tight ${
-              isCritical ? 'text-rose-600' : isWarning ? 'text-amber-700' : 'text-[#3C2A63]'
-            }`}>
-              {formattedTime}
-            </span>
-            <span className="text-[11px] text-[#7C68A5] font-medium">
-              {isCritical ? '⚠️ Time almost up!' : isWarning ? 'Under 10 minutes left' : 'Total allocated time'}
+        {/* Global Progress Pill */}
+        <div className="flex items-center space-x-3 shrink-0">
+          <div className="text-xs text-[#7C68A5] font-medium flex items-center gap-2">
+            <span>Đã trả lời:</span>
+            <span className="px-3 py-1 bg-purple-100 border border-purple-200 rounded-full text-xs font-black text-[#503A7A] font-mono">
+              {answeredCount} / {totalQuestions}
             </span>
           </div>
         </div>
+
       </div>
 
-      {/* Right Controls in Practice Mode */}
-      {testMode === 'PRACTICE' && (
-        <button
-          type="button"
-          onClick={() => setIsPaused(!isPaused)}
-          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-            isPaused
-              ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-              : 'bg-[#E2DDEC] hover:bg-[#D9D3E4] text-[#3C2A63]'
-          }`}
-          title={isPaused ? 'Resume timer' : 'Pause timer'}
-        >
-          {isPaused ? <Play className="w-3.5 h-3.5 fill-current" /> : <Pause className="w-3.5 h-3.5" />}
-          <span>{isPaused ? 'Resume' : 'Pause'}</span>
-        </button>
-      )}
+      {/* PART TABS & QUESTION JUMP BAR */}
+      <div className="bg-white border border-purple-100/80 rounded-3xl p-4 shadow-xl shadow-purple-950/5 flex flex-wrap items-center justify-between gap-3">
+        
+        {/* 4 Part Switcher Buttons */}
+        <div className="flex flex-wrap items-center gap-2">
+          {([1, 2, 3, 4] as const).map((partNum) => {
+            const partQuestions = questionsWithPart.filter(q => q.computedPart === partNum);
+            const partAnswered = partQuestions.filter(q => Boolean(userAnswers[q.question_id]?.trim())).length;
+            const isActive = activePart === partNum;
 
+            if (partQuestions.length === 0 && partNum > 1 && questions.length <= 10) return null;
+
+            return (
+              <button
+                key={partNum}
+                type="button"
+                onClick={() => setActivePart(partNum)}
+                className={`px-4 py-2 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+                  isActive
+                    ? 'bg-[#6B51A5] text-white shadow-md'
+                    : 'bg-[#F5F2F9] text-[#503A7A] hover:bg-[#E2DDEC] border border-purple-100'
+                }`}
+              >
+                <Headphones className="w-3.5 h-3.5" />
+                <span>Part {partNum}</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                  isActive
+                    ? 'bg-white/20 text-white'
+                    : partAnswered === partQuestions.length && partQuestions.length > 0
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : 'bg-purple-200/80 text-[#503A7A]'
+                }`}>
+                  {partAnswered}/{partQuestions.length || 10}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Question Numbers Quick Navigator */}
+        <div className="flex items-center gap-1.5 overflow-x-auto py-1">
+          {filteredQuestions.map((q, idx) => {
+            const isFilled = Boolean(userAnswers[q.question_id]?.trim());
+            return (
+              <button
+                key={q.question_id}
+                type="button"
+                onClick={() => {
+                  const el = document.getElementById(`lq_box_${q.question_id}`);
+                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }}
+                className={`w-7 h-7 rounded-xl text-xs font-bold transition flex items-center justify-center cursor-pointer ${
+                  isFilled
+                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                    : 'bg-[#F5F2F9] text-[#503A7A] hover:bg-[#E2DDEC] border border-purple-100'
+                }`}
+                title={`Nhảy tới Câu ${idx + 1}`}
+              >
+                {idx + 1}
+              </button>
+            );
+          })}
+        </div>
+
+      </div>
+
+      {/* MAIN QUESTIONS WORKSPACE */}
+      <div className="bg-white rounded-3xl border border-purple-100/80 p-6 md:p-8 shadow-xl shadow-purple-950/5 space-y-6">
+        
+        {/* Section Header with Info Banner */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-purple-100">
+          <div>
+            <h3 className="text-base font-extrabold text-[#3C2A63] flex items-center gap-2">
+              <Headphones className="w-5 h-5 text-[#6B51A5]" />
+              <span>Part {activePart} Questions ({filteredQuestions.length} Questions)</span>
+            </h3>
+            <p className="text-xs text-[#7C68A5] font-medium mt-0.5">
+              Listen carefully to the recording and answer questions 1 to {filteredQuestions.length}.
+            </p>
+          </div>
+
+          <div className="flex items-center space-x-1.5 text-xs text-[#7C68A5] bg-[#FAF8FE] border border-[#EBE4F7] px-3 py-1.5 rounded-xl">
+            <Info className="w-3.5 h-3.5 text-[#6B51A5] shrink-0" />
+            <span>Điền hoặc chọn đáp án trực tiếp vào từng câu hỏi bên dưới</span>
+          </div>
+        </div>
+
+        {/* Questions Render List */}
+        {filteredQuestions.length === 0 ? (
+          <div className="p-12 text-center bg-[#FAF8FE] border border-[#EBE4F7] rounded-3xl">
+            <Headphones className="w-12 h-12 text-[#7C68A5] mx-auto mb-3 opacity-60" />
+            <p className="text-[#503A7A] text-sm font-bold">Chưa có câu hỏi nào cho Part {activePart}.</p>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {filteredQuestions.map((q, idx) => {
+              const currentVal = userAnswers[q.question_id] || '';
+              const isFilled = Boolean(currentVal.trim());
+
+              return (
+                <div
+                  key={q.question_id}
+                  id={`lq_box_${q.question_id}`}
+                  className={`p-5 md:p-6 bg-[#FAF8FE] border rounded-2xl transition duration-200 space-y-4 shadow-sm ${
+                    isFilled 
+                      ? 'border-[#D6CBE8] bg-[#FAF8FE]' 
+                      : 'border-[#EBE4F7] hover:border-[#D6CBE8]'
+                  }`}
+                >
+                  {/* Question Item Header */}
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-center space-x-2.5">
+                      <span className="w-7 h-7 rounded-xl bg-[#503A7A] text-white font-black text-xs flex items-center justify-center font-mono shadow-sm">
+                        {idx + 1}
+                      </span>
+                      <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-purple-100 text-[#503A7A] font-extrabold uppercase border border-purple-200 shrink-0">
+                        {q.question_type.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center space-x-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleAskGemini(q.question_text, q.instruction)}
+                        className="px-2.5 py-1 bg-purple-100 hover:bg-purple-200 text-[#503A7A] border border-purple-200 rounded-xl text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
+                        title="Phân tích cấu trúc câu với AI Gemini"
+                      >
+                        <Sparkles className="w-3 h-3 text-[#6B51A5]" />
+                        <span>Hỏi AI Gemini</span>
+                      </button>
+
+                      {isFilled && (
+                        <span className="flex items-center space-x-1 text-emerald-800 bg-emerald-100 border border-emerald-200 text-xs font-bold px-2.5 py-0.5 rounded-xl">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
+                          <span>Đã trả lời</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Instruction Notice if any */}
+                  {q.instruction && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 font-bold flex items-start gap-2">
+                      <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <span>{q.instruction}</span>
+                    </div>
+                  )}
+
+                  {/* Question Main Text */}
+                  <p className="text-[#2D1E4B] text-sm md:text-[15px] font-bold leading-relaxed">
+                    {q.question_text}
+                  </p>
+
+                  {/* Options List or Text Input */}
+                  {q.options && q.options.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                      {q.options.map((opt, optIdx) => {
+                        const optLetter = opt.charAt(0).toUpperCase();
+                        const isSelected = currentVal.trim().toUpperCase() === optLetter || currentVal === opt;
+
+                        return (
+                          <button
+                            key={optIdx}
+                            type="button"
+                            onClick={() => onAnswerChange(q.question_id, optLetter)}
+                            className={`w-full text-left p-3.5 rounded-xl border text-xs md:text-sm font-bold transition flex items-center space-x-3 cursor-pointer ${
+                              isSelected
+                                ? 'bg-[#503A7A] border-[#503A7A] text-white shadow-md ring-2 ring-purple-300'
+                                : 'bg-white border-[#E0D7F5] text-[#3C2A63] hover:bg-[#F2EEF9] hover:border-[#6B51A5]'
+                            }`}
+                          >
+                            <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 font-mono ${
+                              isSelected
+                                ? 'bg-white text-[#503A7A]'
+                                : 'bg-[#E2DDEC] text-[#3C2A63]'
+                            }`}>
+                              {optLetter}
+                            </span>
+                            <span className="flex-1">{opt}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="mt-2">
+                      <input
+                        type="text"
+                        value={currentVal}
+                        onChange={(e) => onAnswerChange(q.question_id, e.target.value)}
+                        placeholder="Nhập đáp án của bạn tại đây..."
+                        className="w-full px-4 py-3 bg-white border border-[#D6CBE8] rounded-xl text-[#2C1D4D] font-medium placeholder-slate-400 text-sm focus:outline-none focus:border-[#6B51A5] focus:ring-2 focus:ring-purple-200 transition shadow-inner"
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Next / Prev Part Navigation Buttons */}
+        <div className="flex justify-between items-center pt-4 border-t border-purple-100">
+          <button
+            type="button"
+            disabled={activePart === 1}
+            onClick={() => setActivePart(prev => (prev > 1 ? (prev - 1 as 1 | 2 | 3 | 4) : prev))}
+            className="px-4 py-2.5 bg-[#F5F2F9] hover:bg-[#E2DDEC] disabled:opacity-40 disabled:cursor-not-allowed text-[#503A7A] text-xs font-extrabold rounded-xl border border-purple-200 transition flex items-center gap-1.5 cursor-pointer"
+          >
+            ← Part trước
+          </button>
+
+          <button
+            type="button"
+            disabled={activePart === 4}
+            onClick={() => setActivePart(prev => (prev < 4 ? (prev + 1 as 1 | 2 | 3 | 4) : prev))}
+            className="px-5 py-2.5 bg-[#6B51A5] hover:bg-[#503A7A] disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-extrabold rounded-xl transition shadow-md shadow-purple-950/10 flex items-center gap-1.5 cursor-pointer"
+          >
+            <span>Part tiếp theo</span>
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+
+      </div>
+
+      {/* Gemini Deep Sentence & Grammar Analysis Modal */}
+      <GeminiAnalysisModal
+        isOpen={isGeminiOpen}
+        onClose={() => setIsGeminiOpen(false)}
+        sentence={selectedGeminiSentence}
+        questionContext={selectedGeminiContext}
+      />
     </div>
   );
 };
-export { ListeningModule };
-export default ListeningModule;

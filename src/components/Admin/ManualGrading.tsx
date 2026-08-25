@@ -60,10 +60,10 @@ export const ManualGrading: React.FC<ManualGradingProps> = ({ apiUrl }) => {
     try {
       const res = await saveWritingScore(apiUrl, selectedSub.submission_id, gradingForm);
       if (res.success) {
-        alert(`✅ Đã lưu điểm Writing cho bài nộp ${selectedSub.sbd} thành công!`);
+        alert(`✅ Writing score for candidate ${selectedSub.sbd} saved successfully!`);
         loadSubmissions();
       } else {
-        alert(`❌ Lưu thất bại: ${res.message}`);
+        alert(`❌ Failed to save score: ${res.message}`);
       }
     } catch (err) {
       console.error('Error saving score:', err);
@@ -78,24 +78,24 @@ export const ManualGrading: React.FC<ManualGradingProps> = ({ apiUrl }) => {
 
     return `
 ========================================
-📝 KẾT QUẢ CHẤM BÀI WRITING IELTS - SBD: ${selectedSub.sbd}
+📝 IELTS WRITING ASSESSMENT REPORT - ID: ${selectedSub.sbd}
 ========================================
-📌 Thí sinh: ${selectedSub.sbd}
-📌 Mã đề thi: ${selectedSub.exam_code}
-📌 Mã bài nộp: ${selectedSub.submission_id}
+📌 Candidate: ${selectedSub.sbd}
+📌 Exam Code: ${selectedSub.exam_code}
+📌 Submission ID: ${selectedSub.submission_id}
 
-🎧 Điểm Listening (Raw): ${selectedSub.listening_score} / 40
-📖 Điểm Reading (Raw): ${selectedSub.reading_score} / 40
+🎧 Listening Score (Raw): ${selectedSub.listening_score} / 40
+📖 Reading Score (Raw): ${selectedSub.reading_score} / 40
 
-✍️ ĐIỂM CHI TIẾT WRITING 4 TIÊU CHÍ:
+✍️ DETAILED WRITING 4-CRITERIA SCORES:
 - Task Response (TR): ${gradingForm.tr}
 - Coherence & Cohesion (CC): ${gradingForm.cc}
 - Lexical Resource (LR): ${gradingForm.lr}
 - Grammatical Range & Accuracy (GRA): ${gradingForm.gra}
-=> ĐIỂM TỔNG WRITING OVERALL: ${gradingForm.overall_writing}
+=> OVERALL WRITING BAND SCORE: ${gradingForm.overall_writing}
 
-💬 NHẬN XÉT CỦA GIÁO VIÊN:
-${gradingForm.feedback || 'Bài làm đạt yêu cầu, cần chú ý bổ sung từ vựng nâng cao và liên kết câu chặt chẽ hơn.'}
+💬 INSTRUCTOR FEEDBACK:
+${gradingForm.feedback || 'The essay meets task requirements. Focus on incorporating higher-level lexical items and refining paragraph cohesion.'}
 ========================================
 `.trim();
   };
@@ -119,10 +119,10 @@ ${gradingForm.feedback || 'Bài làm đạt yêu cầu, cần chú ý bổ sung 
         <div>
           <h2 className="text-xl font-extrabold text-[#3C2A63] flex items-center gap-2">
             <FileEdit className="w-6 h-6 text-[#6B51A5]" />
-            <span>Công Cụ Chấm Điểm Bài Viết (Writing Manual Grading)</span>
+            <span>Manual Writing Assessment &amp; Grading Desk</span>
           </h2>
           <p className="text-xs text-[#7C68A5] font-medium mt-1">
-            Đang có <strong className="text-amber-800 font-bold">{pendingCount}</strong> bài nộp trạng thái <strong className="text-amber-800 font-bold">PENDING_TEACHER</strong>
+            Currently <strong className="text-amber-800 font-bold">{pendingCount}</strong> submissions with status <strong className="text-amber-800 font-bold">PENDING_TEACHER</strong>
           </p>
         </div>
 
@@ -133,7 +133,7 @@ ${gradingForm.feedback || 'Bài làm đạt yêu cầu, cần chú ý bổ sung 
             className="px-6 py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs rounded-2xl shadow-lg shadow-emerald-950/10 flex items-center space-x-2 transition cursor-pointer"
           >
             {copiedZalo ? <Check className="w-4 h-4 text-emerald-200" /> : <Copy className="w-4 h-4" />}
-            <span>{copiedZalo ? 'Đã Copy Định Dạng Zalo!' : 'Copy Xuất Kết Quả Qua Zalo'}</span>
+            <span>{copiedZalo ? 'Report Copied to Clipboard!' : 'Export Student Report (Zalo/Message)'}</span>
           </button>
         )}
       </div>
@@ -143,7 +143,7 @@ ${gradingForm.feedback || 'Bài làm đạt yêu cầu, cần chú ý bổ sung 
         {/* Left Sidebar: List of Submissions */}
         <div className="lg:col-span-4 bg-white border border-purple-100/80 rounded-3xl p-5 shadow-xl shadow-purple-950/5 space-y-3">
           <h3 className="text-xs font-extrabold text-[#3C2A63] uppercase tracking-wider px-1">
-            Danh Sách Thí Sinh Nộp Bài ({submissions.length})
+            Candidate Submissions ({submissions.length})
           </h3>
 
           <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
@@ -163,13 +163,13 @@ ${gradingForm.feedback || 'Bài làm đạt yêu cầu, cần chú ý bổ sung 
                 >
                   <div className="space-y-1">
                     <div className="font-extrabold text-sm flex items-center gap-2">
-                      <span>SBD: {sub.sbd}</span>
+                      <span>Candidate: {sub.sbd}</span>
                       <span className={`text-[10px] font-mono ${isSelected ? 'text-purple-200' : 'text-[#7C68A5]'}`}>
                         ({sub.exam_code})
                       </span>
                     </div>
                     <div className={`text-[11px] font-medium ${isSelected ? 'text-purple-100' : 'text-[#7C68A5]'}`}>
-                      Nghe: {sub.listening_score ?? sub.listening_raw_score ?? 0}/40 | Đọc: {sub.reading_score ?? sub.reading_raw_score ?? 0}/40
+                      Listening: {sub.listening_score ?? sub.listening_raw_score ?? 0}/40 | Reading: {sub.reading_score ?? sub.reading_raw_score ?? 0}/40
                     </div>
                     <div className={`text-[10px] font-mono flex items-center gap-1 ${isSelected ? 'text-purple-200' : 'text-[#9684B8]'}`}>
                       <Clock className="w-3 h-3 shrink-0" />
@@ -204,11 +204,11 @@ ${gradingForm.feedback || 'Bài làm đạt yêu cầu, cần chú ý bổ sung 
                 <div className="border-b border-purple-100 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                   <div>
                     <h4 className="text-xs font-extrabold text-[#6B51A5] uppercase tracking-wider">
-                      Bài Làm Viết - Thí sinh: {selectedSub.sbd} ({selectedSub.exam_code})
+                      Writing Submission - Candidate: {selectedSub.sbd} ({selectedSub.exam_code})
                     </h4>
                     <div className="flex items-center gap-1 text-[11px] text-[#7C68A5] font-mono mt-0.5">
                       <Clock className="w-3 h-3 text-[#6B51A5]" />
-                      <span>Nộp lúc: {formatSubmissionTime(selectedSub)}</span>
+                      <span>Submitted at: {formatSubmissionTime(selectedSub)}</span>
                     </div>
                   </div>
                   <span className="text-[10px] text-[#7C68A5] font-mono font-medium">{selectedSub.submission_id}</span>
@@ -216,16 +216,16 @@ ${gradingForm.feedback || 'Bài làm đạt yêu cầu, cần chú ý bổ sung 
 
                 <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
                   <div>
-                    <span className="text-xs font-extrabold text-[#3C2A63] block mb-1">Writing Task 1:</span>
+                    <span className="text-xs font-extrabold text-[#3C2A63] block mb-1">Writing Task 1 Response:</span>
                     <div className="p-3.5 bg-[#F8F6FC] border border-purple-100 rounded-2xl text-xs text-[#3C2A63] leading-relaxed font-mono whitespace-pre-wrap">
-                      {selectedSub.writing_task1 || '(Thí sinh chưa nhập bài viết Task 1)'}
+                      {selectedSub.writing_task1 || '(Candidate did not provide a Task 1 response)'}
                     </div>
                   </div>
 
                   <div>
-                    <span className="text-xs font-extrabold text-[#3C2A63] block mb-1">Writing Task 2:</span>
+                    <span className="text-xs font-extrabold text-[#3C2A63] block mb-1">Writing Task 2 Response:</span>
                     <div className="p-3.5 bg-[#F8F6FC] border border-purple-100 rounded-2xl text-xs text-[#3C2A63] leading-relaxed font-mono whitespace-pre-wrap">
-                      {selectedSub.writing_task2 || '(Thí sinh chưa nhập bài viết Task 2)'}
+                      {selectedSub.writing_task2 || '(Candidate did not provide a Task 2 response)'}
                     </div>
                   </div>
                 </div>
@@ -235,7 +235,7 @@ ${gradingForm.feedback || 'Bài làm đạt yêu cầu, cần chú ý bổ sung 
               <div className="bg-white border border-purple-100/80 rounded-3xl p-5 shadow-xl shadow-purple-950/5 space-y-4">
                 <div className="border-b border-purple-100 pb-3 flex items-center justify-between">
                   <h4 className="text-xs font-extrabold text-emerald-800 uppercase tracking-wider">
-                    Chấm Điểm 4 Tiêu Chí
+                    4-Criteria Band Scoring
                   </h4>
                   <span className="text-xs font-extrabold text-emerald-800 bg-emerald-100 px-3 py-1 rounded-full border border-emerald-200">
                     Overall: {gradingForm.overall_writing}
@@ -259,7 +259,7 @@ ${gradingForm.feedback || 'Bài làm đạt yêu cầu, cần chú ý bổ sung 
 
                   {/* CC */}
                   <div className="space-y-1">
-                    <label className="text-[11px] font-extrabold text-[#503A7A]">Coherence & Cohesion (CC)</label>
+                    <label className="text-[11px] font-extrabold text-[#503A7A]">Coherence &amp; Cohesion (CC)</label>
                     <input
                       type="number"
                       step="0.5"
@@ -287,7 +287,7 @@ ${gradingForm.feedback || 'Bài làm đạt yêu cầu, cần chú ý bổ sung 
 
                   {/* GRA */}
                   <div className="space-y-1">
-                    <label className="text-[11px] font-extrabold text-[#503A7A]">Grammar & Accuracy (GRA)</label>
+                    <label className="text-[11px] font-extrabold text-[#503A7A]">Grammar &amp; Accuracy (GRA)</label>
                     <input
                       type="number"
                       step="0.5"
@@ -302,12 +302,12 @@ ${gradingForm.feedback || 'Bài làm đạt yêu cầu, cần chú ý bổ sung 
 
                 {/* Feedback */}
                 <div className="space-y-1">
-                  <label className="text-[11px] font-extrabold text-[#503A7A]">Nhận Xét / Feedback Cho Thí Sinh:</label>
+                  <label className="text-[11px] font-extrabold text-[#503A7A]">Teacher Comments &amp; Feedback:</label>
                   <textarea
                     rows={4}
                     value={gradingForm.feedback}
                     onChange={(e) => setGradingForm({ ...gradingForm, feedback: e.target.value })}
-                    placeholder="Viết nhận xét ưu khuyết điểm của bài làm..."
+                    placeholder="Provide constructive feedback, strengths, and areas for improvement..."
                     className="w-full p-3.5 bg-[#F8F6FC] border border-purple-200/80 rounded-2xl text-xs text-[#3C2A63] font-medium placeholder-[#7C68A5] focus:outline-none focus:ring-2 focus:ring-[#6B51A5]"
                   />
                 </div>
@@ -320,14 +320,14 @@ ${gradingForm.feedback || 'Bài làm đạt yêu cầu, cần chú ý bổ sung 
                   className="w-full py-3.5 bg-[#6B51A5] hover:bg-[#583F8F] text-white font-extrabold text-xs rounded-2xl shadow-lg shadow-purple-950/10 flex items-center justify-center space-x-2 transition cursor-pointer disabled:opacity-50"
                 >
                   <Save className="w-4 h-4" />
-                  <span>{loading ? 'Đang Lưu Bảng Điểm...' : 'Lưu Kết Quả Chấm Writing'}</span>
+                  <span>{loading ? 'Saving Grade...' : 'Save Writing Grade & Comments'}</span>
                 </button>
               </div>
 
             </div>
           ) : (
             <div className="p-8 text-center bg-white border border-purple-100/80 rounded-3xl text-[#7C68A5] italic">
-              Vui lòng chọn một thí sinh từ danh sách bên trái để chấm điểm bài viết.
+              Please select a candidate submission from the list on the left to grade their essay.
             </div>
           )}
         </div>

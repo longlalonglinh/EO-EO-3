@@ -15,6 +15,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { CountdownTimer } from './CountdownTimer';
+import { GeminiAnalysisModal } from './Practice/GeminiAnalysisModal';
 
 interface ReadingModuleProps {
   passageTitle?: string;
@@ -43,6 +44,19 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
   const [highlights, setHighlights] = useState<HighlightingTool[]>([]);
   const [activePassageIndex, setActivePassageIndex] = useState<1 | 2 | 3>(1);
   const passageContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Gemini Sentence Analysis State
+  const [isGeminiOpen, setIsGeminiOpen] = useState(false);
+  const [selectedGeminiSentence, setSelectedGeminiSentence] = useState('');
+  const [selectedGeminiTarget, setSelectedGeminiTarget] = useState<string | undefined>(undefined);
+  const [selectedGeminiContext, setSelectedGeminiContext] = useState<string | undefined>(undefined);
+
+  const handleAskGemini = (sentence: string, target?: string, context?: string) => {
+    setSelectedGeminiSentence(sentence);
+    setSelectedGeminiTarget(target);
+    setSelectedGeminiContext(context);
+    setIsGeminiOpen(true);
+  };
 
   // Group questions into standard IELTS Passages:
   // Passage 1: Q1 - Q13
@@ -381,9 +395,21 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
                         </span>
                       </div>
 
-                      <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-purple-100 text-[#503A7A] font-extrabold uppercase border border-purple-200 shrink-0">
-                        {q.question_type.replace(/_/g, ' ')}
-                      </span>
+                      <div className="flex items-center space-x-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleAskGemini(q.question_text, undefined, currentPassageData.text?.slice(0, 300))}
+                          className="px-2.5 py-1 bg-purple-100 hover:bg-purple-200 text-[#503A7A] border border-purple-200 rounded-xl text-[11px] font-bold flex items-center gap-1 transition"
+                          title="Phân tích cấu trúc câu với AI Gemini"
+                        >
+                          <Sparkles className="w-3 h-3 text-[#6B51A5]" />
+                          <span>Hỏi AI Gemini</span>
+                        </button>
+
+                        <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-purple-100 text-[#503A7A] font-extrabold uppercase border border-purple-200">
+                          {q.question_type.replace(/_/g, ' ')}
+                        </span>
+                      </div>
                     </div>
 
                     {/* Word Limit or Specific Instruction Banner */}
@@ -626,6 +652,15 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
         </div>
 
       </div>
+
+      {/* Gemini Deep Sentence & Grammar Analysis Modal */}
+      <GeminiAnalysisModal
+        isOpen={isGeminiOpen}
+        onClose={() => setIsGeminiOpen(false)}
+        sentence={selectedGeminiSentence}
+        targetWord={selectedGeminiTarget}
+        questionContext={selectedGeminiContext}
+      />
 
     </div>
   );

@@ -10,6 +10,9 @@ import { MonitoringDashboard } from './components/Admin/MonitoringDashboard';
 import { ManualGrading } from './components/Admin/ManualGrading';
 import { UploadModule } from './components/Admin/UploadModule';
 import { PreviewModule } from './components/Admin/PreviewModule';
+import { PracticeDashboard } from './components/Student/Practice/PracticeDashboard';
+import { CustomPracticeManager } from './components/Admin/CustomPracticeManager';
+import { practiceService } from './services/practiceService';
 import { ExamData, SubmissionResponse, SubmissionPayload, CheatLog, Question } from './types';
 import { 
   Headphones, 
@@ -42,7 +45,7 @@ const DEFAULT_GAS_URL = DEFAULT_API_URL;
 // Sample fallback exam data if GAS endpoint is not connected yet
 const SAMPLE_EXAM: ExamData = {
   exam_code: 'IELTS01',
-  title: 'Đề Thi Thử IELTS Academic - Test 01',
+  title: 'IELTS Academic Mock Examination - Test 01',
   audio_url: 'https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=ambient-piano-amp-strings-10711.mp3',
   listening_questions: [
     {
@@ -153,7 +156,7 @@ export default function App() {
       setSkillNotice(null);
     } else if (targetModule === 'reading') {
       if (!completedSkills.listening) {
-        setSkillNotice('🔒 Trong chế độ TEST MODE: Bạn cần nộp bài phần NGHE (Listening) để mở khóa phần ĐỌC (Reading)!');
+        setSkillNotice('🔒 In TEST MODE: You must complete and submit the Listening section to unlock Reading!');
         setTimeout(() => setSkillNotice(null), 4000);
         return;
       }
@@ -161,12 +164,12 @@ export default function App() {
       setSkillNotice(null);
     } else if (targetModule === 'writing') {
       if (!completedSkills.listening) {
-        setSkillNotice('🔒 Trong chế độ TEST MODE: Bạn cần nộp lần lượt từng phần thi (Nghe → Đọc → Viết)!');
+        setSkillNotice('🔒 In TEST MODE: You must submit each section in sequence (Listening → Reading → Writing)!');
         setTimeout(() => setSkillNotice(null), 4000);
         return;
       }
       if (!completedSkills.reading) {
-        setSkillNotice('🔒 Trong chế độ TEST MODE: Bạn cần nộp bài phần ĐỌC (Reading) để mở khóa phần VIẾT (Writing)!');
+        setSkillNotice('🔒 In TEST MODE: You must complete and submit the Reading section to unlock Writing!');
         setTimeout(() => setSkillNotice(null), 4000);
         return;
       }
@@ -179,14 +182,14 @@ export default function App() {
   const handleCompleteListening = () => {
     setCompletedSkills(prev => ({ ...prev, listening: true }));
     setCurrentModule('reading');
-    setSkillNotice('✅ Đã hoàn thành & nộp phần thi NGHE! Chuyển sang bài thi ĐỌC (Reading).');
+    setSkillNotice('✅ Listening section submitted! Proceeding to Reading.');
     setTimeout(() => setSkillNotice(null), 5000);
   };
 
   const handleCompleteReading = () => {
     setCompletedSkills(prev => ({ ...prev, reading: true }));
     setCurrentModule('writing');
-    setSkillNotice('✅ Đã hoàn thành & nộp phần thi ĐỌC! Chuyển sang bài thi VIẾT (Writing).');
+    setSkillNotice('✅ Reading section submitted! Proceeding to Writing.');
     setTimeout(() => setSkillNotice(null), 5000);
   };
 
@@ -225,6 +228,10 @@ export default function App() {
     return numVal % 2 !== 0 ? 'TEST' : 'PRACTICE';
   };
 
+  // Custom Practice Deck Session State
+  const [isCustomPracticeSession, setIsCustomPracticeSession] = useState(false);
+  const [customPracticeDeckId, setCustomPracticeDeckId] = useState('ON_TAP_01');
+
   // Handle Login & Load Exam
   const handleLogin = async (sbdInput: string, codeInput: string, reviewPrevious: boolean) => {
     const cleanSbd = sbdInput.trim();
@@ -233,6 +240,27 @@ export default function App() {
     setExamCode(cleanCode);
     setCompletedSkills({ listening: false, reading: false, writing: false });
     setSkillNotice(null);
+
+    // Check if entered code corresponds to a Custom Practice Deck
+    const upperCode = cleanCode.toUpperCase();
+    const allPracticeDecks = practiceService.getAllDecks();
+    const isPracticeDeck = allPracticeDecks.some(d => d.deck_id.toUpperCase() === upperCode) ||
+      upperCode.startsWith('ON_TAP') ||
+      upperCode.startsWith('VOCAB') ||
+      upperCode.startsWith('GRAMMAR') ||
+      upperCode.startsWith('COMMUNICATION') ||
+      upperCode.startsWith('DECK_') ||
+      upperCode.startsWith('PRAC_SET');
+
+    if (isPracticeDeck) {
+      setIsCustomPracticeSession(true);
+      setCustomPracticeDeckId(cleanCode);
+      setIsLoggedIn(true);
+      setIsLoadingExam(false);
+      return;
+    }
+
+    setIsCustomPracticeSession(false);
 
     const mode = determineTestMode(cleanCode);
     setTestMode(mode);
@@ -284,7 +312,7 @@ export default function App() {
 
           setExamData({
             exam_code: cleanCode,
-            title: loadedExam.title || `Đề Thi IELTS ${cleanCode}`,
+            title: loadedExam.title || `IELTS Examination ${cleanCode}`,
             audio_url: loadedExam.audio_url || SAMPLE_EXAM.audio_url,
             listening_questions: lQs.length > 0 ? lQs : (loadedExam.listening_questions || []),
             passage_title: loadedExam.passage_title || SAMPLE_EXAM.passage_title,
@@ -294,16 +322,16 @@ export default function App() {
             writing_task2_prompt: loadedExam.writing_task2_prompt || SAMPLE_EXAM.writing_task2_prompt
           });
 
-          setSkillNotice(`✅ Đã tải thành công đề thi [${cleanCode}] từ Google Sheets (${questions.length} câu hỏi).`);
+          setSkillNotice(`✅ Successfully loaded exam [${cleanCode}] from Google Sheets (${questions.length} questions).`);
           setTimeout(() => setSkillNotice(null), 6000);
         } else {
-          setSkillNotice(`⚠️ Không tìm thấy câu hỏi cho mã đề [${cleanCode}] trong tab QUESTIONS của Google Sheets (đang hiển thị đề mặc định).`);
+          setSkillNotice(`⚠️ No questions found for exam code [${cleanCode}] in QUESTIONS tab (displaying standard template).`);
           setTimeout(() => setSkillNotice(null), 8000);
         }
       }
     } catch (err) {
       console.warn('Could not fetch exam from GAS API, using fallback exam data:', err);
-      setSkillNotice(`⚠️ Không thể kết nối đến Google Apps Script. Đang sử dụng dữ liệu đề thi cục bộ.`);
+      setSkillNotice(`⚠️ Unable to connect to Google Apps Script. Using local exam data.`);
       setTimeout(() => setSkillNotice(null), 8000);
     } finally {
       setIsLoadingExam(false);
@@ -841,7 +869,7 @@ function doPost(e) {
           <div className="flex items-center space-x-2">
             <WifiOff className="w-4 h-4 text-amber-600 shrink-0 animate-pulse" />
             <span>
-              <strong>Cơ chế Offline-Retry:</strong> Kết nối mạng chập chờn. Hệ thống đang tự động xếp hàng bài nộp và sẽ fetch gửi lại ngay khi khôi phục mạng!
+              <strong>Offline-Retry Mode:</strong> Unstable network detected. The system has safely queued your submission and will automatically resubmit once reconnected!
             </span>
           </div>
           <button
@@ -849,7 +877,7 @@ function doPost(e) {
             className="px-2.5 py-1 bg-amber-600 text-white font-bold rounded-xl hover:bg-amber-700 transition flex items-center gap-1 shrink-0 cursor-pointer"
           >
             <RefreshCw className="w-3 h-3" />
-            Retry Ngay
+            Retry Now
           </button>
         </div>
       )}
@@ -864,6 +892,20 @@ function doPost(e) {
               <LoginInstructions 
                 onLogin={handleLogin} 
                 onSwitchToAdmin={() => setActiveView('admin')}
+              />
+            ) : isCustomPracticeSession ? (
+              <PracticeDashboard
+                initialDeckId={customPracticeDeckId}
+                candidateSbd={sbd}
+                onExitToLogin={() => {
+                  setIsLoggedIn(false);
+                  setIsCustomPracticeSession(false);
+                }}
+                onOpenDeckManager={() => {
+                  setActiveView('admin');
+                  setAdminTab('custom_practice');
+                }}
+                gasUrl={gasUrl}
               />
             ) : (
               <div className="space-y-6">
@@ -917,7 +959,7 @@ function doPost(e) {
                         ) : (
                           <Headphones className="w-4 h-4" />
                         )}
-                        <span>1. Listening ({examData.listening_questions.length} câu)</span>
+                        <span>1. Listening ({examData.listening_questions.length} Qs)</span>
                       </button>
 
                       <button
@@ -939,7 +981,7 @@ function doPost(e) {
                         ) : (
                           <BookOpen className="w-4 h-4" />
                         )}
-                        <span>2. Reading ({examData.reading_questions.length} câu)</span>
+                        <span>2. Reading ({examData.reading_questions.length} Qs)</span>
                       </button>
 
                       <button
@@ -961,7 +1003,7 @@ function doPost(e) {
                         ) : (
                           <FileText className="w-4 h-4" />
                         )}
-                        <span>3. Writing (Task 1 & Task 2)</span>
+                        <span>3. Writing (Task 1 &amp; Task 2)</span>
                       </button>
 
                     </div>
@@ -975,12 +1017,12 @@ function doPost(e) {
                       {isSubmitting ? (
                         <>
                           <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>Đang Nộp Bài...</span>
+                          <span>Submitting Exam...</span>
                         </>
                       ) : (
                         <>
                           <Send className="w-4 h-4" />
-                          <span>NỘP BÀI THI (SUBMIT)</span>
+                          <span>SUBMIT EXAM</span>
                         </>
                       )}
                     </button>
@@ -1005,11 +1047,11 @@ function doPost(e) {
                           <CheckCircle2 className="w-5 h-5 text-emerald-700" />
                         </div>
                         <div>
-                          <h4 className="text-sm font-extrabold text-[#3C2A63]">Nộp Bài Làm Phần Nghe (Listening)</h4>
+                          <h4 className="text-sm font-extrabold text-[#3C2A63]">Submit Listening Answers</h4>
                           <p className="text-xs text-[#7C68A5] font-medium">
                             {testMode === 'TEST'
-                              ? 'Trong chế độ TEST MODE: Hoàn thành phần Nghe để khóa đáp án và tiếp tục sang phần Đọc.'
-                              : 'Chuyển nhanh sang bài thi phần Đọc.'}
+                              ? 'In TEST MODE: Submitting Listening locks your answers and unlocks the Reading section.'
+                              : 'Proceed directly to Reading practice.'}
                           </p>
                         </div>
                       </div>
@@ -1017,7 +1059,7 @@ function doPost(e) {
                         onClick={handleCompleteListening}
                         className="px-6 py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-emerald-950/10 flex items-center gap-2 transition cursor-pointer shrink-0"
                       >
-                        <span>Nộp Phần Nghe & Sang Phần Đọc</span>
+                        <span>Submit Listening &amp; Proceed to Reading</span>
                         <ArrowRight className="w-4 h-4" />
                       </button>
                     </div>
@@ -1029,9 +1071,12 @@ function doPost(e) {
                     <ReadingModule
                       passageTitle={examData.passage_title}
                       passageText={examData.passage_text}
+                      passages={examData.passages}
                       questions={examData.reading_questions}
                       userAnswers={userAnswers}
                       onAnswerChange={handleAnswerChange}
+                      testMode={testMode}
+                      durationMins={examData.reading_duration_mins || 60}
                     />
 
                     {/* Section Progression Footer */}
@@ -1041,11 +1086,11 @@ function doPost(e) {
                           <CheckCircle2 className="w-5 h-5 text-[#6B51A5]" />
                         </div>
                         <div>
-                          <h4 className="text-sm font-extrabold text-[#3C2A63]">Nộp Bài Làm Phần Đọc (Reading)</h4>
+                          <h4 className="text-sm font-extrabold text-[#3C2A63]">Submit Reading Answers</h4>
                           <p className="text-xs text-[#7C68A5] font-medium">
                             {testMode === 'TEST'
-                              ? 'Trong chế độ TEST MODE: Hoàn thành phần Đọc để khóa đáp án và tiếp tục sang phần Viết.'
-                              : 'Chuyển nhanh sang bài thi phần Viết.'}
+                              ? 'In TEST MODE: Submitting Reading locks your answers and unlocks the Writing section.'
+                              : 'Proceed directly to Writing practice.'}
                           </p>
                         </div>
                       </div>
@@ -1053,7 +1098,7 @@ function doPost(e) {
                         onClick={handleCompleteReading}
                         className="px-6 py-3 bg-[#6B51A5] hover:bg-[#583F8F] text-white font-extrabold text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-purple-900/15 flex items-center gap-2 transition cursor-pointer shrink-0"
                       >
-                        <span>Nộp Phần Đọc & Sang Phần Viết</span>
+                        <span>Submit Reading &amp; Proceed to Writing</span>
                         <ArrowRight className="w-4 h-4" />
                       </button>
                     </div>
@@ -1079,9 +1124,9 @@ function doPost(e) {
                           <Send className="w-5 h-5 text-emerald-700" />
                         </div>
                         <div>
-                          <h4 className="text-sm font-extrabold text-[#3C2A63]">Nộp Bài Thi Tất Cả Kỹ Năng</h4>
+                          <h4 className="text-sm font-extrabold text-[#3C2A63]">Submit Entire Examination</h4>
                           <p className="text-xs text-[#7C68A5] font-medium">
-                            Nộp toàn bộ bài thi để tính điểm tự động và hoàn tất phiên khảo thí.
+                            Submit all answers across skills for automated score computation and official recording.
                           </p>
                         </div>
                       </div>
@@ -1093,12 +1138,12 @@ function doPost(e) {
                         {isSubmitting ? (
                           <>
                             <RefreshCw className="w-4 h-4 animate-spin" />
-                            <span>Đang Nộp Bài...</span>
+                            <span>Submitting Exam...</span>
                           </>
                         ) : (
                           <>
                             <Send className="w-4 h-4" />
-                            <span>NỘP TOÀN BỘ BÀI THI (SUBMIT)</span>
+                            <span>SUBMIT COMPLETE EXAM</span>
                           </>
                         )}
                       </button>
@@ -1150,7 +1195,7 @@ function doPost(e) {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-[#3C2A63]">Google Apps Script (GAS) Web App Endpoint</h3>
-                  <p className="text-xs text-[#7C68A5]">Kết nối Google Sheets backend thực tế</p>
+                  <p className="text-xs text-[#7C68A5]">Live Google Sheets backend endpoint integration</p>
                 </div>
               </div>
 
@@ -1172,6 +1217,7 @@ function doPost(e) {
             {adminTab === 'dashboard' && <MonitoringDashboard gasUrl={gasUrl} />}
             {adminTab === 'grading' && <ManualGrading gasUrl={gasUrl} />}
             {adminTab === 'upload' && <UploadModule onParsedData={(parsed) => setExamData(parsed)} />}
+            {adminTab === 'custom_practice' && <CustomPracticeManager />}
             
             {adminTab === 'preview' && (
               <PreviewModule 
@@ -1187,10 +1233,10 @@ function doPost(e) {
                   <div>
                     <h2 className="text-lg font-bold text-white flex items-center gap-2">
                       <Code className="w-5 h-5 text-indigo-400" />
-                      Mã Nguồn Google Apps Script (Backend REST API)
+                      Google Apps Script Source Code (Backend REST API)
                     </h2>
                     <p className="text-xs text-slate-400">
-                      Hướng dẫn thiết lập Google Sheets 4 tabs: EXAMS, QUESTIONS, SUBMISSIONS, CHEATLOGS
+                      Instructions to configure Google Sheets with 4 tabs: EXAMS, QUESTIONS, SUBMISSIONS, CHEATLOGS
                     </p>
                   </div>
 
@@ -1201,12 +1247,12 @@ function doPost(e) {
                     {copiedGasCode ? (
                       <>
                         <Check className="w-4 h-4 text-emerald-400" />
-                        <span>Đã Sao Chép Code!</span>
+                        <span>Code Copied!</span>
                       </>
                     ) : (
                       <>
                         <Copy className="w-4 h-4" />
-                        <span>Sao Chép Mã GAS (Code.gs)</span>
+                        <span>Copy GAS Script (Code.gs)</span>
                       </>
                     )}
                   </button>
@@ -1216,25 +1262,25 @@ function doPost(e) {
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
                   <div className="p-4 bg-slate-800/80 rounded-xl border border-slate-700/80 space-y-2">
                     <span className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-300 font-bold flex items-center justify-center border border-indigo-500/40">1</span>
-                    <h4 className="font-bold text-white">Tạo Google Sheets</h4>
+                    <h4 className="font-bold text-white">Create Google Sheet</h4>
                     <p className="text-slate-400 leading-relaxed">
-                      Tạo file tên <strong>IELTS_Exam_System</strong>. Đổi tên 4 sheet bên dưới thành: <strong className="text-indigo-300">EXAMS, QUESTIONS, SUBMISSIONS, CHEATLOGS</strong>.
+                      Create a spreadsheet named <strong>IELTS_Exam_System</strong>. Rename 4 tabs at the bottom to: <strong className="text-indigo-300">EXAMS, QUESTIONS, SUBMISSIONS, CHEATLOGS</strong>.
                     </p>
                   </div>
 
                   <div className="p-4 bg-slate-800/80 rounded-xl border border-slate-700/80 space-y-2">
                     <span className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-300 font-bold flex items-center justify-center border border-indigo-500/40">2</span>
-                    <h4 className="font-bold text-white">Mở Apps Script</h4>
+                    <h4 className="font-bold text-white">Open Apps Script</h4>
                     <p className="text-slate-400 leading-relaxed">
-                      Trên Google Sheets, chọn <strong>Extensions (Tiện ích mở rộng)</strong> &rarr; <strong>Apps Script</strong>.
+                      In your Google Sheet, click <strong>Extensions</strong> &rarr; <strong>Apps Script</strong>.
                     </p>
                   </div>
 
                   <div className="p-4 bg-slate-800/80 rounded-xl border border-slate-700/80 space-y-2">
                     <span className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-300 font-bold flex items-center justify-center border border-indigo-500/40">3</span>
-                    <h4 className="font-bold text-white">Dán Mã Backend</h4>
+                    <h4 className="font-bold text-white">Paste Backend Code</h4>
                     <p className="text-slate-400 leading-relaxed">
-                      Xóa code mặc định, dán toàn bộ đoạn mã bên dưới vào file <strong className="text-indigo-300">Code.gs</strong>.
+                      Clear default code and paste the script below into <strong className="text-indigo-300">Code.gs</strong>.
                     </p>
                   </div>
 
@@ -1242,34 +1288,34 @@ function doPost(e) {
                     <span className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-300 font-bold flex items-center justify-center border border-indigo-500/40">4</span>
                     <h4 className="font-bold text-white">Deploy Web App</h4>
                     <p className="text-slate-400 leading-relaxed">
-                      Bấm <strong>Deploy &rarr; New Deployment &rarr; Web App</strong>. Set Execute as: <strong>Me</strong>, Who has access: <strong>Anyone</strong>. Copy Web App URL dán vào hệ thống.
+                      Click <strong>Deploy &rarr; New Deployment &rarr; Web App</strong>. Set Execute as: <strong>Me</strong>, Who has access: <strong>Anyone</strong>. Copy the Web App URL into the system.
                     </p>
                   </div>
                 </div>
 
                 {/* Google Sheet Schema Guide */}
                 <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-5 space-y-4 text-xs">
-                  <h4 className="text-sm font-bold text-amber-400">📋 Cấu Trúc Các Cột Trong Google Sheets (Bắt Buộc):</h4>
+                  <h4 className="text-sm font-bold text-amber-400">📋 Google Sheets Column Schema (Required):</h4>
                   
                   <div className="space-y-3">
                     <div>
-                      <span className="font-bold text-indigo-300">1. Tab "EXAMS" (Danh mục đề thi):</span>
+                      <span className="font-bold text-indigo-300">1. Tab "EXAMS" (Exam Catalog):</span>
                       <p className="text-[11px] text-slate-400 font-mono mt-1">
-                        Cột A: exam_code | Cột B: title | Cột C: duration | Cột D: mode (TEST / PRACTICE) | Cột E: audio_url | Cột F: passage_title | Cột G: passage_text | Cột H: writing_task1_prompt | Cột I: writing_task2_prompt
+                        Col A: exam_code | Col B: title | Col C: duration | Col D: mode (TEST / PRACTICE) | Col E: audio_url | Col F: passage_title | Col G: passage_text | Col H: writing_task1_prompt | Col I: writing_task2_prompt
                       </p>
                     </div>
 
                     <div>
-                      <span className="font-bold text-emerald-300">2. Tab "QUESTIONS" (Câu hỏi chi tiết của từng đề):</span>
+                      <span className="font-bold text-emerald-300">2. Tab "QUESTIONS" (Questions List):</span>
                       <p className="text-[11px] text-slate-400 font-mono mt-1">
-                        Cột A: exam_code | Cột B: question_id | Cột C: section (listening / reading) | Cột D: question_text | Cột E: question_type (multiple_choice / fill_in_blank / true_false_not_given) | Cột F: options (A. ...|B. ...|C. ...|D. ...) | Cột G: correct_answer | Cột H: max_score (1) | Cột I: passage_title | Cột J: passage_text | Cột K: audio_url
+                        Col A: exam_code | Col B: question_id | Col C: section (listening / reading) | Col D: question_text | Col E: question_type (multiple_choice / fill_in_blank / true_false_not_given) | Col F: options (A. ...|B. ...|C. ...|D. ...) | Col G: correct_answer | Col H: max_score (1) | Col I: passage_title | Col J: passage_text | Col K: audio_url
                       </p>
                     </div>
 
                     <div>
-                      <span className="font-bold text-purple-300">3. Tab "SUBMISSIONS" & Tab "CHEATLOGS":</span>
+                      <span className="font-bold text-purple-300">3. Tab "SUBMISSIONS" &amp; Tab "CHEATLOGS":</span>
                       <p className="text-[11px] text-slate-400">
-                        Hệ thống sẽ tự động ghi điểm, bài viết Writing và lịch sử cảnh báo gian lận vào 2 sheet này khi thí sinh nộp bài.
+                        System will automatically record scores, writing essays, and proctoring violation logs when students submit.
                       </p>
                     </div>
                   </div>
