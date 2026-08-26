@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { PracticeCard, SentenceGrammarAnalysis } from '../../../types/practice';
+import { PracticeCard } from '../../../types/practice';
 import { 
-  Sparkles, 
   Volume2, 
   Check, 
   X, 
@@ -18,8 +17,6 @@ import {
   ChevronRight,
   BookOpen
 } from 'lucide-react';
-import { practiceService } from '../../../services/practiceService';
-import { GeminiAnalysisModal } from './GeminiAnalysisModal';
 
 interface PracticeCardViewProps {
   card: PracticeCard;
@@ -47,11 +44,6 @@ export const PracticeCardView: React.FC<PracticeCardViewProps> = ({
   const [isCorrect, setIsCorrect] = useState(false);
   const [showHint, setShowHint] = useState(false);
   const [showExplanation, setShowExplanation] = useState(false);
-  
-  // Gemini Modal State
-  const [isGeminiModalOpen, setIsGeminiModalOpen] = useState(false);
-  const [geminiAnalysis, setGeminiAnalysis] = useState<SentenceGrammarAnalysis | null>(null);
-  const [isGeminiLoading, setIsGeminiLoading] = useState(false);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -62,7 +54,6 @@ export const PracticeCardView: React.FC<PracticeCardViewProps> = ({
     setIsCorrect(false);
     setShowHint(false);
     setShowExplanation(false);
-    setGeminiAnalysis(null);
 
     // Auto-focus input on card transition
     setTimeout(() => {
@@ -80,7 +71,7 @@ export const PracticeCardView: React.FC<PracticeCardViewProps> = ({
     }
   };
 
-  const handleCheckAnswer = (e?: React.FormEvent) => {
+  const handleCheckAnswer = (e?: React.FormEvent, overrideInput?: string) => {
     if (e) e.preventDefault();
     if (isSubmitted) {
       // If already submitted, next card
@@ -88,7 +79,7 @@ export const PracticeCardView: React.FC<PracticeCardViewProps> = ({
       return;
     }
 
-    const trimmed = userInput.trim().toLowerCase();
+    const trimmed = (overrideInput !== undefined ? overrideInput : userInput).trim().toLowerCase();
     if (!trimmed) return;
 
     // Check against target & accepted answers
@@ -107,24 +98,11 @@ export const PracticeCardView: React.FC<PracticeCardViewProps> = ({
     handleSpeak(completeSentence);
   };
 
-  const handleAskGemini = async () => {
-    setIsGeminiModalOpen(true);
-    if (!geminiAnalysis) {
-      setIsGeminiLoading(true);
-      try {
-        const result = await practiceService.analyzeSentence(
-          card.sentence_en.replace(/_+/g, card.cloze_target),
-          card.target_word || card.cloze_target,
-          undefined,
-          card.explanation
-        );
-        setGeminiAnalysis(result);
-      } catch (e) {
-        console.error('Error fetching Gemini analysis:', e);
-      } finally {
-        setIsGeminiLoading(false);
-      }
-    }
+  const handleSelectOption = (opt: string) => {
+    if (isSubmitted) return;
+    setUserInput(opt);
+    // Instant submission and immediate explanation box on option click
+    handleCheckAnswer(undefined, opt);
   };
 
   // Render sentence with cloze gap
@@ -202,15 +180,6 @@ export const PracticeCardView: React.FC<PracticeCardViewProps> = ({
               </span>
             )}
           </div>
-
-          {/* Ask AI Gemini Top Action */}
-          <button
-            onClick={handleAskGemini}
-            className="px-3.5 py-1.5 bg-gradient-to-r from-indigo-600/30 to-purple-600/30 hover:from-indigo-600/50 hover:to-purple-600/50 text-indigo-200 hover:text-white border border-indigo-500/40 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition shadow-sm group"
-          >
-            <Sparkles className="w-4 h-4 text-indigo-400 group-hover:rotate-12 transition-transform" />
-            <span>Hỏi AI Gemini</span>
-          </button>
         </div>
 
         {/* Card Body */}
@@ -260,30 +229,47 @@ export const PracticeCardView: React.FC<PracticeCardViewProps> = ({
               {renderSentenceWithInput()}
             </div>
 
-            {/* Multiple Choice Options (if available and beginner mode) */}
-            {card.options && card.options.length > 0 && !isSubmitted && (
+            {/* Multiple Choice Options */}
+            {card.options && card.options.length > 0 && (
               <div className="space-y-2">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  Gợi ý lựa chọn đáp án:
+                  {isSubmitted ? 'Các lựa chọn đáp án:' : 'Chọn đáp án nhanh:'}
                 </span>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-                  {card.options.map((opt, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => {
-                        setUserInput(opt);
-                        inputRef.current?.focus();
-                      }}
-                      className={`p-2.5 text-xs font-semibold rounded-xl border text-center transition ${
-                        userInput.toLowerCase() === opt.toLowerCase()
-                          ? 'bg-indigo-600 text-white border-indigo-500 shadow-md shadow-indigo-500/20'
-                          : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-800 hover:border-slate-600'
-                      }`}
-                    >
-                      {opt}
-                    </button>
-                  ))}
+                  {card.options.map((opt, idx) => {
+                    const optLower = opt.toLowerCase().trim();
+                    const isTarget = optLower === card.cloze_target.toLowerCase().trim() || 
+                      (card.accepted_answers || []).some(a => a.toLowerCase().trim() === optLower);
+                    const isUserChoice = userInput.toLowerCase().trim() === optLower;
+
+                    let btnStyle = 'bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-800 hover:border-slate-600 hover:text-white cursor-pointer';
+
+                    if (isSubmitted) {
+                      if (isTarget) {
+                        btnStyle = 'bg-emerald-900/60 border-emerald-500 text-emerald-300 font-bold shadow-sm shadow-emerald-500/20';
+                      } else if (isUserChoice && !isCorrect) {
+                        btnStyle = 'bg-rose-950/60 border-rose-500 text-rose-300 line-through opacity-80';
+                      } else {
+                        btnStyle = 'bg-slate-900/50 border-slate-800 text-slate-500 opacity-60';
+                      }
+                    } else if (isUserChoice) {
+                      btnStyle = 'bg-indigo-600 text-white border-indigo-500 shadow-md shadow-indigo-500/20';
+                    }
+
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleSelectOption(opt)}
+                        disabled={isSubmitted}
+                        className={`p-3 text-xs font-semibold rounded-xl border text-center transition flex items-center justify-center gap-1.5 ${btnStyle}`}
+                      >
+                        {isSubmitted && isTarget && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                        {isSubmitted && isUserChoice && !isCorrect && <X className="w-3.5 h-3.5 text-rose-400" />}
+                        <span>{opt}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -343,14 +329,6 @@ export const PracticeCardView: React.FC<PracticeCardViewProps> = ({
                     </>
                   )}
                 </div>
-
-                <button
-                  onClick={handleAskGemini}
-                  className="text-xs font-bold text-indigo-300 hover:text-indigo-200 flex items-center gap-1 underline underline-offset-4"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Phân tích chi tiết với AI</span>
-                </button>
               </div>
 
               {card.explanation && (
@@ -377,16 +355,6 @@ export const PracticeCardView: React.FC<PracticeCardViewProps> = ({
           )}
         </div>
       </div>
-
-      {/* Gemini Deep Analysis Modal */}
-      <GeminiAnalysisModal
-        isOpen={isGeminiModalOpen}
-        onClose={() => setIsGeminiModalOpen(false)}
-        sentence={card.sentence_en.replace(/_+/g, card.cloze_target)}
-        targetWord={card.target_word || card.cloze_target}
-        initialAnalysis={geminiAnalysis}
-        isLoading={isGeminiLoading}
-      />
     </div>
   );
 };

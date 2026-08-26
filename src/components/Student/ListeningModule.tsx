@@ -9,12 +9,10 @@ import {
   Headphones, 
   CheckCircle2, 
   AlertTriangle,
-  Sparkles,
   ChevronRight,
   Info
 } from 'lucide-react';
 import { CountdownTimer } from './CountdownTimer';
-import { GeminiAnalysisModal } from './Practice/GeminiAnalysisModal';
 
 interface ListeningModuleProps {
   audioUrl?: string;
@@ -40,17 +38,6 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [activePart, setActivePart] = useState<1 | 2 | 3 | 4>(1);
-
-  // Gemini Analysis State
-  const [isGeminiOpen, setIsGeminiOpen] = useState(false);
-  const [selectedGeminiSentence, setSelectedGeminiSentence] = useState('');
-  const [selectedGeminiContext, setSelectedGeminiContext] = useState<string | undefined>(undefined);
-
-  const handleAskGemini = (sentence: string, context?: string) => {
-    setSelectedGeminiSentence(sentence);
-    setSelectedGeminiContext(context);
-    setIsGeminiOpen(true);
-  };
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -334,16 +321,6 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
                     </div>
 
                     <div className="flex items-center space-x-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => handleAskGemini(q.question_text, q.instruction)}
-                        className="px-2.5 py-1 bg-purple-100 hover:bg-purple-200 text-[#503A7A] border border-purple-200 rounded-xl text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
-                        title="Phân tích cấu trúc câu với AI Gemini"
-                      >
-                        <Sparkles className="w-3 h-3 text-[#6B51A5]" />
-                        <span>Hỏi AI Gemini</span>
-                      </button>
-
                       {isFilled && (
                         <span className="flex items-center space-x-1 text-emerald-800 bg-emerald-100 border border-emerald-200 text-xs font-bold px-2.5 py-0.5 rounded-xl">
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
@@ -437,13 +414,6 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
 
       </div>
 
-      {/* Gemini Deep Sentence & Grammar Analysis Modal */}
-      <GeminiAnalysisModal
-        isOpen={isGeminiOpen}
-        onClose={() => setIsGeminiOpen(false)}
-        sentence={selectedGeminiSentence}
-        questionContext={selectedGeminiContext}
-      />
     </div>
   );
 };

@@ -11,11 +11,9 @@ import {
   FileText, 
   CheckCircle2, 
   AlertTriangle,
-  ChevronRight,
-  Sparkles
+  ChevronRight
 } from 'lucide-react';
 import { CountdownTimer } from './CountdownTimer';
-import { GeminiAnalysisModal } from './Practice/GeminiAnalysisModal';
 
 interface ReadingModuleProps {
   passageTitle?: string;
@@ -45,45 +43,119 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
   const [activePassageIndex, setActivePassageIndex] = useState<1 | 2 | 3>(1);
   const passageContainerRef = useRef<HTMLDivElement | null>(null);
 
-  // Gemini Sentence Analysis State
-  const [isGeminiOpen, setIsGeminiOpen] = useState(false);
-  const [selectedGeminiSentence, setSelectedGeminiSentence] = useState('');
-  const [selectedGeminiTarget, setSelectedGeminiTarget] = useState<string | undefined>(undefined);
-  const [selectedGeminiContext, setSelectedGeminiContext] = useState<string | undefined>(undefined);
+  // Multi-Passage Parser:
+  // Automatically detects if passages is an array OR if passageText contains multiple delimited parts
+  const parsedPassages = React.useMemo<ReadingPassageItem[]>(() => {
+    if (passages && Array.isArray(passages) && passages.length > 0) {
+      return passages;
+    }
 
-  const handleAskGemini = (sentence: string, target?: string, context?: string) => {
-    setSelectedGeminiSentence(sentence);
-    setSelectedGeminiTarget(target);
-    setSelectedGeminiContext(context);
-    setIsGeminiOpen(true);
-  };
+    if (!passageText || !passageText.trim()) {
+      return [{
+        passage_index: 1,
+        title: passageTitle || 'Reading Passage 1',
+        text: 'Chưa có nội dung bài đọc cho phần này.'
+      }];
+    }
 
-  // Group questions into standard IELTS Passages:
-  // Passage 1: Q1 - Q13
-  // Passage 2: Q14 - Q26
-  // Passage 3: Q27 - Q40
+    // Check if passageText contains multiple parts delimited by common IELTS markers:
+    // e.g. "PASSAGE 1", "PASSAGE 2", "PASSAGE 3", "PART 1", "SECTION 1", "--- Passage 2 ---"
+    const splitRegex = /(?:^|\n\s*\n+)(?=(?:(?:READING\s+)?PASSAGE\s+[1-3]|PART\s+[1-3]|SECTION\s+[1-3]|---\s*(?:Reading\s+)?Passage\s+[1-3]\s*---))/i;
+    
+    if (splitRegex.test(passageText)) {
+      const parts = passageText.split(splitRegex);
+      if (parts.length > 1) {
+        const extracted: ReadingPassageItem[] = [];
+        parts.forEach((chunk, index) => {
+          const trimmed = chunk.trim();
+          if (!trimmed) return;
+          
+          const matchIdx = trimmed.match(/(?:(?:READING\s+)?PASSAGE|PART|SECTION)\s+([1-3])/i);
+          const pIdx = matchIdx ? (parseInt(matchIdx[1], 10) as 1 | 2 | 3) : ((index + 1) as 1 | 2 | 3);
+          
+          const lines = trimmed.split('\n').filter(l => l.trim().length > 0);
+          const firstLine = lines[0] || '';
+          const title = firstLine.length < 90 ? firstLine : `Reading Passage ${pIdx}`;
+          
+          extracted.push({
+            passage_index: pIdx,
+            title: title,
+            text: trimmed
+          });
+        });
+
+        if (extracted.length > 0) {
+          // Sort by passage index
+          return extracted.sort((a, b) => a.passage_index - b.passage_index);
+        }
+      }
+    }
+
+    // Single passage default
+    return [{
+      passage_index: 1,
+      title: passageTitle || 'Reading Passage 1',
+      text: passageText
+    }];
+  }, [passages, passageText, passageTitle]);
+
+  // Group questions into IELTS Passages:
+  // 1. Explicit q.passage_index (1, 2, 3)
+  // 2. If single short passage and <= 14 questions, map all to 1
+  // 3. Otherwise distribute Q1-13 -> 1, Q14-26 -> 2, Q27-40 -> 3
   const getPassageForQuestion = (q: Question, idx: number): 1 | 2 | 3 => {
-    if (q.passage_index && [1, 2, 3].includes(q.passage_index)) return q.passage_index as 1 | 2 | 3;
+    if (q.passage_index && [1, 2, 3].includes(q.passage_index)) {
+      return q.passage_index as 1 | 2 | 3;
+    }
+    if (parsedPassages.length === 1 && questions.length <= 14) {
+      return 1;
+    }
     if (idx < 13) return 1;
     if (idx < 26) return 2;
     return 3;
   };
 
-  const questionsWithPassage = questions.map((q, idx) => ({
-    ...q,
-    computedPassage: getPassageForQuestion(q, idx),
-    originalIndex: idx + 1
-  }));
+  const questionsWithPassage = React.useMemo(() => {
+    return questions.map((q, idx) => ({
+      ...q,
+      computedPassage: getPassageForQuestion(q, idx),
+      originalIndex: idx + 1
+    }));
+  }, [questions, parsedPassages]);
 
-  const displayedQuestions = questionsWithPassage.filter(q => q.computedPassage === activePassageIndex);
+  // Available passage tabs to show
+  const availablePassageIndices = React.useMemo<(1 | 2 | 3)[]>(() => {
+    const indicesFromPassages = parsedPassages.map(p => p.passage_index);
+    const indicesFromQuestions = questionsWithPassage.map(q => q.computedPassage);
+    const unique = Array.from(new Set([...indicesFromPassages, ...indicesFromQuestions])).sort((a, b) => a - b) as (1 | 2 | 3)[];
+    
+    // If questions span up to 40 or >= 14, ensure all 3 parts are selectable if applicable
+    if (questions.length > 14 && unique.length < 3) {
+      return [1, 2, 3];
+    }
+
+    return unique.length > 0 ? unique : [1];
+  }, [parsedPassages, questionsWithPassage, questions.length]);
+
+  // Safe active passage fallback
+  const safeActivePassage = availablePassageIndices.includes(activePassageIndex)
+    ? activePassageIndex
+    : availablePassageIndices[0] || 1;
+
+  const displayedQuestions = questionsWithPassage.filter(q => q.computedPassage === safeActivePassage);
 
   // Determine current active passage text and title
-  const currentPassageData = passages && passages.length > 0
-    ? (passages.find(p => p.passage_index === activePassageIndex) || passages[0])
-    : {
-        title: passageTitle || `Reading Passage ${activePassageIndex}`,
-        text: passageText
-      };
+  const currentPassageData = React.useMemo(() => {
+    const found = parsedPassages.find(p => p.passage_index === safeActivePassage);
+    if (found) return found;
+
+    // Fallback if passage 2 or 3 doesn't have custom text
+    return {
+      passage_index: safeActivePassage,
+      title: passageTitle ? `${passageTitle} (Part ${safeActivePassage})` : `Reading Passage ${safeActivePassage}`,
+      text: parsedPassages[0]?.text || passageText
+    };
+  }, [parsedPassages, safeActivePassage, passageTitle, passageText]);
 
   // Handle Resizer Drag
   const handleMouseDown = () => {
@@ -183,12 +255,12 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
       {/* PASSAGE TABS & QUESTION MATRIX BAR */}
       <div className="bg-white border border-purple-100/80 rounded-3xl p-4 shadow-xl shadow-purple-950/5 flex flex-wrap items-center justify-between gap-3">
         
-        {/* 3 Passage Switcher Buttons */}
+        {/* Passage Switcher Buttons */}
         <div className="flex flex-wrap items-center gap-2">
-          {[1, 2, 3].map((pIdx) => {
+          {availablePassageIndices.map((pIdx) => {
             const pQuestions = questionsWithPassage.filter(q => q.computedPassage === pIdx);
             const answeredCount = pQuestions.filter(q => !!userAnswers[q.question_id]).length;
-            const isActive = activePassageIndex === pIdx;
+            const isActive = safeActivePassage === pIdx;
 
             return (
               <button
@@ -292,7 +364,7 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
           >
             <div className="mb-4 pb-3 border-b border-purple-200">
               <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-purple-100 text-[#503A7A] uppercase tracking-wider">
-                Passage {activePassageIndex}
+                Passage {safeActivePassage}
               </span>
               <h2 className="text-xl font-extrabold text-[#3C2A63] font-sans mt-2">
                 {currentPassageData.title}
@@ -396,16 +468,6 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
                       </div>
 
                       <div className="flex items-center space-x-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleAskGemini(q.question_text, undefined, currentPassageData.text?.slice(0, 300))}
-                          className="px-2.5 py-1 bg-purple-100 hover:bg-purple-200 text-[#503A7A] border border-purple-200 rounded-xl text-[11px] font-bold flex items-center gap-1 transition"
-                          title="Phân tích cấu trúc câu với AI Gemini"
-                        >
-                          <Sparkles className="w-3 h-3 text-[#6B51A5]" />
-                          <span>Hỏi AI Gemini</span>
-                        </button>
-
                         <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-purple-100 text-[#503A7A] font-extrabold uppercase border border-purple-200">
                           {q.question_type.replace(/_/g, ' ')}
                         </span>
@@ -652,15 +714,6 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
         </div>
 
       </div>
-
-      {/* Gemini Deep Sentence & Grammar Analysis Modal */}
-      <GeminiAnalysisModal
-        isOpen={isGeminiOpen}
-        onClose={() => setIsGeminiOpen(false)}
-        sentence={selectedGeminiSentence}
-        targetWord={selectedGeminiTarget}
-        questionContext={selectedGeminiContext}
-      />
 
     </div>
   );

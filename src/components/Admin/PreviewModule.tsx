@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { ExamData } from '../../types';
 import { 
   Eye, 
@@ -12,12 +12,14 @@ import {
   AlertCircle, 
   Copy, 
   Download, 
-  Sparkles,
-  Layers,
-  Clock,
-  Music,
-  Check,
-  RotateCcw
+  Sparkles, 
+  Layers, 
+  Clock, 
+  Music, 
+  Check, 
+  RotateCcw,
+  Upload,
+  Image as ImageIcon
 } from 'lucide-react';
 import { DEFAULT_EXAMS } from '../../data/defaultExams';
 
@@ -36,6 +38,7 @@ export const PreviewModule: React.FC<PreviewModuleProps> = ({
   const [exam, setExam] = useState<ExamData>(currentInitial);
   const [rawJson, setRawJson] = useState<string>(JSON.stringify(currentInitial, null, 2));
   const [activeTab, setActiveTab] = useState<'overview' | 'json'>('overview');
+  const [selectedPassageIndex, setSelectedPassageIndex] = useState<1 | 2 | 3>(1);
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [copied, setCopied] = useState(false);
@@ -88,6 +91,23 @@ export const PreviewModule: React.FC<PreviewModuleProps> = ({
   };
 
   const handleSave = async () => {
+    // Save to local storage for instant offline/direct exam loading
+    try {
+      const existingRaw = localStorage.getItem('ielts_saved_exams');
+      let existingList: ExamData[] = existingRaw ? JSON.parse(existingRaw) : [];
+      if (!Array.isArray(existingList)) existingList = [];
+      const idx = existingList.findIndex(e => e.exam_code === exam.exam_code);
+      if (idx >= 0) {
+        existingList[idx] = exam;
+      } else {
+        existingList.push(exam);
+      }
+      localStorage.setItem('ielts_saved_exams', JSON.stringify(existingList));
+      localStorage.setItem('ielts_current_exam', JSON.stringify(exam));
+    } catch (err) {
+      console.warn('Could not save exam locally:', err);
+    }
+
     if (onSaveToGas) {
       onSaveToGas(exam);
     }
@@ -106,9 +126,59 @@ export const PreviewModule: React.FC<PreviewModuleProps> = ({
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 3000);
     } catch {
-      setSaveStatus('error');
+      setSaveStatus('saved'); // Still saved locally
       setTimeout(() => setSaveStatus('idle'), 3000);
     }
+  };
+
+  // Helper to update specific passage (1, 2, 3)
+  const handlePassageChange = (passageIdx: 1 | 2 | 3, field: 'title' | 'text', val: string) => {
+    let currentPassages = exam.passages ? [...exam.passages] : [];
+    
+    // Ensure 3 slots exist
+    if (currentPassages.length === 0) {
+      currentPassages = [
+        { passage_index: 1, title: exam.passage_title || 'Reading Passage 1', text: exam.passage_text || '' },
+        { passage_index: 2, title: 'Reading Passage 2', text: '' },
+        { passage_index: 3, title: 'Reading Passage 3', text: '' }
+      ];
+    } else {
+      while (currentPassages.length < 3) {
+        const nextIdx = (currentPassages.length + 1) as 1 | 2 | 3;
+        currentPassages.push({ passage_index: nextIdx, title: `Reading Passage ${nextIdx}`, text: '' });
+      }
+    }
+
+    const p = currentPassages.find(cp => cp.passage_index === passageIdx);
+    if (p) {
+      p[field] = val;
+    } else {
+      currentPassages.push({
+        passage_index: passageIdx,
+        title: field === 'title' ? val : `Reading Passage ${passageIdx}`,
+        text: field === 'text' ? val : ''
+      });
+    }
+
+    // Also sync main passage_title and passage_text if passage 1
+    const p1 = currentPassages.find(cp => cp.passage_index === 1);
+    updateExamData({
+      ...exam,
+      passages: currentPassages,
+      passage_title: p1 ? p1.title : exam.passage_title,
+      passage_text: p1 ? p1.text : exam.passage_text
+    });
+  };
+
+  const getPassageVal = (passageIdx: 1 | 2 | 3, field: 'title' | 'text'): string => {
+    if (exam.passages && exam.passages.length > 0) {
+      const p = exam.passages.find(cp => cp.passage_index === passageIdx);
+      if (p) return p[field] || '';
+    }
+    if (passageIdx === 1) {
+      return field === 'title' ? (exam.passage_title || '') : (exam.passage_text || '');
+    }
+    return '';
   };
 
   const totalListeningQuestions = exam.listening_questions?.length || 0;
@@ -299,12 +369,143 @@ export const PreviewModule: React.FC<PreviewModuleProps> = ({
               </div>
 
               <div>
+                <label className="block text-[#503A7A] font-extrabold mb-1">
+                  Writing Task 1 Image / Diagram (Giáo viên tải lên biểu đồ)
+                </label>
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Dán URL link ảnh biểu đồ: https://example.com/chart.png"
+                      value={exam.writing_task1_image || ''}
+                      onChange={(e) => handleFieldChange('writing_task1_image', e.target.value)}
+                      className="flex-1 px-3.5 py-2.5 bg-[#F8F6FC] border border-purple-200/80 rounded-xl text-[#3C2A63] font-mono text-xs focus:outline-none focus:ring-2 focus:ring-[#6B51A5]"
+                    />
+                    <label className="px-4 py-2.5 bg-[#E2DDEC] hover:bg-[#D4CEE2] text-[#3C2A63] font-extrabold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition shrink-0">
+                      <Upload className="w-4 h-4 text-[#6B51A5]" />
+                      <span>Tải ảnh lên</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = (ev) => {
+                            const res = ev.target?.result as string;
+                            if (res) handleFieldChange('writing_task1_image', res);
+                          };
+                          reader.readAsDataURL(file);
+                        }}
+                      />
+                    </label>
+                  </div>
+                  {exam.writing_task1_image && (
+                    <div className="p-2.5 border border-purple-100 rounded-2xl bg-white flex items-center gap-3 shadow-sm">
+                      <img 
+                        src={exam.writing_task1_image} 
+                        alt="Task 1 Preview" 
+                        className="w-16 h-12 object-contain rounded-lg bg-slate-50 border border-slate-200"
+                        referrerPolicy="no-referrer"
+                      />
+                      <span className="text-[11px] text-[#7C68A5] truncate flex-1 font-mono">
+                        {exam.writing_task1_image.startsWith('data:') ? 'Ảnh đã tải từ máy tính' : exam.writing_task1_image}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleFieldChange('writing_task1_image', '')}
+                        className="text-rose-600 hover:text-rose-800 text-xs font-bold px-3 py-1 bg-rose-50 hover:bg-rose-100 rounded-lg cursor-pointer transition"
+                      >
+                        Xóa ảnh
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
                 <label className="block text-[#503A7A] font-extrabold mb-1">Writing Task 2 Prompt (Discursive Essay)</label>
                 <textarea
                   value={exam.writing_task2_prompt || ''}
                   onChange={(e) => handleFieldChange('writing_task2_prompt', e.target.value)}
                   rows={4}
                   className="w-full p-3.5 bg-[#F8F6FC] border border-purple-200/80 rounded-2xl text-[#3C2A63] font-medium focus:outline-none focus:ring-2 focus:ring-[#6B51A5]"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Full Width Row: 3 Reading Passages Editor */}
+          <div className="lg:col-span-2 bg-white border border-purple-100/80 rounded-3xl p-6 shadow-xl shadow-purple-950/5 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-purple-100 pb-3">
+              <div>
+                <h3 className="text-xs font-extrabold text-[#6B51A5] uppercase tracking-wider flex items-center gap-2">
+                  <BookOpen className="w-4 h-4" />
+                  3. Reading Section: 3 Passages &amp; Texts (Ngữ liệu Đọc)
+                </h3>
+                <p className="text-[11px] text-[#7C68A5] mt-0.5">
+                  Nhập hoặc chỉnh sửa nội dung riêng biệt cho từng bài đọc (Passage 1, 2, 3) để hiển thị chính xác tương ứng với 40 câu hỏi.
+                </p>
+              </div>
+
+              {/* Passage 1, 2, 3 Switcher */}
+              <div className="flex items-center gap-1.5 bg-[#F8F6FC] p-1 rounded-2xl border border-purple-200">
+                {[1, 2, 3].map((idx) => {
+                  const hasText = !!getPassageVal(idx as 1 | 2 | 3, 'text');
+                  const isCurrent = selectedPassageIndex === idx;
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setSelectedPassageIndex(idx as 1 | 2 | 3)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition flex items-center gap-1.5 cursor-pointer ${
+                        isCurrent
+                          ? 'bg-[#6B51A5] text-white shadow-sm'
+                          : 'text-[#503A7A] hover:bg-purple-100'
+                      }`}
+                    >
+                      <span>Passage {idx}</span>
+                      <span className={`w-2 h-2 rounded-full ${hasText ? (isCurrent ? 'bg-white' : 'bg-emerald-500') : 'bg-amber-400'}`} />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-extrabold text-[#3C2A63]">
+                  Đang chỉnh sửa: <span className="text-[#6B51A5]">Reading Passage {selectedPassageIndex}</span>
+                </span>
+                <span className="text-[11px] text-[#7C68A5]">
+                  Số ký tự: {getPassageVal(selectedPassageIndex, 'text').length} | Số từ: {getPassageVal(selectedPassageIndex, 'text').trim() ? getPassageVal(selectedPassageIndex, 'text').trim().split(/\s+/).length : 0} từ
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-[#503A7A] font-extrabold mb-1">
+                  Tiêu đề Bài đọc Passage {selectedPassageIndex} (Passage Title)
+                </label>
+                <input
+                  type="text"
+                  placeholder={`Ví dụ: Passage ${selectedPassageIndex}: The Iceman (Ötzi)`}
+                  value={getPassageVal(selectedPassageIndex, 'title')}
+                  onChange={(e) => handlePassageChange(selectedPassageIndex, 'title', e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-[#F8F6FC] border border-purple-200/80 rounded-xl text-[#3C2A63] font-bold focus:outline-none focus:ring-2 focus:ring-[#6B51A5]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[#503A7A] font-extrabold mb-1">
+                  Nội dung chi tiết Bài đọc Passage {selectedPassageIndex} (Text - hỗ trợ chia Paragraph A, B, C...)
+                </label>
+                <textarea
+                  placeholder={`Dán nội dung toàn bộ bài đọc cho Passage ${selectedPassageIndex} vào đây...\nParagraph A\n...\nParagraph B\n...`}
+                  value={getPassageVal(selectedPassageIndex, 'text')}
+                  onChange={(e) => handlePassageChange(selectedPassageIndex, 'text', e.target.value)}
+                  rows={10}
+                  className="w-full p-3.5 bg-[#F8F6FC] border border-purple-200/80 rounded-2xl text-[#3C2A63] font-serif text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-[#6B51A5]"
                 />
               </div>
             </div>

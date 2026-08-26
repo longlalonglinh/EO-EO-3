@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Clock, AlertTriangle, Play, Pause, BellRing, Hourglass } from 'lucide-react';
+import { Clock, AlertTriangle, BellRing, Hourglass } from 'lucide-react';
 
 interface CountdownTimerProps {
   initialMinutes: number;
@@ -19,7 +19,6 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
   compact = false
 }) => {
   const [secondsLeft, setSecondsLeft] = useState<number>(Math.max(1, initialMinutes * 60));
-  const [isPaused, setIsPaused] = useState<boolean>(false);
   const [hasWarned5Min, setHasWarned5Min] = useState<boolean>(false);
   const hasExpiredRef = useRef(false);
 
@@ -31,8 +30,6 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
   }, [initialMinutes]);
 
   useEffect(() => {
-    if (isPaused) return;
-
     const interval = setInterval(() => {
       setSecondsLeft((prev) => {
         if (prev <= 1) {
@@ -69,7 +66,7 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isPaused, onTimeExpire, hasWarned5Min]);
+  }, [onTimeExpire, hasWarned5Min]);
 
   const hours = Math.floor(secondsLeft / 3600);
   const minutes = Math.floor((secondsLeft % 3600) / 60);
@@ -145,28 +142,11 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
               {formattedTime}
             </span>
             <span className="text-[11px] text-[#7C68A5] font-medium">
-              {isCritical ? '⚠️ Time almost up!' : isWarning ? 'Under 10 minutes left' : 'Total allocated time'}
+              {isCritical ? '⚠️ Time almost up!' : isWarning ? 'Under 10 minutes left' : 'Continuous timer active'}
             </span>
           </div>
         </div>
       </div>
-
-      {/* Right Controls in Practice Mode */}
-      {testMode === 'PRACTICE' && (
-        <button
-          type="button"
-          onClick={() => setIsPaused(!isPaused)}
-          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-            isPaused
-              ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-              : 'bg-[#E2DDEC] hover:bg-[#D9D3E4] text-[#3C2A63]'
-          }`}
-          title={isPaused ? 'Resume timer' : 'Pause timer'}
-        >
-          {isPaused ? <Play className="w-3.5 h-3.5 fill-current" /> : <Pause className="w-3.5 h-3.5" />}
-          <span>{isPaused ? 'Resume' : 'Pause'}</span>
-        </button>
-      )}
 
     </div>
   );

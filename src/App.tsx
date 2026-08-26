@@ -310,23 +310,54 @@ export default function App() {
           const lQs = questions.filter(q => q.section?.toLowerCase()?.trim() === 'listening');
           const rQs = questions.filter(q => q.section?.toLowerCase()?.trim() === 'reading');
 
+          // Parse passages array if available or from reading_passage JSON string
+          let parsedPassages = loadedExam.passages || loadedExam.reading_passages;
+          if (!parsedPassages && loadedExam.reading_passage) {
+            try {
+              const testJson = JSON.parse(loadedExam.reading_passage);
+              if (Array.isArray(testJson)) {
+                parsedPassages = testJson;
+              }
+            } catch (e) {
+              // Not JSON string, use normal text
+            }
+          }
+
           setExamData({
             exam_code: cleanCode,
             title: loadedExam.title || `IELTS Examination ${cleanCode}`,
             audio_url: loadedExam.audio_url || SAMPLE_EXAM.audio_url,
             listening_questions: lQs.length > 0 ? lQs : (loadedExam.listening_questions || []),
-            passage_title: loadedExam.passage_title || SAMPLE_EXAM.passage_title,
-            passage_text: loadedExam.passage_text || SAMPLE_EXAM.passage_text,
+            passage_title: loadedExam.passage_title || (parsedPassages?.[0]?.title) || loadedExam.reading_passage_title || SAMPLE_EXAM.passage_title,
+            passage_text: loadedExam.passage_text || (parsedPassages?.[0]?.text) || loadedExam.reading_passage || SAMPLE_EXAM.passage_text,
+            passages: parsedPassages,
             reading_questions: rQs.length > 0 ? rQs : (loadedExam.reading_questions || []),
             writing_task1_prompt: loadedExam.writing_task1_prompt || SAMPLE_EXAM.writing_task1_prompt,
+            writing_task1_image: loadedExam.writing_task1_image || SAMPLE_EXAM.writing_task1_image,
             writing_task2_prompt: loadedExam.writing_task2_prompt || SAMPLE_EXAM.writing_task2_prompt
           });
 
           setSkillNotice(`✅ Successfully loaded exam [${cleanCode}] from Google Sheets (${questions.length} questions).`);
           setTimeout(() => setSkillNotice(null), 6000);
         } else {
-          setSkillNotice(`⚠️ No questions found for exam code [${cleanCode}] in QUESTIONS tab (displaying standard template).`);
-          setTimeout(() => setSkillNotice(null), 8000);
+          // Check local stored exams or DEFAULT_EXAMS fallback
+          const localExamsRaw = localStorage.getItem('ielts_saved_exams');
+          let foundExam: any = null;
+          if (localExamsRaw) {
+            try {
+              const localList = JSON.parse(localExamsRaw);
+              foundExam = Array.isArray(localList) ? localList.find((ex: any) => ex.exam_code?.toUpperCase() === cleanCode.toUpperCase()) : null;
+            } catch (e) {}
+          }
+
+          if (foundExam) {
+            setExamData(foundExam);
+            setSkillNotice(`✅ Loaded exam [${cleanCode}] from local exam storage.`);
+            setTimeout(() => setSkillNotice(null), 6000);
+          } else {
+            setSkillNotice(`⚠️ No questions found for exam code [${cleanCode}] in QUESTIONS tab (displaying standard template).`);
+            setTimeout(() => setSkillNotice(null), 8000);
+          }
         }
       }
     } catch (err) {
@@ -901,10 +932,6 @@ function doPost(e) {
                   setIsLoggedIn(false);
                   setIsCustomPracticeSession(false);
                 }}
-                onOpenDeckManager={() => {
-                  setActiveView('admin');
-                  setAdminTab('custom_practice');
-                }}
                 gasUrl={gasUrl}
               />
             ) : (
@@ -1109,6 +1136,7 @@ function doPost(e) {
                   <div className="space-y-4">
                     <WritingModule
                       task1Prompt={examData.writing_task1_prompt}
+                      task1Image={examData.writing_task1_image}
                       task2Prompt={examData.writing_task2_prompt}
                       task1Text={writingTask1}
                       task2Text={writingTask2}

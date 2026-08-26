@@ -1,8 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldAlert, Save, Copy, FileText, CheckCircle2 } from 'lucide-react';
+import { 
+  ShieldAlert, 
+  Save, 
+  FileText, 
+  Image as ImageIcon, 
+  Maximize2, 
+  X
+} from 'lucide-react';
 
 interface WritingModuleProps {
   task1Prompt?: string;
+  task1Image?: string;
+  onTask1ImageChange?: (image: string) => void;
   task2Prompt?: string;
   task1Text: string;
   task2Text: string;
@@ -13,6 +22,7 @@ interface WritingModuleProps {
 
 export const WritingModule: React.FC<WritingModuleProps> = ({
   task1Prompt,
+  task1Image,
   task2Prompt,
   task1Text,
   task2Text,
@@ -23,6 +33,9 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
   const [activeTab, setActiveTab] = useState<'task1' | 'task2'>('task1');
   const [pasteWarning, setErrorPasteWarning] = useState<string | null>(null);
   const [autoSaveTime, setAutoSaveTime] = useState<string>('');
+  
+  // Image zoom state (view-only for student)
+  const [isZoomOpen, setIsZoomOpen] = useState(false);
 
   // Count words trimming extra spaces
   const countWords = (str: string): number => {
@@ -133,17 +146,53 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
       {activeTab === 'task1' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           
-          {/* Prompt Box */}
+          {/* Prompt Box & Image Material */}
           <div className="lg:col-span-5 bg-white border border-purple-100/80 rounded-3xl p-6 shadow-xl shadow-purple-950/5 space-y-4">
-            <span className="text-xs px-3 py-1 rounded-full bg-purple-100 text-[#503A7A] font-extrabold border border-purple-200">
-              TASK 1 PROMPT
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-xs px-3 py-1 rounded-full bg-purple-100 text-[#503A7A] font-extrabold border border-purple-200">
+                TASK 1 PROMPT &amp; DATA
+              </span>
+            </div>
+
             <div className="text-sm font-medium text-[#3C2A63] leading-relaxed whitespace-pre-wrap font-sans">
               {task1Prompt || 'You should spend about 20 minutes on this task. Summarise the information by selecting and reporting the main features, and make comparisons where relevant. Write at least 150 words.'}
             </div>
+
+            {/* Task 1 Graphic / Chart Image Display (Provided by Teacher) */}
+            {task1Image && (
+              <div className="space-y-2">
+                <div className="relative group rounded-2xl overflow-hidden border border-purple-200/80 bg-[#F8F6FC] shadow-sm">
+                  <img
+                    src={task1Image}
+                    alt="IELTS Writing Task 1 Diagram / Chart"
+                    className="w-full max-h-72 object-contain bg-white cursor-pointer transition duration-200 group-hover:scale-[1.01]"
+                    onClick={() => setIsZoomOpen(true)}
+                    referrerPolicy="no-referrer"
+                  />
+                  
+                  {/* Overlay button to zoom */}
+                  <button
+                    type="button"
+                    onClick={() => setIsZoomOpen(true)}
+                    className="absolute top-2 right-2 bg-[#3C2A63]/80 hover:bg-[#3C2A63] text-white p-2 rounded-xl backdrop-blur transition shadow-md cursor-pointer opacity-90 group-hover:opacity-100 flex items-center gap-1 text-[11px] font-bold"
+                    title="Phóng to ảnh biểu đồ"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                    <span>Phóng to</span>
+                  </button>
+
+                  <div className="p-2.5 bg-white/90 border-t border-purple-100 flex items-center justify-between text-xs text-[#7C68A5]">
+                    <span className="font-semibold text-[11px]">📊 Ngữ liệu hình ảnh / Biểu đồ Task 1</span>
+                    <span className="text-[10px] text-purple-600 font-bold bg-purple-50 px-2 py-0.5 rounded-md">
+                      Nhấn để phóng to
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
             
             <div className="p-3.5 bg-[#F8F6FC] rounded-2xl border border-purple-100 text-xs text-[#7C68A5] font-medium leading-relaxed">
-              💡 <strong>Note:</strong> Task 1 requires writing a descriptive report of a chart, graph, table, or diagram. Minimum requirement is 150 words.
+              💡 <strong>Lưu ý:</strong> Bài thi Task 1 yêu cầu mô tả các đặc điểm chính, xu hướng nổi bật và so sánh số liệu từ biểu đồ/sơ đồ. Yêu cầu tối thiểu 150 từ.
             </div>
           </div>
 
@@ -184,6 +233,39 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
         </div>
       )}
 
+      {/* Task 1 Image Zoom Modal (Student view only) */}
+      {isZoomOpen && task1Image && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setIsZoomOpen(false)}
+        >
+          <div 
+            className="relative max-w-5xl max-h-[90vh] bg-white rounded-3xl p-4 overflow-auto shadow-2xl flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-full flex items-center justify-between pb-3 border-b border-purple-100 mb-3">
+              <span className="text-xs font-extrabold text-[#3C2A63] flex items-center gap-2">
+                <ImageIcon className="w-4 h-4 text-[#6B51A5]" />
+                IELTS Task 1 Graphic / Chart View
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsZoomOpen(false)}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <img
+              src={task1Image}
+              alt="Full Task 1 Diagram"
+              className="max-w-full max-h-[75vh] object-contain rounded-xl"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+        </div>
+      )}
+
       {/* TASK 2 PANEL */}
       {activeTab === 'task2' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -206,7 +288,7 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
           <div className="lg:col-span-7 bg-white border border-purple-100/80 rounded-3xl p-6 shadow-xl shadow-purple-950/5 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-extrabold text-[#3C2A63] uppercase tracking-wider">
-                Task 2 Response Editor
+                Task 2 Essay Editor
               </span>
               <span className={`text-xs font-extrabold px-3 py-1 rounded-full border ${
                 task2WordCount >= 250
