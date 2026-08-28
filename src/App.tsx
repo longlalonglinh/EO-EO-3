@@ -195,6 +195,27 @@ export default function App() {
 
   // Exam Data State
   const [examData, setExamData] = useState<ExamData>(SAMPLE_EXAM);
+  
+  const handleSetExamData = (data: ExamData) => {
+    const sanitizeQs = (qs: any[], prefix: string) => {
+      const seen = new Set<string>();
+      return qs.map((q, idx) => {
+        let qid = q.question_id || `${prefix}${idx + 1}`;
+        if (seen.has(qid)) {
+          qid = `${qid}_dup_${idx}`;
+        }
+        seen.add(qid);
+        return { ...q, question_id: qid };
+      });
+    };
+    
+    setExamData({
+      ...data,
+      listening_questions: sanitizeQs(data.listening_questions || [], 'l'),
+      reading_questions: sanitizeQs(data.reading_questions || [], 'r'),
+    });
+  };
+
   const [isLoadingExam, setIsLoadingExam] = useState(false);
 
   // User Responses State
@@ -323,7 +344,7 @@ export default function App() {
             }
           }
 
-          setExamData({
+          handleSetExamData({
             exam_code: cleanCode,
             title: loadedExam.title || `IELTS Examination ${cleanCode}`,
             audio_url: loadedExam.audio_url || SAMPLE_EXAM.audio_url,
@@ -351,7 +372,7 @@ export default function App() {
           }
 
           if (foundExam) {
-            setExamData(foundExam);
+            handleSetExamData(foundExam);
             setSkillNotice(`✅ Loaded exam [${cleanCode}] from local exam storage.`);
             setTimeout(() => setSkillNotice(null), 6000);
           } else {
@@ -1244,14 +1265,14 @@ function doPost(e) {
             {/* Admin Tab Content */}
             {adminTab === 'dashboard' && <MonitoringDashboard gasUrl={gasUrl} />}
             {adminTab === 'grading' && <ManualGrading gasUrl={gasUrl} />}
-            {adminTab === 'upload' && <UploadModule onParsedData={(parsed) => setExamData(parsed)} />}
+            {adminTab === 'upload' && <UploadModule onParsedData={(parsed) => handleSetExamData(parsed)} />}
             {adminTab === 'custom_practice' && <CustomPracticeManager />}
             
             {adminTab === 'preview' && (
               <PreviewModule 
                 gasUrl={gasUrl} 
                 initialExamData={examData} 
-                onSaveToGas={(savedExam) => setExamData(savedExam)} 
+                onSaveToGas={(savedExam) => handleSetExamData(savedExam)} 
               />
             )}
 

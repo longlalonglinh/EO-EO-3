@@ -13,6 +13,7 @@ import {
   Info
 } from 'lucide-react';
 import { CountdownTimer } from './CountdownTimer';
+import { IELTSQuestionCard } from './IELTSQuestionCard';
 
 interface ListeningModuleProps {
   audioUrl?: string;
@@ -295,98 +296,16 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
           </div>
         ) : (
           <div className="space-y-5">
-            {filteredQuestions.map((q, idx) => {
-              const currentVal = userAnswers[q.question_id] || '';
-              const isFilled = Boolean(currentVal.trim());
-
-              return (
-                <div
-                  key={q.question_id}
-                  id={`lq_box_${q.question_id}`}
-                  className={`p-5 md:p-6 bg-[#FAF8FE] border rounded-2xl transition duration-200 space-y-4 shadow-sm ${
-                    isFilled 
-                      ? 'border-[#D6CBE8] bg-[#FAF8FE]' 
-                      : 'border-[#EBE4F7] hover:border-[#D6CBE8]'
-                  }`}
-                >
-                  {/* Question Item Header */}
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-center space-x-2.5">
-                      <span className="w-7 h-7 rounded-xl bg-[#503A7A] text-white font-black text-xs flex items-center justify-center font-mono shadow-sm">
-                        {idx + 1}
-                      </span>
-                      <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-purple-100 text-[#503A7A] font-extrabold uppercase border border-purple-200 shrink-0">
-                        {q.question_type.replace(/_/g, ' ')}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center space-x-2 shrink-0">
-                      {isFilled && (
-                        <span className="flex items-center space-x-1 text-emerald-800 bg-emerald-100 border border-emerald-200 text-xs font-bold px-2.5 py-0.5 rounded-xl">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
-                          <span>Đã trả lời</span>
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Instruction Notice if any */}
-                  {q.instruction && (
-                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 font-bold flex items-start gap-2">
-                      <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                      <span>{q.instruction}</span>
-                    </div>
-                  )}
-
-                  {/* Question Main Text */}
-                  <p className="text-[#2D1E4B] text-sm md:text-[15px] font-bold leading-relaxed">
-                    {q.question_text}
-                  </p>
-
-                  {/* Options List or Text Input */}
-                  {q.options && q.options.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                      {q.options.map((opt, optIdx) => {
-                        const optLetter = opt.charAt(0).toUpperCase();
-                        const isSelected = currentVal.trim().toUpperCase() === optLetter || currentVal === opt;
-
-                        return (
-                          <button
-                            key={optIdx}
-                            type="button"
-                            onClick={() => onAnswerChange(q.question_id, optLetter)}
-                            className={`w-full text-left p-3.5 rounded-xl border text-xs md:text-sm font-bold transition flex items-center space-x-3 cursor-pointer ${
-                              isSelected
-                                ? 'bg-[#503A7A] border-[#503A7A] text-white shadow-md ring-2 ring-purple-300'
-                                : 'bg-white border-[#E0D7F5] text-[#3C2A63] hover:bg-[#F2EEF9] hover:border-[#6B51A5]'
-                            }`}
-                          >
-                            <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 font-mono ${
-                              isSelected
-                                ? 'bg-white text-[#503A7A]'
-                                : 'bg-[#E2DDEC] text-[#3C2A63]'
-                            }`}>
-                              {optLetter}
-                            </span>
-                            <span className="flex-1">{opt}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="mt-2">
-                      <input
-                        type="text"
-                        value={currentVal}
-                        onChange={(e) => onAnswerChange(q.question_id, e.target.value)}
-                        placeholder="Nhập đáp án của bạn tại đây..."
-                        className="w-full px-4 py-3 bg-white border border-[#D6CBE8] rounded-xl text-[#2C1D4D] font-medium placeholder-slate-400 text-sm focus:outline-none focus:border-[#6B51A5] focus:ring-2 focus:ring-purple-200 transition shadow-inner"
-                      />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {filteredQuestions.map((q, idx) => (
+              <IELTSQuestionCard
+                key={q.question_id}
+                question={q}
+                questionNumber={idx + 1}
+                userAnswer={userAnswers[q.question_id] || ''}
+                onAnswerChange={onAnswerChange}
+                headingsList={q.headings_list}
+              />
+            ))}
           </div>
         )}
 
