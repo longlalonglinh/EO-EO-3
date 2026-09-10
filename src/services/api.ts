@@ -6,7 +6,10 @@ import {
   SubmissionResponse, 
   ExamData 
 } from '../types';
-export const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbySNk5foVr4UMC5ZVP1YTlxjxT9qFgdI85cH5nyQ63ffqXdYVZ7SJKbmD0B3xNO3DEe/exec"; // Dán URL GAS thật của bạn vào đây
+import { extractQuestionsFromRawResponse } from './dbDiagnostics';
+import { DEFAULT_EXAMS } from '../data/defaultExams';
+import { CustomPracticeDeck, StudentProgressRecord } from '../types/practice';
+export const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbySNk5foVr4UMC5ZVP1YTlxjxT9qFgdI85cH5nyQ63ffqXdYVZ7SJKbmD0B3xNO3DEe/exec"; // Enter your live Google Apps Script web app URL here
 
 /**
  * Fetch all student submissions for Admin Monitoring & Grading
@@ -117,7 +120,7 @@ export async function saveWritingScore(
   }
 
   if (!apiUrl || apiUrl.includes('mock_ielts_exam_system_gas_url')) {
-    return { success: true, message: 'Đã lưu điểm Writing vào LocalStorage thành công!' };
+    return { success: true, message: 'Writing scores saved to LocalStorage successfully!' };
   }
 
   try {
@@ -139,13 +142,13 @@ export async function saveWritingScore(
     });
 
     if (response.ok) {
-      return { success: true, message: 'Đã cập nhật điểm thi lên Google Sheets!' };
+      return { success: true, message: 'Writing scores updated on Google Sheets successfully!' };
     }
   } catch (err) {
     console.warn('GAS API saveWritingScore failed:', err);
   }
 
-  return { success: true, message: 'Đã lưu bản ghi chấm điểm cục bộ!' };
+  return { success: true, message: 'Grading record saved locally!' };
 }
 
 /**
@@ -184,7 +187,7 @@ export async function submitExamPayload(
     reading_band: readingBand,
     writing_status: 'PENDING_TEACHER',
     submitted_at: timestamp,
-    message: 'Nộp bài thành công!'
+    message: 'Exam submitted successfully!'
   };
 
   // Save to LocalStorage
@@ -243,51 +246,287 @@ export async function submitExamPayload(
 }
 
 /**
- * Fetch exam questions from GAS API
+ * Fetch exam questions from GAS API with multi-protocol support and universal question parser
  */
 export async function fetchExam(
   apiUrl: string, 
   examCode: string
-): Promise<{ success: boolean; exam?: ExamData; error?: string }> {
-  if (!apiUrl || apiUrl.includes('mock_ielts_exam_system_gas_url')) {
-    return { success: false, error: 'Chưa kết nối GAS API endpoint' };
+): Promise<{ success: boolean; exam?: ExamData; error?: string; source?: 'gas' | 'default' | 'local' }> {
+  const cleanCode = (examCode || 'TEST01').trim().toUpperCase();
+
+  if (apiUrl && !apiUrl.includes('mock_ielts_exam_system_gas_url') && !apiUrl.includes('AKfycbx_mock')) {
+    const urlsToTry = [
+      `${apiUrl}?action=get_exam&exam_code=${encodeURIComponent(cleanCode)}`,
+      `${apiUrl}?action=getExam&exam_code=${encodeURIComponent(cleanCode)}`,
+      `${apiUrl}?exam_code=${encodeURIComponent(cleanCode)}`
+    ];
+
+    for (const fetchUrl of urlsToTry) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 7000);
+        const res = await fetch(fetchUrl, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          const raw = await res.json();
+          const extracted = extractQuestionsFromRawResponse(raw, cleanCode);
+          if (extracted.questions && extracted.questions.length > 0) {
+            const meta = extracted.meta || {};
+            const lQs = extracted.questions.filter(q => q.section === 'listening');
+            const rQs = extracted.questions.filter(q => q.section === 'reading');
+
+            const examObj: ExamData = {
+              exam_code: cleanCode,
+              title: meta.title || `IELTS Examination - ${cleanCode}`,
+              audio_url: meta.audio_url || DEFAULT_EXAMS[0].audio_url,
+              listening_questions: lQs,
+              passage_title: meta.passage_title || meta.reading_passage_title || (meta.passages?.[0]?.title) || DEFAULT_EXAMS[0].passages?.[0]?.title || 'Reading Passage',
+              passage_text: meta.passage_text || meta.reading_passage || (meta.passages?.[0]?.text) || DEFAULT_EXAMS[0].passages?.[0]?.text || '',
+              passages: meta.passages || DEFAULT_EXAMS[0].passages,
+              reading_questions: rQs,
+              writing_task1_prompt: meta.writing_task1_prompt || DEFAULT_EXAMS[0].writing_task1_prompt,
+              writing_task1_image: meta.writing_task1_image || DEFAULT_EXAMS[0].writing_task1_image,
+              writing_task2_prompt: meta.writing_task2_prompt || DEFAULT_EXAMS[0].writing_task2_prompt
+            };
+            return { success: true, exam: examObj, source: 'gas' };
+          }
+        }
+      } catch (err) {
+        console.warn(`Query attempt failed on ${fetchUrl}:`, err);
+      }
+    }
   }
 
-  const cleanCode = examCode.trim();
+  // Fallback 1: LocalStorage saved exams
+  try {
+    const localExamsRaw = localStorage.getItem('ielts_saved_exams');
+    if (localExamsRaw) {
+      const localList = JSON.parse(localExamsRaw);
+      if (Array.isArray(localList)) {
+        const foundLocal = localList.find((ex: any) => ex.exam_code?.toUpperCase() === cleanCode);
+        if (foundLocal) {
+          return { success: true, exam: foundLocal, source: 'local' };
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Error reading from localStorage:', e);
+  }
+
+  // Fallback 2: Default repository
+  const foundDefault = DEFAULT_EXAMS.find(
+    (ex) => ex.exam_code.toUpperCase() === cleanCode || cleanCode.includes(ex.exam_code.toUpperCase())
+  ) || DEFAULT_EXAMS[0];
+
+  if (foundDefault) {
+    const lQs = foundDefault.questions.filter(q => q.section === 'listening');
+    const rQs = foundDefault.questions.filter(q => q.section === 'reading');
+    const examObj: ExamData = {
+      exam_code: cleanCode,
+      title: foundDefault.title,
+      audio_url: foundDefault.audio_url,
+      listening_questions: lQs,
+      passage_title: foundDefault.passages?.[0]?.title || 'Reading Passage',
+      passage_text: foundDefault.passages?.[0]?.text || '',
+      passages: foundDefault.passages,
+      reading_questions: rQs,
+      writing_task1_prompt: foundDefault.writing_task1_prompt,
+      writing_task1_image: foundDefault.writing_task1_image,
+      writing_task2_prompt: foundDefault.writing_task2_prompt
+    };
+    return { success: true, exam: examObj, source: 'default' };
+  }
+
+  return { success: false, error: 'No questions found and no fallback data available.' };
+}
+
+/**
+ * Fetch practice decks & questions directly from Google Sheets (tab PRACTICE_QUESTIONS)
+ */
+export async function fetchPracticeDecksFromGAS(
+  apiUrl: string
+): Promise<{ success: boolean; is_initialized?: boolean; decks?: CustomPracticeDeck[]; message?: string; error?: string }> {
+  if (!apiUrl || apiUrl.includes('mock_ielts_exam_system_gas_url') || apiUrl.includes('AKfycbx_mock')) {
+    return { success: false, error: 'Google Apps Script URL is not configured' };
+  }
 
   try {
-    const res = await fetch(`${apiUrl}?action=get_exam&exam_code=${encodeURIComponent(cleanCode)}`, {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' }
+    const urls = [
+      `${apiUrl}?action=get_practice_decks`,
+      `${apiUrl}?action=getPracticeDecks`
+    ];
+
+    for (const fetchUrl of urls) {
+      const res = await fetch(fetchUrl, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.success) {
+          return {
+            success: true,
+            is_initialized: data.is_initialized !== false,
+            decks: Array.isArray(data.decks) ? data.decks : [],
+            message: data.message
+          };
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn('fetchPracticeDecksFromGAS failed:', err);
+    return { success: false, error: err.message || 'Unable to connect to Google Sheets' };
+  }
+
+  return { success: false, error: 'Unable to retrieve practice database from Google Sheets' };
+}
+
+/**
+ * Initialize PRACTICE_QUESTIONS database tab on Google Sheets and sync practice decks
+ */
+export async function initPracticeDatabaseInGAS(
+  apiUrl: string,
+  decks: CustomPracticeDeck[],
+  mode: 'replace_all' | 'append' = 'replace_all'
+): Promise<{ success: boolean; message?: string; total_cards?: number; error?: string }> {
+  if (!apiUrl || apiUrl.includes('mock_ielts_exam_system_gas_url') || apiUrl.includes('AKfycbx_mock')) {
+    return { success: false, error: 'Google Apps Script URL is not configured. Please enter the GAS URL in Admin settings.' };
+  }
+
+  try {
+    const res = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'init_practice_sheet',
+        mode,
+        decks
+      })
     });
 
     if (res.ok) {
-      const data = await res.json();
-      const examObj = data?.exam || data?.data || data;
-      if (examObj && (examObj.exam_code || examObj.questions || examObj.listening_questions || examObj.reading_questions)) {
-        return { success: true, exam: examObj };
+      const result = await res.json();
+      if (result && result.success) {
+        return {
+          success: true,
+          message: result.message || 'Practice database initialized on Google Sheets successfully!',
+          total_cards: result.total_cards
+        };
       }
     }
-  } catch (err) {
-    console.warn('Error fetching exam from GAS with get_exam, retrying getExam:', err);
+  } catch (err: any) {
+    console.warn('initPracticeDatabaseInGAS failed:', err);
+    return { success: false, error: err.message || 'Network error initializing database on Google Sheets' };
+  }
+
+  return { success: false, error: 'Database initialization failed. Please verify Web App access permissions (Anyone) on Google Apps Script.' };
+}
+
+/**
+ * Save / update single practice deck to Google Sheets
+ */
+export async function savePracticeDeckToGAS(
+  apiUrl: string,
+  deck: CustomPracticeDeck
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  if (!apiUrl || apiUrl.includes('mock_ielts_exam_system_gas_url') || apiUrl.includes('AKfycbx_mock')) {
+    return { success: false, error: 'Google Apps Script URL is not configured' };
   }
 
   try {
-    const res2 = await fetch(`${apiUrl}?action=getExam&exam_code=${encodeURIComponent(cleanCode)}`, {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' }
+    const res = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'save_practice_deck',
+        mode: 'append',
+        deck
+      })
     });
 
-    if (res2.ok) {
-      const data = await res2.json();
-      const examObj = data?.exam || data?.data || data;
-      if (examObj && (examObj.exam_code || examObj.questions || examObj.listening_questions || examObj.reading_questions)) {
-        return { success: true, exam: examObj };
+    if (res.ok) {
+      const result = await res.json();
+      if (result && result.success) {
+        return { success: true, message: result.message || 'Practice deck saved to Google Sheets!' };
       }
     }
-  } catch (err) {
-    console.warn('Error fetching exam from GAS with getExam:', err);
+  } catch (err: any) {
+    console.warn('savePracticeDeckToGAS failed:', err);
+    return { success: false, error: err.message };
   }
 
-  return { success: false, error: 'Không thể kết nối hoặc không tìm thấy mã đề trong Google Sheet.' };
+  return { success: false, error: 'Unable to save practice deck to Google Sheets' };
+}
+
+/**
+ * Sync student practice progress records to Google Sheets (Tab STUDENT_PROGRESS)
+ */
+export async function syncStudentProgressToGAS(
+  apiUrl: string,
+  records: StudentProgressRecord[]
+): Promise<{ success: boolean; message?: string; updated_count?: number; error?: string }> {
+  if (!apiUrl || apiUrl.includes('mock_ielts_exam_system_gas_url') || apiUrl.includes('AKfycbx_mock')) {
+    return { success: false, error: 'Google Apps Script URL is not configured' };
+  }
+
+  try {
+    const res = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'sync_student_progress',
+        progress_records: records
+      })
+    });
+
+    if (res.ok) {
+      const result = await res.json();
+      if (result && result.success) {
+        return { 
+          success: true, 
+          message: result.message || 'Learner progress saved to Google Sheets successfully!',
+          updated_count: result.updated_count
+        };
+      }
+    }
+  } catch (err: any) {
+    console.warn('syncStudentProgressToGAS failed:', err);
+    return { success: false, error: err.message };
+  }
+
+  return { success: false, error: 'Unable to sync progress to Google Sheets' };
+}
+
+/**
+ * Fetch student practice progress from Google Sheets (Tab STUDENT_PROGRESS)
+ */
+export async function fetchStudentProgressFromGAS(
+  apiUrl: string,
+  studentId?: string
+): Promise<{ success: boolean; records?: StudentProgressRecord[]; error?: string }> {
+  if (!apiUrl || apiUrl.includes('mock_ielts_exam_system_gas_url') || apiUrl.includes('AKfycbx_mock')) {
+    return { success: false, error: 'Google Apps Script URL is not configured' };
+  }
+
+  try {
+    const query = studentId ? `&student_id=${encodeURIComponent(studentId)}` : '';
+    const res = await fetch(`${apiUrl}?action=get_student_progress${query}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.success && Array.isArray(data.records)) {
+        return { success: true, records: data.records };
+      }
+    }
+  } catch (err: any) {
+    console.warn('fetchStudentProgressFromGAS failed:', err);
+    return { success: false, error: err.message };
+  }
+
+  return { success: false, error: 'Unable to retrieve learner progress from Google Sheets' };
 }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldAlert, BookOpen, UserCheck, FileText, Upload, Edit3, Settings, Maximize2, RefreshCw } from 'lucide-react';
+import { ShieldAlert, BookOpen, UserCheck, FileText, Upload, Edit3, Settings, Maximize2, RefreshCw, Activity } from 'lucide-react';
 
 interface NavbarProps {
   activeView: 'student' | 'admin';
@@ -10,6 +10,7 @@ interface NavbarProps {
   sbd?: string;
   examCode?: string;
   gasUrl: string;
+  onOpenDiagnostics?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -20,7 +21,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   studentMode,
   sbd,
   examCode,
-  gasUrl
+  gasUrl,
+  onOpenDiagnostics
 }) => {
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -132,6 +134,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <Settings className="w-3.5 h-3.5" />
                 GAS Config
               </button>
+
+              {onOpenDiagnostics && (
+                <button
+                  onClick={onOpenDiagnostics}
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200"
+                >
+                  <Activity className="w-3.5 h-3.5 text-indigo-500 animate-pulse" />
+                  DB Diagnostics
+                </button>
+              )}
             </div>
           )}
 

@@ -134,7 +134,7 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
             type="button"
             onClick={handleResetTimer}
             className="p-1 text-purple-600 hover:text-purple-900 transition rounded-md"
-            title="Đếm lại thời gian"
+            title="Reset timer"
           >
             <RotateCcw className="w-3 h-3" />
           </button>
@@ -197,7 +197,7 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
           type="button"
           onClick={handleResetTimer}
           className="px-3 py-1.5 bg-[#F5F2F9] hover:bg-[#E2DDEC] text-[#503A7A] border border-purple-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
-          title="Đặt lại đồng hồ đếm ngược"
+          title="Reset timer"
         >
           <RotateCcw className="w-3.5 h-3.5 text-[#6B51A5]" />
           <span className="hidden sm:inline">Reset Timer</span>

@@ -370,20 +370,20 @@ export const PreviewModule: React.FC<PreviewModuleProps> = ({
 
               <div>
                 <label className="block text-[#503A7A] font-extrabold mb-1">
-                  Writing Task 1 Image / Diagram (Giáo viên tải lên biểu đồ)
+                  Writing Task 1 Image / Diagram (Upload Diagram/Chart)
                 </label>
                 <div className="space-y-2">
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      placeholder="Dán URL link ảnh biểu đồ: https://example.com/chart.png"
+                      placeholder="Paste diagram image URL: https://example.com/chart.png"
                       value={exam.writing_task1_image || ''}
                       onChange={(e) => handleFieldChange('writing_task1_image', e.target.value)}
                       className="flex-1 px-3.5 py-2.5 bg-[#F8F6FC] border border-purple-200/80 rounded-xl text-[#3C2A63] font-mono text-xs focus:outline-none focus:ring-2 focus:ring-[#6B51A5]"
                     />
                     <label className="px-4 py-2.5 bg-[#E2DDEC] hover:bg-[#D4CEE2] text-[#3C2A63] font-extrabold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition shrink-0">
                       <Upload className="w-4 h-4 text-[#6B51A5]" />
-                      <span>Tải ảnh lên</span>
+                      <span>Upload Image</span>
                       <input
                         type="file"
                         accept="image/*"
@@ -410,14 +410,14 @@ export const PreviewModule: React.FC<PreviewModuleProps> = ({
                         referrerPolicy="no-referrer"
                       />
                       <span className="text-[11px] text-[#7C68A5] truncate flex-1 font-mono">
-                        {exam.writing_task1_image.startsWith('data:') ? 'Ảnh đã tải từ máy tính' : exam.writing_task1_image}
+                        {exam.writing_task1_image.startsWith('data:') ? 'Uploaded image from local device' : exam.writing_task1_image}
                       </span>
                       <button
                         type="button"
                         onClick={() => handleFieldChange('writing_task1_image', '')}
                         className="text-rose-600 hover:text-rose-800 text-xs font-bold px-3 py-1 bg-rose-50 hover:bg-rose-100 rounded-lg cursor-pointer transition"
                       >
-                        Xóa ảnh
+                        Remove Image
                       </button>
                     </div>
                   )}
@@ -442,10 +442,10 @@ export const PreviewModule: React.FC<PreviewModuleProps> = ({
               <div>
                 <h3 className="text-xs font-extrabold text-[#6B51A5] uppercase tracking-wider flex items-center gap-2">
                   <BookOpen className="w-4 h-4" />
-                  3. Reading Section: 3 Passages &amp; Texts (Ngữ liệu Đọc)
+                  3. Reading Section: 3 Passages &amp; Texts
                 </h3>
                 <p className="text-[11px] text-[#7C68A5] mt-0.5">
-                  Nhập hoặc chỉnh sửa nội dung riêng biệt cho từng bài đọc (Passage 1, 2, 3) để hiển thị chính xác tương ứng với 40 câu hỏi.
+                  Enter or edit content separately for each reading passage (Passage 1, 2, 3) corresponding to the 40 questions.
                 </p>
               </div>
 
@@ -476,20 +476,20 @@ export const PreviewModule: React.FC<PreviewModuleProps> = ({
             <div className="space-y-4 text-xs">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-extrabold text-[#3C2A63]">
-                  Đang chỉnh sửa: <span className="text-[#6B51A5]">Reading Passage {selectedPassageIndex}</span>
+                  Currently editing: <span className="text-[#6B51A5]">Reading Passage {selectedPassageIndex}</span>
                 </span>
                 <span className="text-[11px] text-[#7C68A5]">
-                  Số ký tự: {getPassageVal(selectedPassageIndex, 'text').length} | Số từ: {getPassageVal(selectedPassageIndex, 'text').trim() ? getPassageVal(selectedPassageIndex, 'text').trim().split(/\s+/).length : 0} từ
+                  Characters: {getPassageVal(selectedPassageIndex, 'text').length} | Words: {getPassageVal(selectedPassageIndex, 'text').trim() ? getPassageVal(selectedPassageIndex, 'text').trim().split(/\s+/).length : 0}
                 </span>
               </div>
 
               <div>
                 <label className="block text-[#503A7A] font-extrabold mb-1">
-                  Tiêu đề Bài đọc Passage {selectedPassageIndex} (Passage Title)
+                  Passage {selectedPassageIndex} Title
                 </label>
                 <input
                   type="text"
-                  placeholder={`Ví dụ: Passage ${selectedPassageIndex}: The Iceman (Ötzi)`}
+                  placeholder={`Example: Passage ${selectedPassageIndex}: The Iceman (Ötzi)`}
                   value={getPassageVal(selectedPassageIndex, 'title')}
                   onChange={(e) => handlePassageChange(selectedPassageIndex, 'title', e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-[#F8F6FC] border border-purple-200/80 rounded-xl text-[#3C2A63] font-bold focus:outline-none focus:ring-2 focus:ring-[#6B51A5]"
@@ -498,10 +498,10 @@ export const PreviewModule: React.FC<PreviewModuleProps> = ({
 
               <div>
                 <label className="block text-[#503A7A] font-extrabold mb-1">
-                  Nội dung chi tiết Bài đọc Passage {selectedPassageIndex} (Text - hỗ trợ chia Paragraph A, B, C...)
+                  Passage {selectedPassageIndex} Text Content (Supports Paragraph A, B, C...)
                 </label>
                 <textarea
-                  placeholder={`Dán nội dung toàn bộ bài đọc cho Passage ${selectedPassageIndex} vào đây...\nParagraph A\n...\nParagraph B\n...`}
+                  placeholder={`Paste full passage content for Passage ${selectedPassageIndex} here...\nParagraph A\n...\nParagraph B\n...`}
                   value={getPassageVal(selectedPassageIndex, 'text')}
                   onChange={(e) => handlePassageChange(selectedPassageIndex, 'text', e.target.value)}
                   rows={10}

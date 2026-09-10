@@ -42,6 +42,7 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
   const [activeColor, setActiveColor] = useState<'yellow' | 'green' | 'blue'>('yellow');
   const [highlights, setHighlights] = useState<HighlightingTool[]>([]);
   const [activePassageIndex, setActivePassageIndex] = useState<1 | 2 | 3>(1);
+  const [mobileTab, setMobileTab] = useState<'questions' | 'passage' | 'both'>('questions');
   const passageContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Multi-Passage Parser:
@@ -55,7 +56,7 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
       return [{
         passage_index: 1,
         title: passageTitle || 'Reading Passage 1',
-        text: 'Chưa có nội dung bài đọc cho phần này.'
+        text: 'No reading passage content available for this section.'
       }];
     }
 
@@ -299,23 +300,61 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
 
       </div>
 
+      {/* MOBILE VIEW SWITCHER (Visible on screens < 768px) */}
+      <div className="flex md:hidden items-center justify-between bg-purple-50 p-1.5 rounded-2xl border border-purple-200">
+        <div className="flex items-center gap-1 w-full">
+          <button
+            type="button"
+            onClick={() => setMobileTab('questions')}
+            className={`flex-1 py-2 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+              mobileTab === 'questions' ? 'bg-[#6B51A5] text-white shadow-md' : 'text-[#503A7A] hover:bg-purple-100'
+            }`}
+          >
+            <HelpCircle className="w-3.5 h-3.5" />
+            <span>Questions ({displayedQuestions.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileTab('passage')}
+            className={`flex-1 py-2 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+              mobileTab === 'passage' ? 'bg-[#6B51A5] text-white shadow-md' : 'text-[#503A7A] hover:bg-purple-100'
+            }`}
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            <span>Passage {safeActivePassage}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileTab('both')}
+            className={`flex-1 py-2 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+              mobileTab === 'both' ? 'bg-[#6B51A5] text-white shadow-md' : 'text-[#503A7A] hover:bg-purple-100'
+            }`}
+          >
+            <MoveHorizontal className="w-3.5 h-3.5 rotate-90" />
+            <span>Both</span>
+          </button>
+        </div>
+      </div>
+
       {/* SPLIT SCREEN WORKSPACE */}
       <div
-        className="flex flex-col md:flex-row h-[calc(100vh-13rem)] min-h-[580px] bg-white rounded-3xl border border-purple-100/80 overflow-hidden shadow-xl shadow-purple-950/5 select-none"
+        className="flex flex-col md:flex-row md:h-[calc(100vh-13rem)] md:min-h-[580px] bg-white rounded-3xl border border-purple-100/80 md:overflow-hidden shadow-xl shadow-purple-950/5 select-none"
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
       >
         
         {/* LEFT COLUMN: READING PASSAGE & MULTI-COLOR HIGHLIGHTER */}
         <div
-          style={{ width: `${leftWidth}%` }}
-          className="h-full flex flex-col bg-[#F8F6FC] border-r border-purple-100 overflow-hidden"
+          className={`h-[420px] md:h-full flex flex-col bg-[#F8F6FC] md:border-r border-purple-100 overflow-hidden w-full ${
+            mobileTab === 'questions' ? 'hidden md:flex' : 'flex'
+          }`}
+          style={typeof window !== 'undefined' && window.innerWidth >= 768 ? { width: `${leftWidth}%` } : undefined}
         >
           {/* Passage Toolbar */}
           <div className="p-3 bg-white border-b border-purple-100 flex items-center justify-between shrink-0">
             <div className="flex items-center space-x-2">
               <Paintbrush className="w-4 h-4 text-[#6B51A5]" />
-              <span className="text-xs font-extrabold text-[#3C2A63] uppercase tracking-wider">Highlight Tool:</span>
+              <span className="text-xs font-extrabold text-[#3C2A63] uppercase tracking-wider">Highlight:</span>
               
               {/* Color Pickers */}
               <div className="flex items-center space-x-1.5 ml-2">
@@ -352,7 +391,7 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
                 className="px-2.5 py-1 bg-rose-100 hover:bg-rose-200 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold flex items-center gap-1 transition cursor-pointer"
               >
                 <Eraser className="w-3 h-3" />
-                Clear {highlights.length} Highlights
+                Clear ({highlights.length})
               </button>
             )}
           </div>
@@ -361,7 +400,7 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
           <div
             ref={passageContainerRef}
             onMouseUp={handleTextSelection}
-            className="flex-1 p-6 sm:p-8 overflow-y-auto select-text font-serif leading-relaxed text-[#3C2A63]"
+            className="flex-1 p-5 sm:p-8 overflow-y-auto select-text font-serif leading-relaxed text-[#3C2A63]"
           >
             <div className="mb-4 pb-3 border-b border-purple-200">
               <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-purple-100 text-[#503A7A] uppercase tracking-wider">
@@ -372,6 +411,17 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
               </h2>
             </div>
             {renderHighlightedPassage(currentPassageData.text)}
+          </div>
+
+          {/* Mobile shortcut to questions */}
+          <div className="md:hidden p-2.5 bg-purple-100 border-t border-purple-200 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setMobileTab('questions')}
+              className="px-4 py-2 bg-[#6B51A5] text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow"
+            >
+              <span>Questions →</span>
+            </button>
           </div>
 
           {/* Active Highlight Chips */}
@@ -396,10 +446,10 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
           )}
         </div>
 
-        {/* DRAGGABLE RESIZER BAR */}
+        {/* DRAGGABLE RESIZER BAR (Desktop only) */}
         <div
           onMouseDown={handleMouseDown}
-          className="w-2 bg-[#E2DDEC] hover:bg-[#6B51A5] cursor-col-resize flex items-center justify-center border-x border-purple-100 transition-all shrink-0"
+          className="hidden md:flex w-2 bg-[#E2DDEC] hover:bg-[#6B51A5] cursor-col-resize items-center justify-center border-x border-purple-100 transition-all shrink-0"
           title="Drag to adjust split view ratio"
         >
           <MoveHorizontal className="w-3 h-3 text-[#7C68A5]" />
@@ -407,8 +457,10 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
 
         {/* RIGHT COLUMN: READING QUESTIONS */}
         <div
-          style={{ width: `${100 - leftWidth}%` }}
-          className="h-full flex flex-col bg-white overflow-hidden"
+          className={`h-auto md:h-full flex flex-col bg-white overflow-hidden w-full ${
+            mobileTab === 'passage' ? 'hidden md:flex' : 'flex'
+          }`}
+          style={typeof window !== 'undefined' && window.innerWidth >= 768 ? { width: `${100 - leftWidth}%` } : undefined}
         >
           {/* Header & Question Matrix for active passage */}
           <div className="p-3.5 bg-[#F8F6FC] border-b border-purple-100 flex flex-wrap items-center justify-between gap-2 shrink-0">
@@ -425,7 +477,7 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
                     key={q.question_id}
                     type="button"
                     onClick={() => scrollToQuestion(q.question_id)}
-                    className={`w-6 h-6 rounded-lg text-[10px] font-black transition cursor-pointer flex items-center justify-center ${
+                    className={`w-7 h-7 md:w-6 md:h-6 rounded-lg text-[11px] md:text-[10px] font-black transition cursor-pointer flex items-center justify-center ${
                       isAns
                         ? 'bg-emerald-600 text-white'
                         : 'bg-[#E2DDEC] hover:bg-[#D9D3E4] text-[#3C2A63]'
@@ -440,9 +492,11 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
           </div>
 
           {/* Scrollable Questions List */}
-          <div className="flex-1 p-5 sm:p-6 overflow-y-auto space-y-6">
+          <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-6">
             {displayedQuestions.length === 0 ? (
-              <p className="text-sm text-[#7C68A5] italic">No questions available for this section.</p>
+              <div className="p-8 text-center bg-purple-50/50 rounded-2xl border border-dashed border-purple-200">
+                <p className="text-sm text-[#7C68A5] italic">No questions available for this section or data is loading...</p>
+              </div>
             ) : (
               displayedQuestions.map((q) => (
                 <IELTSQuestionCard

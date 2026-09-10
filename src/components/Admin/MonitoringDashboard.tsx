@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldAlert, RefreshCw, Users, FileText, CheckCircle2, Search, Filter, Clock } from 'lucide-react';
+import { ShieldAlert, RefreshCw, Users, FileText, CheckCircle2, Search, Filter, Clock, Activity } from 'lucide-react';
 import { CheatLog, SubmissionRecord } from '../../types';
 import { fetchSubmissions, fetchCheatLogs } from '../../services/api';
 import { formatSubmissionTime } from '../../utils/dateFormatter';
 
 interface MonitoringDashboardProps {
   apiUrl: string;
+  onOpenDiagnostics?: () => void;
 }
 
-export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({ apiUrl }) => {
+export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({ apiUrl, onOpenDiagnostics }) => {
   const [submissions, setSubmissions] = useState<SubmissionRecord[]>([]);
   const [cheatLogs, setCheatLogs] = useState<CheatLog[]>([]);
   const [loading, setLoading] = useState(false);
@@ -70,15 +71,27 @@ export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({ apiUrl
           </p>
         </div>
 
-        {/* Manual Refresh Button */}
-        <button
-          onClick={loadData}
-          disabled={loading}
-          className="px-6 py-3 bg-[#6B51A5] hover:bg-[#583F8F] text-white font-extrabold text-xs rounded-2xl shadow-lg shadow-purple-950/10 flex items-center space-x-2 transition cursor-pointer disabled:opacity-50"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          <span>{loading ? 'Loading Data...' : 'Refresh Records'}</span>
-        </button>
+        <div className="flex items-center gap-2.5">
+          {onOpenDiagnostics && (
+            <button
+              onClick={onOpenDiagnostics}
+              className="px-5 py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-extrabold text-xs rounded-2xl shadow-sm flex items-center space-x-2 transition cursor-pointer"
+            >
+              <Activity className="w-4 h-4 text-indigo-600 animate-pulse" />
+              <span>DB Diagnostics</span>
+            </button>
+          )}
+
+          {/* Manual Refresh Button */}
+          <button
+            onClick={loadData}
+            disabled={loading}
+            className="px-6 py-3 bg-[#6B51A5] hover:bg-[#583F8F] text-white font-extrabold text-xs rounded-2xl shadow-lg shadow-purple-950/10 flex items-center space-x-2 transition cursor-pointer disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <span>{loading ? 'Loading Data...' : 'Refresh Records'}</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter and Search Bar */}

@@ -175,16 +175,16 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
                     type="button"
                     onClick={() => setIsZoomOpen(true)}
                     className="absolute top-2 right-2 bg-[#3C2A63]/80 hover:bg-[#3C2A63] text-white p-2 rounded-xl backdrop-blur transition shadow-md cursor-pointer opacity-90 group-hover:opacity-100 flex items-center gap-1 text-[11px] font-bold"
-                    title="Phóng to ảnh biểu đồ"
+                    title="Zoom chart image"
                   >
                     <Maximize2 className="w-3.5 h-3.5" />
-                    <span>Phóng to</span>
+                    <span>Zoom</span>
                   </button>
 
                   <div className="p-2.5 bg-white/90 border-t border-purple-100 flex items-center justify-between text-xs text-[#7C68A5]">
-                    <span className="font-semibold text-[11px]">📊 Ngữ liệu hình ảnh / Biểu đồ Task 1</span>
+                    <span className="font-semibold text-[11px]">📊 Task 1 Visual / Chart Material</span>
                     <span className="text-[10px] text-purple-600 font-bold bg-purple-50 px-2 py-0.5 rounded-md">
-                      Nhấn để phóng to
+                      Click to enlarge
                     </span>
                   </div>
                 </div>
@@ -192,7 +192,7 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
             )}
             
             <div className="p-3.5 bg-[#F8F6FC] rounded-2xl border border-purple-100 text-xs text-[#7C68A5] font-medium leading-relaxed">
-              💡 <strong>Lưu ý:</strong> Bài thi Task 1 yêu cầu mô tả các đặc điểm chính, xu hướng nổi bật và so sánh số liệu từ biểu đồ/sơ đồ. Yêu cầu tối thiểu 150 từ.
+              💡 <strong>Note:</strong> Task 1 requires describing key features, prominent trends, and comparing data from the visual. Minimum requirement is 150 words.
             </div>
           </div>
 

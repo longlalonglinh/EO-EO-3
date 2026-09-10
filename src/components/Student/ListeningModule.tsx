@@ -139,7 +139,7 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
             type="button"
             onClick={togglePlay}
             className="w-12 h-12 rounded-2xl bg-[#6B51A5] hover:bg-[#503A7A] text-white flex items-center justify-center shadow-lg shadow-purple-950/10 transition shrink-0 active:scale-95 cursor-pointer"
-            title={isPlaying ? 'Tạm dừng Audio' : 'Phát Audio'}
+            title={isPlaying ? 'Pause Audio' : 'Play Audio'}
           >
             {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5 fill-current" />}
           </button>
@@ -170,7 +170,7 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
               value={playbackRate}
               onChange={(e) => handleRateChange(parseFloat(e.target.value))}
               className="bg-[#F5F2F9] border border-purple-100 text-[#503A7A] text-xs font-bold rounded-xl px-2.5 py-2 focus:outline-none focus:border-[#6B51A5] font-mono cursor-pointer"
-              title="Tốc độ phát audio"
+              title="Playback speed"
             >
               <option value={0.75}>0.75x</option>
               <option value={1}>1.0x</option>
@@ -182,7 +182,7 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
               type="button"
               onClick={toggleMute}
               className="p-2 text-[#503A7A] hover:bg-[#E2DDEC] rounded-xl transition cursor-pointer"
-              title={isMuted ? 'Bật âm thanh' : 'Tắt tiếng'}
+              title={isMuted ? 'Unmute' : 'Mute'}
             >
               {isMuted ? <VolumeX className="w-4 h-4 text-rose-500" /> : <Volume2 className="w-4 h-4" />}
             </button>
@@ -192,7 +192,7 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
         {/* Global Progress Pill */}
         <div className="flex items-center space-x-3 shrink-0">
           <div className="text-xs text-[#7C68A5] font-medium flex items-center gap-2">
-            <span>Đã trả lời:</span>
+            <span>Answered:</span>
             <span className="px-3 py-1 bg-purple-100 border border-purple-200 rounded-full text-xs font-black text-[#503A7A] font-mono">
               {answeredCount} / {totalQuestions}
             </span>
@@ -257,7 +257,7 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
                     ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                     : 'bg-[#F5F2F9] text-[#503A7A] hover:bg-[#E2DDEC] border border-purple-100'
                 }`}
-                title={`Nhảy tới Câu ${idx + 1}`}
+                title={`Jump to Question ${idx + 1}`}
               >
                 {idx + 1}
               </button>
@@ -284,7 +284,7 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
 
           <div className="flex items-center space-x-1.5 text-xs text-[#7C68A5] bg-[#FAF8FE] border border-[#EBE4F7] px-3 py-1.5 rounded-xl">
             <Info className="w-3.5 h-3.5 text-[#6B51A5] shrink-0" />
-            <span>Điền hoặc chọn đáp án trực tiếp vào từng câu hỏi bên dưới</span>
+            <span>Enter or select answers directly for each question below</span>
           </div>
         </div>
 
@@ -292,7 +292,7 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
         {filteredQuestions.length === 0 ? (
           <div className="p-12 text-center bg-[#FAF8FE] border border-[#EBE4F7] rounded-3xl">
             <Headphones className="w-12 h-12 text-[#7C68A5] mx-auto mb-3 opacity-60" />
-            <p className="text-[#503A7A] text-sm font-bold">Chưa có câu hỏi nào cho Part {activePart}.</p>
+            <p className="text-[#503A7A] text-sm font-bold">No questions available for Part {activePart}.</p>
           </div>
         ) : (
           <div className="space-y-5">
@@ -317,7 +317,7 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
             onClick={() => setActivePart(prev => (prev > 1 ? (prev - 1 as 1 | 2 | 3 | 4) : prev))}
             className="px-4 py-2.5 bg-[#F5F2F9] hover:bg-[#E2DDEC] disabled:opacity-40 disabled:cursor-not-allowed text-[#503A7A] text-xs font-extrabold rounded-xl border border-purple-200 transition flex items-center gap-1.5 cursor-pointer"
           >
-            ← Part trước
+            ← Previous Part
           </button>
 
           <button
@@ -326,7 +326,7 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
             onClick={() => setActivePart(prev => (prev < 4 ? (prev + 1 as 1 | 2 | 3 | 4) : prev))}
             className="px-5 py-2.5 bg-[#6B51A5] hover:bg-[#503A7A] disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-extrabold rounded-xl transition shadow-md shadow-purple-950/10 flex items-center gap-1.5 cursor-pointer"
           >
-            <span>Part tiếp theo</span>
+            <span>Next Part</span>
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>

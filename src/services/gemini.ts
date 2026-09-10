@@ -11,7 +11,7 @@ export async function parsePdfWithGemini(pdfBase64: string, customApiKey?: strin
     console.warn('No Gemini API key provided. Using simulated fallback parser response.');
     return JSON.stringify({
       exam_code: 'IELTS02',
-      title: 'Đề Thi Thử IELTS Academic - Test 02 (AI Parsed)',
+      title: 'IELTS Academic Practice Exam - Test 02 (AI Parsed)',
       audio_url: 'https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=ambient-piano-amp-strings-10711.mp3',
       listening_questions: [
         {
@@ -58,7 +58,7 @@ export async function parsePdfWithGemini(pdfBase64: string, customApiKey?: strin
   let lastError: any = null;
   const MAX_RETRIES = 3;
 
-  // Vòng lặp Auto-Retry xử lý lỗi 503
+  // Auto-Retry loop to handle transient 503 errors
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const response = await ai.models.generateContent({
@@ -114,20 +114,20 @@ Return strictly valid JSON only. Do not include markdown formatting, code block 
         ]
       });
 
-      // Nếu thành công ở bất kỳ lần thử nào, trả về dữ liệu và thoát hàm
+      // If successful on any attempt, return result immediately
       return response.text || '';
 
     } catch (err: any) {
       lastError = err;
-      console.warn(`[Auto-Retry] Lần thử ${attempt}/${MAX_RETRIES} thất bại do máy chủ Google (Lỗi ${err?.status}): ${err.message}`);
+      console.warn(`[Auto-Retry] Attempt ${attempt}/${MAX_RETRIES} failed from Google server (Error ${err?.status}): ${err.message}`);
       
       if (attempt < MAX_RETRIES) {
-        // Tạm dừng 2.5 giây trước khi gửi yêu cầu tiếp theo để máy chủ Google kịp nhả kết nối
+        // Pause 2.5s before next retry to allow connection release
         await new Promise(resolve => setTimeout(resolve, 2500));
       }
     }
   }
 
-  // Nếu thử 3 lần mà Google vẫn báo 503 thì mới đẩy lỗi ra giao diện màu đỏ
-  throw new Error(`Đã thử lại tự động ${MAX_RETRIES} lần nhưng máy chủ AI đang bị nghẽn (High Demand). Vui lòng chờ vài phút rồi bấm bóc tách lại! Lỗi gốc: ${lastError?.message}`);
+  // If retries exhausted, surface error
+  throw new Error(`Auto-retried ${MAX_RETRIES} times, but the AI service is experiencing high demand. Please try again in a few moments. Root cause: ${lastError?.message}`);
 }

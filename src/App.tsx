@@ -34,72 +34,32 @@ import {
   Clock,
   Sparkles,
   Lock,
-  ArrowRight
+  ArrowRight,
+  Activity
 } from 'lucide-react';
 
-import { DEFAULT_API_URL } from './services/api';
+import { DEFAULT_API_URL, fetchExam } from './services/api';
+import { DEFAULT_EXAMS } from './data/defaultExams';
+import { DatabaseDiagnosticsModal } from './components/Common/DatabaseDiagnosticsModal';
+import { extractQuestionsFromRawResponse } from './services/dbDiagnostics';
 
 // Default GAS URL or loaded from LocalStorage
 const DEFAULT_GAS_URL = DEFAULT_API_URL;
 
-// Sample fallback exam data if GAS endpoint is not connected yet
+// Sample fallback exam data if GAS endpoint is not connected yet (uses full standard IELTS exam)
+const defaultTemplate = DEFAULT_EXAMS[0];
 const SAMPLE_EXAM: ExamData = {
   exam_code: 'IELTS01',
-  title: 'IELTS Academic Mock Examination - Test 01',
-  audio_url: 'https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=ambient-piano-amp-strings-10711.mp3',
-  listening_questions: [
-    {
-      question_id: 'l1',
-      section: 'listening',
-      question_text: '1. What is the customer\'s main requirement for the apartment?',
-      question_type: 'multiple_choice',
-      options: ['A. Near the city center', 'B. Sea view with 2 bedrooms', 'C. Close to the train station', 'D. Pet-friendly balcony'],
-      max_score: 1
-    },
-    {
-      question_id: 'l2',
-      section: 'listening',
-      question_text: '2. Complete the form: The lease agreement starts on ________ November.',
-      question_type: 'fill_in_blank',
-      max_score: 1
-    },
-    {
-      question_id: 'l3',
-      section: 'listening',
-      question_text: '3. What is the maximum monthly rent budget mentioned?',
-      question_type: 'multiple_choice',
-      options: ['A. $800', 'B. $1200', 'C. $1500', 'D. $2000'],
-      max_score: 1
-    }
-  ],
-  passage_title: 'The Rise of Renewable Energy Technologies in Modern Cities',
-  passage_text: `Renewable energy technologies have witnessed unprecedented growth over the past two decades. Urban centers around the globe are increasingly integrating solar photovoltaics, wind turbines, and geothermal systems into their energy grids to curb carbon emissions.\n\nSolar power, in particular, has experienced dramatic cost reductions due to technological breakthroughs and economies of scale. High-efficiency monocrystalline silicon panels can now convert over 22% of sunlight into usable electrical energy. Furthermore, battery storage solutions, such as grid-scale lithium-ion facilities, are resolving the intermittency challenges historically associated with solar and wind power.\n\nDespite these advancements, urban deployment faces spatial constraints and regulatory hurdles. Roof space availability in high-density metropolitan areas is often limited, necessitating innovative solutions like building-integrated photovoltaics (BIPV) and floating solar farms on reservoirs. Policy frameworks and government subsidies continue to play a pivotal role in accelerating adoption.`,
-  reading_questions: [
-    {
-      question_id: 'r1',
-      section: 'reading',
-      question_text: '1. High-efficiency monocrystalline silicon panels convert over 22% of sunlight into electrical energy.',
-      question_type: 'true_false_not_given',
-      max_score: 1
-    },
-    {
-      question_id: 'r2',
-      section: 'reading',
-      question_text: '2. What facility solves the intermittency challenge of solar energy?',
-      question_type: 'fill_in_blank',
-      max_score: 1
-    },
-    {
-      question_id: 'r3',
-      section: 'reading',
-      question_text: '3. According to the passage, floating solar farms are built on:',
-      question_type: 'multiple_choice',
-      options: ['A. Ocean surfaces', 'B. Reservoirs', 'C. Residential roofs', 'D. Agricultural fields'],
-      max_score: 1
-    }
-  ],
-  writing_task1_prompt: 'The chart below shows the percentage of energy generated from renewable sources in four European countries from 2010 to 2020. Summarise the information by selecting and reporting the main features, and make comparisons where relevant. Write at least 150 words.',
-  writing_task2_prompt: 'Some people argue that technological development is causing people to lose social skills and live more isolated lives. To what extent do you agree or disagree? Give reasons for your answer and include relevant examples. Write at least 250 words.'
+  title: defaultTemplate.title,
+  audio_url: defaultTemplate.audio_url,
+  listening_questions: defaultTemplate.questions.filter(q => q.section === 'listening'),
+  passage_title: defaultTemplate.passages?.[0]?.title || 'Reading Passage',
+  passage_text: defaultTemplate.passages?.[0]?.text || '',
+  passages: defaultTemplate.passages,
+  reading_questions: defaultTemplate.questions.filter(q => q.section === 'reading'),
+  writing_task1_prompt: defaultTemplate.writing_task1_prompt,
+  writing_task1_image: defaultTemplate.writing_task1_image,
+  writing_task2_prompt: defaultTemplate.writing_task2_prompt
 };
 
 export default function App() {
@@ -125,6 +85,9 @@ export default function App() {
   const [gasUrl, setGasUrl] = useState<string>(() => {
     return localStorage.getItem('ielts_gas_url') || DEFAULT_GAS_URL;
   });
+
+  // Diagnostics Modal State
+  const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
 
   // Student Flow State
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -253,17 +216,81 @@ export default function App() {
   const [isCustomPracticeSession, setIsCustomPracticeSession] = useState(false);
   const [customPracticeDeckId, setCustomPracticeDeckId] = useState('ON_TAP_01');
 
+  // Helper to format any raw exam structure into ExamData
+  const formatRawExamToExamData = (examObj: any, cleanCode: string): ExamData => {
+    const allQs: Question[] = Array.isArray(examObj.questions) ? examObj.questions : [];
+    
+    const isListening = (q: any) => {
+      const s = String(q.section || '').toLowerCase().trim();
+      const id = String(q.question_id || '').toLowerCase().trim();
+      return s.includes('listen') || s === 'l' || id.startsWith('l');
+    };
+
+    const isReading = (q: any) => {
+      const s = String(q.section || '').toLowerCase().trim();
+      const id = String(q.question_id || '').toLowerCase().trim();
+      return s.includes('read') || s.includes('passage') || s === 'r' || id.startsWith('r');
+    };
+
+    let lQs = allQs.filter(isListening);
+    let rQs = allQs.filter(isReading);
+
+    // If section wasn't labeled in Sheet, intelligently divide or assign questions
+    if (lQs.length === 0 && rQs.length === 0 && allQs.length > 0) {
+      if (examObj.reading_passage || examObj.passage_text || examObj.passages || examObj.reading_passages) {
+        rQs = allQs;
+      } else if (examObj.audio_url) {
+        lQs = allQs;
+      } else {
+        rQs = allQs;
+      }
+    }
+
+    // Default template fallback for passages and audio
+    const fallbackTemplate = DEFAULT_EXAMS[0];
+
+    // Parse passages array if available or from reading_passage JSON string
+    let parsedPassages = examObj.passages || examObj.reading_passages || fallbackTemplate.passages;
+    if (!parsedPassages && examObj.reading_passage) {
+      try {
+        const testJson = JSON.parse(examObj.reading_passage);
+        if (Array.isArray(testJson)) {
+          parsedPassages = testJson;
+        }
+      } catch (e) {
+        // Not JSON string, use normal text
+      }
+    }
+
+    return {
+      exam_code: examObj.exam_code || cleanCode,
+      title: examObj.title || `IELTS Examination ${cleanCode}`,
+      audio_url: examObj.audio_url || fallbackTemplate.audio_url,
+      listening_questions: lQs.length > 0 ? lQs : (examObj.listening_questions?.length ? examObj.listening_questions : fallbackTemplate.questions.filter(q => q.section === 'listening')),
+      passage_title: examObj.passage_title || (parsedPassages?.[0]?.title) || examObj.reading_passage_title || fallbackTemplate.passages?.[0]?.title || 'Reading Passage',
+      passage_text: examObj.passage_text || (parsedPassages?.[0]?.text) || examObj.reading_passage || fallbackTemplate.passages?.[0]?.text || '',
+      passages: parsedPassages,
+      reading_questions: rQs.length > 0 ? rQs : (examObj.reading_questions?.length ? examObj.reading_questions : fallbackTemplate.questions.filter(q => q.section === 'reading')),
+      writing_task1_prompt: examObj.writing_task1_prompt || fallbackTemplate.writing_task1_prompt,
+      writing_task1_image: examObj.writing_task1_image || fallbackTemplate.writing_task1_image,
+      writing_task2_prompt: examObj.writing_task2_prompt || fallbackTemplate.writing_task2_prompt
+    };
+  };
+
   // Handle Login & Load Exam
   const handleLogin = async (sbdInput: string, codeInput: string, reviewPrevious: boolean) => {
     const cleanSbd = sbdInput.trim();
-    const cleanCode = codeInput.trim();
+    const cleanCode = codeInput.trim().toUpperCase();
     setSbd(cleanSbd);
     setExamCode(cleanCode);
+    setUserAnswers({});
+    setWritingTask1('');
+    setWritingTask2('');
     setCompletedSkills({ listening: false, reading: false, writing: false });
     setSkillNotice(null);
 
     // Check if entered code corresponds to a Custom Practice Deck
-    const upperCode = cleanCode.toUpperCase();
+    const upperCode = cleanCode;
     const allPracticeDecks = practiceService.getAllDecks();
     const isPracticeDeck = allPracticeDecks.some(d => d.deck_id.toUpperCase() === upperCode) ||
       upperCode.startsWith('ON_TAP') ||
@@ -274,6 +301,16 @@ export default function App() {
       upperCode.startsWith('PRAC_SET');
 
     if (isPracticeDeck) {
+      if (cleanSbd) {
+        const upperSbd = cleanSbd.toUpperCase();
+        if (upperSbd === 'HV01' || upperSbd === 'HV02' || upperSbd === 'HV03') {
+          practiceService.setCurrentLearner(upperSbd);
+        } else {
+          // If the learner entered their real name
+          const cur = practiceService.getCurrentLearner();
+          practiceService.updateLearnerName(cur.student_id, cleanSbd);
+        }
+      }
       setIsCustomPracticeSession(true);
       setCustomPracticeDeckId(cleanCode);
       setIsLoggedIn(true);
@@ -291,108 +328,42 @@ export default function App() {
 
     setIsLoadingExam(true);
 
+    let finalExamData: ExamData | null = null;
+
     try {
-      if (gasUrl && !gasUrl.includes('AKfycbx_mock')) {
-        let loadedExam: any = null;
-
-        // Try get_exam action first
-        try {
-          const fetchUrl = `${gasUrl}?action=get_exam&exam_code=${encodeURIComponent(cleanCode)}`;
-          const res = await fetch(fetchUrl);
-          if (res.ok) {
-            const json = await res.json();
-            if (json && (json.questions || json.exam?.questions || json.data?.questions)) {
-              loadedExam = json.exam || json.data || json;
-            }
-          }
-        } catch (e1) {
-          console.warn('get_exam attempt failed, trying getExam:', e1);
-        }
-
-        // Try getExam action as fallback
-        if (!loadedExam) {
-          try {
-            const fetchUrl2 = `${gasUrl}?action=getExam&exam_code=${encodeURIComponent(cleanCode)}`;
-            const res2 = await fetch(fetchUrl2);
-            if (res2.ok) {
-              const json2 = await res2.json();
-              if (json2 && (json2.questions || json2.exam?.questions || json2.data?.questions)) {
-                loadedExam = json2.exam || json2.data || json2;
-              }
-            }
-          } catch (e2) {
-            console.warn('getExam attempt failed:', e2);
-          }
-        }
-
-        if (loadedExam && Array.isArray(loadedExam.questions) && loadedExam.questions.length > 0) {
-          // Parse GAS questions array into ExamData structure with case-insensitive matching
-          const questions: Question[] = loadedExam.questions;
-          const lQs = questions.filter(q => q.section?.toLowerCase()?.trim() === 'listening');
-          const rQs = questions.filter(q => q.section?.toLowerCase()?.trim() === 'reading');
-
-          // Parse passages array if available or from reading_passage JSON string
-          let parsedPassages = loadedExam.passages || loadedExam.reading_passages;
-          if (!parsedPassages && loadedExam.reading_passage) {
-            try {
-              const testJson = JSON.parse(loadedExam.reading_passage);
-              if (Array.isArray(testJson)) {
-                parsedPassages = testJson;
-              }
-            } catch (e) {
-              // Not JSON string, use normal text
-            }
-          }
-
-          handleSetExamData({
-            exam_code: cleanCode,
-            title: loadedExam.title || `IELTS Examination ${cleanCode}`,
-            audio_url: loadedExam.audio_url || SAMPLE_EXAM.audio_url,
-            listening_questions: lQs.length > 0 ? lQs : (loadedExam.listening_questions || []),
-            passage_title: loadedExam.passage_title || (parsedPassages?.[0]?.title) || loadedExam.reading_passage_title || SAMPLE_EXAM.passage_title,
-            passage_text: loadedExam.passage_text || (parsedPassages?.[0]?.text) || loadedExam.reading_passage || SAMPLE_EXAM.passage_text,
-            passages: parsedPassages,
-            reading_questions: rQs.length > 0 ? rQs : (loadedExam.reading_questions || []),
-            writing_task1_prompt: loadedExam.writing_task1_prompt || SAMPLE_EXAM.writing_task1_prompt,
-            writing_task1_image: loadedExam.writing_task1_image || SAMPLE_EXAM.writing_task1_image,
-            writing_task2_prompt: loadedExam.writing_task2_prompt || SAMPLE_EXAM.writing_task2_prompt
-          });
-
-          setSkillNotice(`✅ Successfully loaded exam [${cleanCode}] from Google Sheets (${questions.length} questions).`);
-          setTimeout(() => setSkillNotice(null), 6000);
+      const fetchResult = await fetchExam(gasUrl, cleanCode);
+      if (fetchResult.success && fetchResult.exam) {
+        finalExamData = fetchResult.exam;
+        const totalCount = (finalExamData.listening_questions?.length || 0) + (finalExamData.reading_questions?.length || 0);
+        if (fetchResult.source === 'gas') {
+          setSkillNotice(`✅ Successfully loaded exam [${cleanCode}] from Google Sheets (${totalCount} questions).`);
+        } else if (fetchResult.source === 'local') {
+          setSkillNotice(`✅ Loaded exam [${cleanCode}] from device cache (${totalCount} questions).`);
         } else {
-          // Check local stored exams or DEFAULT_EXAMS fallback
-          const localExamsRaw = localStorage.getItem('ielts_saved_exams');
-          let foundExam: any = null;
-          if (localExamsRaw) {
-            try {
-              const localList = JSON.parse(localExamsRaw);
-              foundExam = Array.isArray(localList) ? localList.find((ex: any) => ex.exam_code?.toUpperCase() === cleanCode.toUpperCase()) : null;
-            } catch (e) {}
-          }
-
-          if (foundExam) {
-            handleSetExamData(foundExam);
-            setSkillNotice(`✅ Loaded exam [${cleanCode}] from local exam storage.`);
-            setTimeout(() => setSkillNotice(null), 6000);
-          } else {
-            setSkillNotice(`⚠️ No questions found for exam code [${cleanCode}] in QUESTIONS tab (displaying standard template).`);
-            setTimeout(() => setSkillNotice(null), 8000);
-          }
+          setSkillNotice(`ℹ️ Loaded standard exam [${cleanCode}] (${totalCount} questions). Check "DB Diagnostics" for connection details.`);
         }
+        setTimeout(() => setSkillNotice(null), 7000);
       }
     } catch (err) {
-      console.warn('Could not fetch exam from GAS API, using fallback exam data:', err);
-      setSkillNotice(`⚠️ Unable to connect to Google Apps Script. Using local exam data.`);
-      setTimeout(() => setSkillNotice(null), 8000);
-    } finally {
-      setIsLoadingExam(false);
-      setIsLoggedIn(true);
+      console.warn('Could not fetch exam from API, using standard template:', err);
+    }
 
-      // Check if reviewing previous submission in Practice Mode
-      if (mode === 'PRACTICE' && reviewPrevious) {
-        const existingSubs = localStorage.getItem('ielts_student_submissions');
-        if (existingSubs) {
+    if (!finalExamData) {
+      finalExamData = formatRawExamToExamData(DEFAULT_EXAMS[0] || SAMPLE_EXAM, cleanCode);
+      finalExamData.exam_code = cleanCode;
+      setSkillNotice(`ℹ️ Displaying standard questions for test code [${cleanCode}].`);
+      setTimeout(() => setSkillNotice(null), 6000);
+    }
+
+    handleSetExamData(finalExamData);
+    setIsLoadingExam(false);
+    setIsLoggedIn(true);
+
+    // Check if reviewing previous submission in Practice Mode
+    if (mode === 'PRACTICE' && reviewPrevious) {
+      const existingSubs = localStorage.getItem('ielts_student_submissions');
+      if (existingSubs) {
+        try {
           const subsArr: SubmissionResponse[] = JSON.parse(existingSubs);
           const found = subsArr.find(s => s.sbd === cleanSbd && s.exam_code === cleanCode);
           if (found) {
@@ -400,10 +371,18 @@ export default function App() {
             setCurrentModule('results');
             return;
           }
-        }
+        } catch (e) {}
       }
+    }
 
+    // Intelligently route to Listening or Reading depending on available questions
+    if (finalExamData.listening_questions && finalExamData.listening_questions.length > 0) {
       setCurrentModule('listening');
+    } else if (finalExamData.reading_questions && finalExamData.reading_questions.length > 0) {
+      setCurrentModule('reading');
+      setCompletedSkills({ listening: true, reading: false, writing: false });
+    } else {
+      setCurrentModule('reading');
     }
   };
 
@@ -557,7 +536,7 @@ export default function App() {
   // Complete GAS Code Script Template
   const gasBackendScript = `/**
  * BACKEND GOOGLE APPS SCRIPT (GAS) - IELTS EXAM SYSTEM
- * Tương thích với Google Sheets gồm 4 tabs: EXAMS, QUESTIONS, SUBMISSIONS, CHEATLOGS
+ * Compatible with Google Sheets containing tabs: EXAMS, QUESTIONS, SUBMISSIONS, CHEATLOGS, STUDENT_PROGRESS, PRACTICE_QUESTIONS
  */
 
 function doGet(e) {
@@ -565,13 +544,13 @@ function doGet(e) {
   var action = (params.action || 'get_exam').toLowerCase();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  // 1. ACTION: LẤY ĐỀ THI (get_exam / getexam)
+  // 1. ACTION: GET EXAM (get_exam / getexam)
   if (action === 'get_exam' || action === 'getexam') {
     var rawCode = params.exam_code || 'IELTS01';
     var examCode = rawCode.toString().trim().toUpperCase();
 
-    // Đọc thông tin chung từ sheet EXAMS (nếu có)
-    var title = 'Đề thi IELTS ' + rawCode;
+    // Read general exam information from EXAMS sheet (if present)
+    var title = 'IELTS Exam ' + rawCode;
     var audioUrl = '';
     var passageTitle = '';
     var passageText = '';
@@ -585,7 +564,7 @@ function doGet(e) {
         var er = examsData[eRow];
         if (er[0] && er[0].toString().trim().toUpperCase() === examCode) {
           if (er[1]) title = er[1].toString().trim();
-          if (er[4]) audioUrl = er[4].toString().trim(); // Cột Audio URL nếu có
+          if (er[4]) audioUrl = er[4].toString().trim(); // Audio URL column if present
           if (er[5]) passageTitle = er[5].toString().trim();
           if (er[6]) passageText = er[6].toString().trim();
           if (er[7]) writingTask1 = er[7].toString().trim();
@@ -595,7 +574,7 @@ function doGet(e) {
       }
     }
 
-    // Đọc danh sách câu hỏi từ sheet QUESTIONS
+    // Read question list from QUESTIONS sheet
     var questionsSheet = ss.getSheetByName('QUESTIONS');
     var questions = [];
 
@@ -607,16 +586,16 @@ function doGet(e) {
           var rawSection = (row[2] || 'reading').toString().trim().toLowerCase();
           var qObj = {
             question_id: (row[1] || ('q_' + i)).toString().trim(),
-            section: rawSection, // listening hoặc reading
+            section: rawSection, // listening or reading
             question_text: (row[3] || '').toString().trim(),
             question_type: (row[4] || 'multiple_choice').toString().trim().toLowerCase(),
             options: row[5] ? row[5].toString().split('|').map(function(s){ return s.trim(); }) : [],
             max_score: Number(row[7]) || 1
-            // Lưu ý: Cột 6 (CORRECT_ANSWERS) bảo mật ở máy chủ, không trả về client
+            // Note: Column 6 (CORRECT_ANSWERS) is kept confidential on server, not sent to client
           };
           questions.push(qObj);
 
-          // Cập nhật thông tin bài nếu có ghi ở dòng QUESTIONS
+          // Update passage/meta if defined in QUESTIONS row
           if (row[8] && !passageTitle) passageTitle = row[8].toString().trim();
           if (row[9] && !passageText) passageText = row[9].toString().trim();
           if (row[10] && !audioUrl) audioUrl = row[10].toString().trim();
@@ -642,7 +621,7 @@ function doGet(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
 
-  // 2. ACTION: LẤY DANH SÁCH BÀI NỘP CHO GIÁO VIÊN (getSubmissions / get_submissions)
+  // 2. ACTION: GET SUBMISSIONS FOR INSTRUCTOR (getSubmissions / get_submissions)
   if (action === 'getsubmissions' || action === 'get_submissions') {
     var subSheet = ss.getSheetByName('SUBMISSIONS');
     var submissions = [];
@@ -675,7 +654,7 @@ function doGet(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
 
-  // 3. ACTION: LẤY LOGS GIAN LẬN (getCheatLogs / get_cheat_logs)
+  // 3. ACTION: GET CHEAT / INTEGRITY LOGS (getCheatLogs / get_cheat_logs)
   if (action === 'getcheatlogs' || action === 'get_cheat_logs') {
     var cheatSheet = ss.getSheetByName('CHEATLOGS');
     var logs = [];
@@ -697,6 +676,63 @@ function doGet(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
 
+  // 4. ACTION: GET 3 LEARNERS PROGRESS (get_student_progress)
+  if (action === 'get_student_progress') {
+    var pSheet = ss.getSheetByName('STUDENT_PROGRESS');
+    var progress = [];
+    if (pSheet && pSheet.getLastRow() > 1) {
+      var pData = pSheet.getDataRange().getValues();
+      for (var p = 1; p < pData.length; p++) {
+        var pr = pData[p];
+        progress.push({
+          student_id: pr[0],
+          student_name: pr[1],
+          deck_id: pr[2],
+          deck_title: pr[3],
+          cards_mastered: Number(pr[4]) || 0,
+          total_cards: Number(pr[5]) || 0,
+          mastery_pct: Number(pr[6]) || 0,
+          correct_count: Number(pr[7]) || 0,
+          wrong_count: Number(pr[8]) || 0,
+          daily_streak: Number(pr[9]) || 0,
+          last_studied_at: pr[10] || '',
+          notes: pr[11] || ''
+        });
+      }
+    }
+    return ContentService.createTextOutput(JSON.stringify({ status: 'success', data: progress }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 5. ACTION: GET PRACTICE QUESTIONS FROM SHEET (get_practice_questions)
+  if (action === 'get_practice_questions') {
+    var pqSheet = ss.getSheetByName('PRACTICE_QUESTIONS');
+    var pCards = [];
+    if (pqSheet && pqSheet.getLastRow() > 1) {
+      var pqData = pqSheet.getDataRange().getValues();
+      for (var q = 1; q < pqData.length; q++) {
+        var qr = pqData[q];
+        pCards.push({
+          id: qr[0] || ('pq_' + q),
+          deck_id: qr[1] || 'PRACTICE_01',
+          sentence_en: qr[2] || '',
+          sentence_vi: qr[3] || '',
+          cloze_target: qr[4] || '',
+          target_word: qr[5] || qr[4] || '',
+          part_of_speech: qr[6] || '',
+          phonetic: qr[7] || '',
+          hints: qr[8] || '',
+          accepted_answers: qr[9] ? qr[9].toString().split('|').map(function(s){ return s.trim(); }) : [qr[4]],
+          explanation: qr[10] || '',
+          options: qr[11] ? qr[11].toString().split('|').map(function(s){ return s.trim(); }) : [],
+          difficulty: qr[12] || 'medium'
+        });
+      }
+    }
+    return ContentService.createTextOutput(JSON.stringify({ status: 'success', data: pCards }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
   return ContentService.createTextOutput(JSON.stringify({ status: 'ok', message: 'IELTS GAS API Ready' }))
     .setMimeType(ContentService.MimeType.JSON);
 }
@@ -707,7 +743,40 @@ function doPost(e) {
     var action = (contents.action || 'submitExam').toLowerCase();
     var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-    // 1. ACTION CHẤM ĐIỂM WRITING (gradeWriting / grade_writing)
+    // 0. ACTION: SYNC LEARNER PROGRESS (sync_student_progress)
+    if (action === 'sync_student_progress') {
+      var studentSheet = ss.getSheetByName('STUDENT_PROGRESS') || ss.insertSheet('STUDENT_PROGRESS');
+      if (studentSheet.getLastRow() === 0) {
+        studentSheet.appendRow([
+          'STUDENT_ID', 'STUDENT_NAME', 'DECK_ID', 'DECK_TITLE',
+          'CARDS_MASTERED', 'TOTAL_CARDS', 'MASTERY_PCT', 'CORRECT_COUNT',
+          'WRONG_COUNT', 'DAILY_STREAK', 'LAST_STUDIED_AT', 'RAW_PAYLOAD'
+        ]);
+      }
+
+      var records = contents.records || [];
+      for (var rIdx = 0; rIdx < records.length; rIdx++) {
+        var rec = records[rIdx];
+        studentSheet.appendRow([
+          rec.student_id || contents.student_id || 'HV01',
+          rec.student_name || contents.student_name || 'Learner',
+          rec.deck_id || 'PRACTICE_01',
+          rec.deck_title || 'Practice',
+          rec.cards_mastered || 0,
+          rec.total_cards || 0,
+          rec.mastery_pct || 0,
+          rec.correct_count || 0,
+          rec.wrong_count || 0,
+          rec.daily_streak || 1,
+          rec.last_studied_at || new Date().toISOString(),
+          contents.raw_stats_json || ''
+        ]);
+      }
+      return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'Student progress synchronized successfully' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 1. ACTION: GRADE WRITING (gradeWriting / grade_writing)
     if (action === 'gradewriting' || action === 'grade_writing') {
       var targetSubId = contents.submission_id;
       var subSheet = ss.getSheetByName('SUBMISSIONS');
@@ -731,11 +800,11 @@ function doPost(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    // 2. ACTION TẢI LÊN ĐỀ THI (upload_exam / uploadexam)
+    // 2. ACTION: UPLOAD EXAM (upload_exam / uploadexam)
     if (action === 'upload_exam' || action === 'uploadexam') {
       var exam = contents.exam_data;
       if (!exam) {
-        return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Không tìm thấy dữ liệu exam_data' }))
+        return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Missing exam_data payload' }))
           .setMimeType(ContentService.MimeType.JSON);
       }
 
@@ -743,7 +812,7 @@ function doPost(e) {
       var sheetQ = ss.getSheetByName('QUESTIONS') || ss.insertSheet('QUESTIONS');
 
       var uExamCode = (exam.exam_code || 'IELTS01').toString().trim().toUpperCase();
-      var uTitle = exam.title || ('Đề thi IELTS ' + uExamCode);
+      var uTitle = exam.title || ('IELTS Exam ' + uExamCode);
       var uTestType = exam.test_type || 'Academic';
       var uDuration = exam.duration_mins || 60;
       var uAudioUrl = exam.audio_url || '';
@@ -804,13 +873,13 @@ function doPost(e) {
 
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success',
-        message: 'Đã lưu đề thi ' + uExamCode + ' lên Google Sheets thành công!',
+        message: 'Exam ' + uExamCode + ' saved to Google Sheets successfully!',
         exam_code: uExamCode,
         total_questions: listeningQs.length + readingQs.length
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // 3. ACTION NỘP BÀI THI (submitExam / submit_exam)
+    // 3. ACTION: SUBMIT EXAM (submitExam / submit_exam)
     var subSheet = ss.getSheetByName('SUBMISSIONS');
     var cheatSheet = ss.getSheetByName('CHEATLOGS');
 
@@ -819,7 +888,7 @@ function doPost(e) {
     var examCode = (contents.exam_code || '').toString().trim().toUpperCase();
     var answers = contents.answers || {};
 
-    // Tự động chấm điểm trắc nghiệm Listening & Reading
+    // Auto-grade Listening & Reading objective questions
     var questionsSheet = ss.getSheetByName('QUESTIONS');
     var listeningScore = 0;
     var readingScore = 0;
@@ -842,7 +911,7 @@ function doPost(e) {
       }
     }
 
-    // Ghi vào sheet SUBMISSIONS
+    // Record into SUBMISSIONS sheet
     if (subSheet) {
       subSheet.appendRow([
         subId,
@@ -850,7 +919,7 @@ function doPost(e) {
         contents.exam_code,
         listeningScore,
         readingScore,
-        'PENDING_TEACHER', // Trạng thái Writing
+        'PENDING_TEACHER', // Writing status
         contents.writing_task1 || '',
         contents.writing_task2 || '',
         '', '', '', '', '', '', // TR, CC, LR, GRA, Band, Feedback
@@ -858,7 +927,7 @@ function doPost(e) {
       ]);
     }
 
-    // Ghi nhận Cheat Logs
+    // Record Integrity / Violation Logs
     if (cheatSheet && contents.cheat_logs && contents.cheat_logs.length > 0) {
       for (var m = 0; m < contents.cheat_logs.length; m++) {
         var log = contents.cheat_logs[m];
@@ -913,6 +982,7 @@ function doPost(e) {
         sbd={sbd}
         examCode={examCode}
         gasUrl={gasUrl}
+        onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
       />
 
       {/* Offline Pending Submission Alert */}
@@ -944,6 +1014,7 @@ function doPost(e) {
               <LoginInstructions 
                 onLogin={handleLogin} 
                 onSwitchToAdmin={() => setActiveView('admin')}
+                onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
               />
             ) : isCustomPracticeSession ? (
               <PracticeDashboard
@@ -1266,7 +1337,7 @@ function doPost(e) {
             {adminTab === 'dashboard' && <MonitoringDashboard gasUrl={gasUrl} />}
             {adminTab === 'grading' && <ManualGrading gasUrl={gasUrl} />}
             {adminTab === 'upload' && <UploadModule onParsedData={(parsed) => handleSetExamData(parsed)} />}
-            {adminTab === 'custom_practice' && <CustomPracticeManager />}
+            {adminTab === 'custom_practice' && <CustomPracticeManager gasUrl={gasUrl} />}
             
             {adminTab === 'preview' && (
               <PreviewModule 
@@ -1289,22 +1360,32 @@ function doPost(e) {
                     </p>
                   </div>
 
-                  <button
-                    onClick={copyGasCode}
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-lg shadow-indigo-600/30 cursor-pointer"
-                  >
-                    {copiedGasCode ? (
-                      <>
-                        <Check className="w-4 h-4 text-emerald-400" />
-                        <span>Code Copied!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-4 h-4" />
-                        <span>Copy GAS Script (Code.gs)</span>
-                      </>
-                    )}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setIsDiagnosticsOpen(true)}
+                      className="px-4 py-2 bg-purple-700 hover:bg-purple-600 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-md cursor-pointer"
+                    >
+                      <Activity className="w-4 h-4 text-purple-200 animate-pulse" />
+                      <span>Run DB Diagnostics</span>
+                    </button>
+
+                    <button
+                      onClick={copyGasCode}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-lg shadow-indigo-600/30 cursor-pointer"
+                    >
+                      {copiedGasCode ? (
+                        <>
+                          <Check className="w-4 h-4 text-emerald-400" />
+                          <span>Code Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-4 h-4" />
+                          <span>Copy GAS Script (Code.gs)</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Setup Steps */}
@@ -1313,7 +1394,7 @@ function doPost(e) {
                     <span className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-300 font-bold flex items-center justify-center border border-indigo-500/40">1</span>
                     <h4 className="font-bold text-white">Create Google Sheet</h4>
                     <p className="text-slate-400 leading-relaxed">
-                      Create a spreadsheet named <strong>IELTS_Exam_System</strong>. Rename 4 tabs at the bottom to: <strong className="text-indigo-300">EXAMS, QUESTIONS, SUBMISSIONS, CHEATLOGS</strong>.
+                      Create a spreadsheet named <strong>IELTS_Exam_System</strong>. Five tabs: <strong className="text-indigo-300">EXAMS, QUESTIONS, SUBMISSIONS, CHEATLOGS, PRACTICE_QUESTIONS</strong>.
                     </p>
                   </div>
 
@@ -1364,7 +1445,14 @@ function doPost(e) {
                     <div>
                       <span className="font-bold text-purple-300">3. Tab "SUBMISSIONS" &amp; Tab "CHEATLOGS":</span>
                       <p className="text-[11px] text-slate-400">
-                        System will automatically record scores, writing essays, and proctoring violation logs when students submit.
+                        System automatically records scores, student essays, and proctoring violation logs upon test completion.
+                      </p>
+                    </div>
+
+                    <div>
+                      <span className="font-bold text-sky-300">4. Tab "PRACTICE_QUESTIONS" (Practice Sets Database):</span>
+                      <p className="text-[11px] text-slate-400 font-mono mt-1">
+                        Col A: DECK_ID | Col B: DECK_TITLE | Col C: CATEGORY | Col D: DESCRIPTION | Col E: LEVEL | Col F: CARD_ID | Col G: SENTENCE_EN | Col H: SENTENCE_VI | Col I: CLOZE_TARGET | Col J: TARGET_WORD | Col K: PART_OF_SPEECH | Col L: PHONETIC | Col M: HINTS | Col N: OPTIONS_JSON | Col O: ACCEPTED_ANSWERS_JSON | Col P: EXPLANATION | Col Q: GRAMMAR_POINTS_JSON | Col R: DIFFICULTY | Col S: UPDATED_AT
                       </p>
                     </div>
                   </div>
@@ -1383,6 +1471,18 @@ function doPost(e) {
         )}
 
       </main>
+
+      {/* Automated Database & Connection Diagnostics Modal */}
+      <DatabaseDiagnosticsModal
+        isOpen={isDiagnosticsOpen}
+        onClose={() => setIsDiagnosticsOpen(false)}
+        apiUrl={gasUrl}
+        initialExamCode={examCode || 'TEST01'}
+        onApplyExam={(examDataLoaded) => {
+          handleSetExamData(examDataLoaded);
+          setIsDiagnosticsOpen(false);
+        }}
+      />
 
     </div>
   );

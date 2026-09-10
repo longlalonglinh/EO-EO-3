@@ -14,37 +14,28 @@ import {
   UserCheck,
   Building2,
   SlidersHorizontal,
-  Settings
+  Settings,
+  Activity
 } from 'lucide-react';
 
 interface LoginInstructionsProps {
-  onLogin: (sbd: string, code: string, reviewPrevious: boolean) => void;
+  onLogin: (sbd: string, code: string, mode: 'TEST' | 'PRACTICE', reviewPrevious: boolean) => void;
   onSwitchToAdmin?: () => void;
+  onOpenPracticeHub?: () => void;
 }
 
-export const LoginInstructions: React.FC<LoginInstructionsProps> = ({ onLogin, onSwitchToAdmin }) => {
+export const LoginInstructions: React.FC<LoginInstructionsProps> = ({ 
+  onLogin, 
+  onSwitchToAdmin,
+  onOpenPracticeHub
+}) => {
   const [sbd, setSbd] = useState('');
   const [examCode, setExamCode] = useState('IELTS01');
+  const [selectedMode, setSelectedMode] = useState<'TEST' | 'PRACTICE'>('TEST');
   const [reviewPrevious, setReviewPrevious] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   const activeCode = examCode.trim().toUpperCase();
-
-  // Mode detection math: (digits % 2 !== 0) -> TEST, (digits % 2 === 0) -> PRACTICE
-  const calculateMode = (codeStr: string): 'TEST' | 'PRACTICE' => {
-    if (codeStr.startsWith('TEST')) return 'TEST';
-    if (codeStr.startsWith('PRAC')) return 'PRACTICE';
-    
-    const digits = codeStr.replace(/\D/g, '');
-    if (digits.length > 0) {
-      const num = parseInt(digits, 10);
-      return num % 2 !== 0 ? 'TEST' : 'PRACTICE';
-    }
-    const charSum = codeStr.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-    return charSum % 2 !== 0 ? 'TEST' : 'PRACTICE';
-  };
-
-  const detectedMode = calculateMode(activeCode);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,11 +43,11 @@ export const LoginInstructions: React.FC<LoginInstructionsProps> = ({ onLogin, o
     const cleanCode = activeCode.trim();
 
     if (!cleanSbd) {
-      setErrorMsg('Please enter your Candidate Registration Number (SBD).');
+      setErrorMsg('Please enter your full name or candidate ID (SBD).');
       return;
     }
     if (!cleanCode) {
-      setErrorMsg('Please enter the Exam Code.');
+      setErrorMsg('Please enter the test code.');
       return;
     }
 
@@ -71,230 +62,237 @@ export const LoginInstructions: React.FC<LoginInstructionsProps> = ({ onLogin, o
     }
 
     setErrorMsg('');
-    onLogin(cleanSbd, cleanCode, reviewPrevious);
+    onLogin(cleanSbd, cleanCode, selectedMode, reviewPrevious);
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 animate-fade-in py-2">
+    <div className="max-w-4xl mx-auto space-y-6 animate-fade-in py-2 font-sans text-[#3C2A63]">
       
-      {/* Material Design 3 Hero Surface Container */}
-      <div className="bg-slate-900 border border-slate-800/80 rounded-[28px] p-6 md:p-8 shadow-2xl relative overflow-hidden backdrop-blur-md">
-        <div className="absolute -right-16 -top-16 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -left-16 -bottom-16 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
+      {/* Top Hero Banner */}
+      <div className="bg-white border border-purple-100 rounded-[28px] p-6 md:p-8 shadow-sm relative overflow-hidden">
+        <div className="absolute -right-16 -top-16 w-80 h-80 bg-purple-200/30 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -left-16 -bottom-16 w-80 h-80 bg-emerald-200/30 rounded-full blur-3xl pointer-events-none" />
         
-        <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-          <div className="space-y-3 text-left max-w-2xl">
-            {/* M3 Assist Chip */}
-            <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 bg-indigo-500/10 border border-indigo-500/30 rounded-full text-xs font-semibold text-indigo-300">
-              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-              <span>EO EO Testing • Online Examination System</span>
-            </div>
-            <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">
-              Candidate Login &amp; Technical Instructions
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-black text-[#3C2A63] tracking-tight">
+              IELTS Online Testing &amp; Practice System
             </h1>
-            <p className="text-slate-400 text-sm leading-relaxed">
-              Enter your Candidate Number (SBD) and Exam Code to initiate your session. Mode routing: <strong className="text-amber-300">Odd Code = TEST MODE</strong> and <strong className="text-emerald-300">Even Code = PRACTICE MODE</strong>.
+            <p className="text-xs text-[#7C68A5] mt-1 font-medium">
+              Examination platform &amp; adaptive vocabulary/grammar practice for learners
             </p>
           </div>
 
-          {/* M3 Mode Indicator Chips */}
-          <div className="flex flex-wrap md:flex-col gap-2 shrink-0 w-full md:w-auto">
-            <div className="flex-1 md:flex-initial px-4 py-2.5 bg-slate-950/80 rounded-2xl border border-amber-500/30 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <Lock className="w-4 h-4 text-amber-400" />
-                <span className="text-xs font-medium text-slate-300">TEST MODE</span>
-              </div>
-              <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 text-[11px] font-bold rounded-md">Odd Code</span>
-            </div>
-
-            <div className="flex-1 md:flex-initial px-4 py-2.5 bg-slate-950/80 rounded-2xl border border-emerald-500/30 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <BookOpen className="w-4 h-4 text-emerald-400" />
-                <span className="text-xs font-medium text-slate-300">PRACTICE MODE</span>
-              </div>
-              <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[11px] font-bold rounded-md">Even Code</span>
-            </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Secure</span>
+            </span>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
         
-        {/* M3 Form Card */}
-        <div className="md:col-span-5 bg-slate-900/90 border border-slate-800 rounded-[28px] p-6 shadow-xl space-y-5 flex flex-col justify-between">
+        {/* Authentication Card */}
+        <div className="md:col-span-5 bg-white border border-purple-100 rounded-[28px] p-6 shadow-sm space-y-5 flex flex-col justify-between">
           <div className="space-y-5">
-            <div className="border-b border-slate-800 pb-3 flex items-center justify-between">
+            <div className="border-b border-purple-100 pb-3 flex items-center justify-between">
               <div>
-                <h2 className="text-base font-bold text-white flex items-center gap-2">
-                  <ShieldCheck className="w-5 h-5 text-indigo-400" />
-                  <span>Candidate Authentication</span>
+                <h2 className="text-base font-bold text-[#3C2A63] flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-[#6B51A5]" />
+                  <span>Candidate Verification</span>
                 </h2>
-                <p className="text-xs text-slate-400 mt-0.5">Enter Registration ID &amp; Exam Code to begin</p>
+                <p className="text-xs text-[#7C68A5] mt-0.5">Enter candidate ID / name and test code</p>
               </div>
             </div>
 
             {errorMsg && (
-              <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-2xl text-xs text-rose-300 flex items-center space-x-2 animate-shake">
-                <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+              <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-800 flex items-center space-x-2 animate-shake font-medium">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
                 <span>{errorMsg}</span>
               </div>
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
               
-              {/* M3 Outlined Input 1: SBD */}
+              {/* SBD / Student Name */}
               <div className="space-y-1.5">
-                <label className="block text-xs font-medium text-slate-300">
-                  Candidate Number (SBD) <span className="text-rose-400">*</span>
+                <label className="block text-xs font-bold text-[#3C2A63]">
+                  Candidate Name / ID (SBD) <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <input
                     type="text"
                     value={sbd}
                     onChange={(e) => setSbd(e.target.value)}
-                    placeholder="e.g. TS12345"
-                    className="w-full pl-10 pr-4 py-3 bg-slate-950 border border-slate-700/80 rounded-2xl text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                    placeholder="e.g., John Doe (or HV01, TS12345)"
+                    className="w-full pl-10 pr-4 py-3 bg-[#F5F2F9] border border-purple-200 rounded-2xl text-sm text-[#3C2A63] placeholder-[#7C68A5] focus:outline-none focus:border-[#6B51A5] transition-all font-medium"
                     required
                   />
-                  <UserCheck className="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5 pointer-events-none" />
+                  <UserCheck className="w-4 h-4 text-[#7C68A5] absolute left-3.5 top-3.5 pointer-events-none" />
                 </div>
+                <span className="text-[11px] text-[#7C68A5] block">
+                  Your practice results and scores will be tracked under your profile.
+                </span>
               </div>
 
-              {/* M3 Outlined Input 2: Exam Code */}
+              {/* Exam Code */}
               <div className="space-y-1.5">
-                <label className="block text-xs font-medium text-slate-300">
-                  Exam Code <span className="text-rose-400">*</span>
+                <label className="block text-xs font-bold text-[#3C2A63]">
+                  Test Code / Practice Set <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <input
                     type="text"
                     value={examCode}
                     onChange={(e) => setExamCode(e.target.value)}
-                    placeholder="e.g. IELTS01, TEST01, PRAC02..."
-                    className="w-full pl-10 pr-4 py-3 bg-slate-950 border border-slate-700/80 rounded-2xl text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                    placeholder="e.g., IELTS01, ON_TAP_01, VOCAB_B2..."
+                    className="w-full pl-10 pr-4 py-3 bg-[#F5F2F9] border border-purple-200 rounded-2xl text-sm text-[#3C2A63] placeholder-[#7C68A5] focus:outline-none focus:border-[#6B51A5] transition-all font-mono font-bold"
                     required
                   />
-                  <SlidersHorizontal className="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5 pointer-events-none" />
+                  <SlidersHorizontal className="w-4 h-4 text-[#7C68A5] absolute left-3.5 top-3.5 pointer-events-none" />
                 </div>
               </div>
 
-              {/* Mode Preview M3 Container */}
-              <div className="p-3.5 bg-slate-950/90 border border-slate-800 rounded-2xl flex items-center justify-between gap-2">
-                <div className="text-xs">
-                  <span className="text-slate-400 block text-[11px]">Detected Mode:</span>
-                  <span className="font-bold text-white text-sm tracking-wide">{activeCode}</span>
-                </div>
-                <div>
-                  {activeCode === 'ADMIN123' ? (
-                    <span className="px-3 py-1 bg-purple-500/20 border border-purple-500/40 text-purple-300 text-xs font-bold rounded-xl flex items-center gap-1.5">
-                      <Building2 className="w-3.5 h-3.5" />
-                      ADMIN MODE
-                    </span>
-                  ) : detectedMode === 'TEST' ? (
-                    <span className="px-3 py-1 bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-bold rounded-xl flex items-center gap-1.5">
-                      <Lock className="w-3.5 h-3.5" />
-                      TEST (Odd Code)
-                    </span>
-                  ) : (
-                    <span className="px-3 py-1 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold rounded-xl flex items-center gap-1.5">
-                      <BookOpen className="w-3.5 h-3.5" />
-                      PRACTICE (Even Code)
-                    </span>
-                  )}
+              {/* Mode Selector */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-[#3C2A63]">
+                  Session Mode:
+                </label>
+                <div className="grid grid-cols-2 gap-2 bg-[#F5F2F9] p-1 rounded-2xl border border-purple-200">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMode('TEST')}
+                    className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                      selectedMode === 'TEST'
+                        ? 'bg-white text-amber-800 shadow-sm border border-amber-200'
+                        : 'text-[#7C68A5] hover:text-[#3C2A63]'
+                    }`}
+                  >
+                    <Lock className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Official Test</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMode('PRACTICE')}
+                    className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                      selectedMode === 'PRACTICE'
+                        ? 'bg-white text-emerald-800 shadow-sm border border-emerald-200'
+                        : 'text-[#7C68A5] hover:text-[#3C2A63]'
+                    }`}
+                  >
+                    <BookOpen className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Practice Mode</span>
+                  </button>
                 </div>
               </div>
 
-              {/* PRACTICE Mode Option: Review Previous Submission Checkbox (M3 Style) */}
-              {detectedMode === 'PRACTICE' && activeCode !== 'ADMIN123' && (
-                <div className="p-3.5 bg-emerald-950/20 border border-emerald-500/30 rounded-2xl space-y-2">
-                  <label className="flex items-center space-x-2.5 text-xs font-medium text-emerald-300 cursor-pointer select-none">
+              {/* PRACTICE Mode Option: Review Previous Submission */}
+              {selectedMode === 'PRACTICE' && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-2">
+                  <label className="flex items-center space-x-2.5 text-xs font-medium text-emerald-900 cursor-pointer select-none">
                     <input
                       type="checkbox"
                       checked={reviewPrevious}
                       onChange={(e) => setReviewPrevious(e.target.checked)}
-                      className="w-4 h-4 rounded-md border-slate-700 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-slate-900 accent-emerald-500 cursor-pointer"
+                      className="w-4 h-4 rounded-md border-emerald-300 text-[#6B51A5] focus:ring-[#6B51A5] accent-[#6B51A5] cursor-pointer"
                     />
                     <span className="flex items-center gap-1.5 font-bold">
-                      <History className="w-4 h-4 text-emerald-400" />
-                      Review Previous Submissions (Exam History)
+                      <History className="w-4 h-4 text-emerald-700" />
+                      Review previous submission and score report
                     </span>
                   </label>
-                  <p className="text-[11px] text-slate-400 pl-6 leading-tight">
-                    Enable this option to review your existing scores, essay responses, and answers submitted under this SBD and Exam Code.
-                  </p>
                 </div>
               )}
 
-              {/* M3 Filled Primary Action Button */}
+              {/* Primary Submit Button */}
               <button
                 type="submit"
-                className="w-full h-12 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-2xl text-sm transition-all shadow-lg shadow-indigo-600/30 flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.98]"
+                className="w-full h-12 bg-[#6B51A5] hover:bg-[#503A7A] text-white font-bold rounded-2xl text-sm transition-all shadow-md shadow-[#6B51A5]/20 flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.98]"
               >
-                <span>Start Exam Session</span>
+                <span>{selectedMode === 'TEST' ? 'Start Official Test' : 'Start Practice Session'}</span>
                 <ArrowRight className="w-4 h-4" />
+              </button>
+
+              {/* Shortcut to Practice Exercises Hub */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (onOpenPracticeHub) {
+                    onOpenPracticeHub();
+                  } else {
+                    onLogin(sbd || 'HV01', 'ON_TAP_01', 'PRACTICE', false);
+                  }
+                }}
+                className="w-full py-2.5 px-3 bg-purple-50 hover:bg-purple-100/70 border border-purple-200 text-xs font-bold text-[#6B51A5] rounded-2xl flex items-center justify-center gap-2 transition cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-[#6B51A5]" />
+                <span>Practice Questions Hub</span>
               </button>
             </form>
           </div>
         </div>
 
         {/* Right Column: Regulations & Technical Guidelines */}
-        <div className="md:col-span-7 bg-slate-900/90 border border-slate-800 rounded-[28px] p-6 shadow-xl space-y-5 flex flex-col justify-between">
+        <div className="md:col-span-7 bg-white border border-purple-100 rounded-[28px] p-6 shadow-sm space-y-5 flex flex-col justify-between">
           <div className="space-y-4">
-            <div className="border-b border-slate-800 pb-3">
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
-                <HelpCircle className="w-5 h-5 text-indigo-400" />
-                <span>Exam Regulations &amp; Technical Guidelines</span>
+            <div className="border-b border-purple-100 pb-3">
+              <h2 className="text-base font-bold text-[#3C2A63] flex items-center gap-2">
+                <HelpCircle className="w-5 h-5 text-[#6B51A5]" />
+                <span>Exam Regulations &amp; Guidelines</span>
               </h2>
-              <p className="text-xs text-slate-400 mt-0.5">Please review the 3-skill examination procedures before starting</p>
+              <p className="text-xs text-[#7C68A5] mt-0.5">Please review before starting an exam or practice session</p>
             </div>
 
             <div className="space-y-3 text-xs">
-              <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-1.5">
-                <div className="flex items-center space-x-2 text-amber-300 font-bold">
-                  <ShieldCheck className="w-4 h-4 shrink-0" />
-                  <span>1. Automated Proctoring (TEST MODE)</span>
+              <div className="p-4 bg-[#F5F2F9] border border-purple-100 rounded-2xl space-y-1.5">
+                <div className="flex items-center space-x-2 text-amber-800 font-bold">
+                  <ShieldCheck className="w-4 h-4 shrink-0 text-amber-600" />
+                  <span>1. Anti-Cheat Monitoring (TEST MODE)</span>
                 </div>
-                <p className="text-slate-400 leading-relaxed pl-6">
-                  In TEST MODE, fullscreen mode is enforced, right-click context menu and developer shortcut keys are disabled. Tab switching is strictly tracked. Exceeding 3 violations triggers a 30-second lock.
+                <p className="text-[#503A7A] leading-relaxed pl-6">
+                  In official test mode, right-click and copy functions are disabled, and tab-switching events are strictly logged.
                 </p>
               </div>
 
-              <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-1.5">
-                <div className="flex items-center space-x-2 text-emerald-300 font-bold">
-                  <Clock className="w-4 h-4 shrink-0" />
-                  <span>2. Listening Module &amp; Locked Audio Track</span>
+              <div className="p-4 bg-[#F5F2F9] border border-purple-100 rounded-2xl space-y-1.5">
+                <div className="flex items-center space-x-2 text-emerald-800 font-bold">
+                  <Clock className="w-4 h-4 shrink-0 text-emerald-600" />
+                  <span>2. Listening Audio Stream &amp; Single Play</span>
                 </div>
-                <p className="text-slate-400 leading-relaxed pl-6">
-                  Audio playback disables seeking (NO SEEKING) and can only be played once following standard IELTS computer-delivered test rules.
+                <p className="text-[#503A7A] leading-relaxed pl-6">
+                  Listening sections replicate computer-delivered IELTS exam conditions with unseekable audio streams.
                 </p>
               </div>
 
-              <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-1.5">
-                <div className="flex items-center space-x-2 text-blue-300 font-bold">
-                  <BookOpen className="w-4 h-4 shrink-0" />
-                  <span>3. Reading Module &amp; Split-Screen Workspace</span>
+              <div className="p-4 bg-[#F5F2F9] border border-purple-100 rounded-2xl space-y-1.5">
+                <div className="flex items-center space-x-2 text-blue-800 font-bold">
+                  <BookOpen className="w-4 h-4 shrink-0 text-blue-600" />
+                  <span>3. Split-Screen Reading Interface</span>
                 </div>
-                <p className="text-slate-400 leading-relaxed pl-6">
-                  A 50:50 adjustable split-screen allows reading passages on the left while answering questions on the right, equipped with a <strong>Multi-Color Highlighter</strong> tool (Yellow, Green, Blue).
+                <p className="text-[#503A7A] leading-relaxed pl-6">
+                  Reading passages appear on the left with questions on the right, accompanied by three highlighter tools.
                 </p>
               </div>
 
-              <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-1.5">
-                <div className="flex items-center space-x-2 text-purple-300 font-bold">
-                  <FileText className="w-4 h-4 shrink-0" />
-                  <span>4. Writing Module &amp; Continuous Auto-Save</span>
+              <div className="p-4 bg-[#F5F2F9] border border-purple-100 rounded-2xl space-y-1.5">
+                <div className="flex items-center space-x-2 text-purple-800 font-bold">
+                  <FileText className="w-4 h-4 shrink-0 text-[#6B51A5]" />
+                  <span>4. Writing Editor &amp; Live Word Counter</span>
                 </div>
-                <p className="text-slate-400 leading-relaxed pl-6">
-                  The writing editor completely blocks paste actions, disables browser spellcheck, counts words in real-time, and continuously saves responses to local storage.
+                <p className="text-[#503A7A] leading-relaxed pl-6">
+                  Writing editors provide real-time word counting and continuous automatic local drafts.
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="p-4 bg-indigo-950/40 border border-indigo-500/30 rounded-2xl flex items-center justify-between text-xs text-indigo-300">
+          <div className="p-4 bg-purple-50/80 border border-purple-200 rounded-2xl flex items-center justify-between text-xs text-[#503A7A]">
             <span className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>System is ready. Enter your Registration Number and click Start!</span>
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>System configured with automated progress tracking.</span>
             </span>
           </div>
         </div>
@@ -303,4 +301,3 @@ export const LoginInstructions: React.FC<LoginInstructionsProps> = ({ onLogin, o
     </div>
   );
 };
-

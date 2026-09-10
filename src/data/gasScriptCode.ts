@@ -3,21 +3,21 @@ export const GOOGLE_APPS_SCRIPT_CODE = `/**
  * GOOGLE APPS SCRIPT BACKEND REST API - IELTS EXAM SYSTEM
  * ============================================================================
  * 
- * HƯỚNG DẪN CẤU HÌNH:
- * 1. Mở Google Sheets "IELTS_Exam_System"
- * 2. Mở Tiện ích mở rộng (Extensions) -> Apps Script
- * 3. Dán toàn bộ mã nguồn bên dưới vào file Code.gs (xóa hết code cũ)
- * 4. Bấm chạy hàm 'setupInitialSheets()' một lần duy nhất để tạo 4 tab chuẩn:
- *    EXAMS, QUESTIONS, SUBMISSIONS, CHEATLOGS
- * 5. Bấm Deploy (Triển khai) -> New deployment (Triển khai mới)
- * 6. Chọn loại "Web app" (Ứng dụng Web)
- *    - Execute as: "Me" (Tôi)
- *    - Who has access: "Anyone" (Bất kỳ ai)
- * 7. Bấm Deploy, cấp quyền và copy Web App URL dán vào ứng dụng Web!
+ * SETUP INSTRUCTIONS:
+ * 1. Open Google Sheets "IELTS_Exam_System"
+ * 2. Click Extensions -> Apps Script
+ * 3. Paste the entire source code below into Code.gs (replace old code)
+ * 4. Run the 'setupInitialSheets()' function once to create the 6 standard tabs:
+ *    EXAMS, QUESTIONS, SUBMISSIONS, CHEATLOGS, PRACTICE_QUESTIONS, STUDENT_PROGRESS
+ * 5. Click Deploy -> New deployment
+ * 6. Select "Web app" type:
+ *    - Execute as: "Me"
+ *    - Who has access: "Anyone"
+ * 7. Click Deploy, grant permissions, and copy the Web App URL into this Web App!
  * ============================================================================
  */
 
-// Hàm khởi tạo tự động 4 tab chuẩn cho Google Sheets
+// Initialize 6 standard tabs for Google Sheets
 function setupInitialSheets() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   
@@ -63,60 +63,125 @@ function setupInitialSheets() {
     sheetCheatlogs.getRange("1:1").setFontWeight("bold").setBackground("#e2e8f0");
   }
   
-  Logger.log("Khởi tạo thành công 4 tab: EXAMS, QUESTIONS, SUBMISSIONS, CHEATLOGS!");
+  // Tab 5: PRACTICE_QUESTIONS (Question Bank & Practice Decks)
+  var sheetPractice = ss.getSheetByName('PRACTICE_QUESTIONS') || ss.insertSheet('PRACTICE_QUESTIONS');
+  if (sheetPractice.getLastRow() === 0) {
+    sheetPractice.appendRow([
+      'DECK_ID', 'DECK_TITLE', 'CATEGORY', 'DESCRIPTION', 'LEVEL', 
+      'CARD_ID', 'SENTENCE_EN', 'SENTENCE_VI', 'CLOZE_TARGET', 'TARGET_WORD', 
+      'PART_OF_SPEECH', 'PHONETIC', 'HINTS', 'OPTIONS_JSON', 'ACCEPTED_ANSWERS_JSON', 
+      'EXPLANATION', 'GRAMMAR_POINTS_JSON', 'DIFFICULTY', 'UPDATED_AT'
+    ]);
+    sheetPractice.getRange("1:1").setFontWeight("bold").setBackground("#c7d2fe");
+  }
+  
+  // Tab 6: STUDENT_PROGRESS (Learning Progress for 3 Learners)
+  var sheetStudentProgress = ss.getSheetByName('STUDENT_PROGRESS') || ss.insertSheet('STUDENT_PROGRESS');
+  if (sheetStudentProgress.getLastRow() === 0) {
+    sheetStudentProgress.appendRow([
+      'STUDENT_ID', 'STUDENT_NAME', 'DECK_ID', 'DECK_TITLE', 
+      'CARDS_MASTERED', 'TOTAL_CARDS', 'MASTERY_PCT', 'CORRECT_COUNT', 
+      'WRONG_COUNT', 'DAILY_STREAK', 'LAST_STUDIED_AT', 'NOTES'
+    ]);
+    sheetStudentProgress.getRange("1:1").setFontWeight("bold").setBackground("#ede9fe");
+  }
+  
+  Logger.log("Successfully initialized 6 tabs: EXAMS, QUESTIONS, SUBMISSIONS, CHEATLOGS, PRACTICE_QUESTIONS, STUDENT_PROGRESS!");
 }
 
 /**
  * ============================================================================
- * GET API: Tải đề thi (CHẶN LỘ ĐÁP ÁN CORRECT_ANSWERS), Lấy Submissions, Cheatlogs
+ * GET API: Load Exam, Submissions, Cheatlogs, Practice Decks, Progress
  * ============================================================================
  */
+// Case-insensitive flexible Sheet lookup helper
+function getFlexibleSheet(ss, names) {
+  var allSheets = ss.getSheets();
+  for (var k = 0; k < allSheets.length; k++) {
+    var actualName = allSheets[k].getName().trim().toUpperCase();
+    for (var n = 0; n < names.length; n++) {
+      if (actualName === names[n].toUpperCase()) {
+        return allSheets[k];
+      }
+    }
+  }
+  return null;
+}
+
 function doGet(e) {
   var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : 'get_exam';
-  var examCode = (e && e.parameter && e.parameter.exam_code) ? e.parameter.exam_code : '';
+  var examCode = (e && e.parameter && e.parameter.exam_code) ? String(e.parameter.exam_code).trim() : '';
   
-  var response = { status: 'error', message: 'Yêu cầu không hợp lệ' };
+  var response = { status: 'error', success: false, message: 'Invalid request' };
   
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    // Quick diagnostic ping (Ping / Diagnose)
+    if (action === 'ping' || action === 'diagnose') {
+      var sheetNames = ss.getSheets().map(function(s) { return s.getName(); });
+      var qSheet = getFlexibleSheet(ss, ['QUESTIONS', 'Questions', 'Cau_Hoi']);
+      var foundCodes = [];
+      if (qSheet) {
+        var qVals = qSheet.getDataRange().getValues();
+        for (var r = 1; r < qVals.length; r++) {
+          var c = String(qVals[r][0]).trim().toUpperCase();
+          if (c && foundCodes.indexOf(c) === -1) foundCodes.push(c);
+        }
+      }
+      return createJsonResponse({
+        status: 'success',
+        success: true,
+        message: 'Google Apps Script service is operational',
+        spreadsheet_name: ss.getName(),
+        sheets_found: sheetNames,
+        available_exam_codes: foundCodes,
+        timestamp: new Date().toISOString()
+      });
+    }
     
-    if (action === 'get_exam' || examCode !== '') {
-      var sheetQ = ss.getSheetByName('QUESTIONS');
+    if (action === 'get_exam' || action === 'getExam' || examCode !== '') {
+      var sheetQ = getFlexibleSheet(ss, ['QUESTIONS', 'Questions', 'questions', 'CAU_HOI', 'Cau_Hoi', 'Sheet1']);
       if (!sheetQ) {
-        return createJsonResponse({ status: 'error', message: 'Tab QUESTIONS không tồn tại' });
+        return createJsonResponse({ 
+          status: 'error', 
+          success: false, 
+          message: 'QUESTIONS tab does not exist in your Google Sheet' 
+        });
       }
       
       var dataQ = sheetQ.getDataRange().getValues();
       var questions = [];
+      var cleanTargetCode = examCode.toUpperCase();
       
-      // Duyệt qua dữ liệu (Bỏ qua dòng Tiêu đề [0])
+      // Iterate rows (skip header [0])
       for (var i = 1; i < dataQ.length; i++) {
         var row = dataQ[i];
-        var codeInRow = String(row[0]).trim();
+        var codeInRow = String(row[0]).trim().toUpperCase();
         
-        // Lọc theo mã đề thi (hoặc lấy tất cả nếu không truyền examCode)
-        if (examCode === '' || codeInRow.toUpperCase() === examCode.toUpperCase()) {
-          // BẮT BUỘC LOẠI BỎ CỘT CORRECT_ANSWERS (row[6]) ĐỂ CHỐNG LỘ ĐÁP ÁN!
+        // Filter by exam code (or return all if no code specified)
+        if (cleanTargetCode === '' || codeInRow === cleanTargetCode) {
+          // MUST OMIT CORRECT_ANSWERS COLUMN (row[6]) TO PREVENT LEAKS
           questions.push({
             exam_code: row[0],
-            question_id: row[1],
-            section: row[2], // listening / reading
+            question_id: String(row[1] || ('Q' + i)),
+            section: String(row[2] || 'reading').toLowerCase(), // listening / reading
             question_text: row[3],
             question_type: row[4],
             options: row[5] ? parseJsonSafe(row[5]) : [],
-            // Cột index 6 (CORRECT_ANSWER) CỐ TÌNH BỊ LOẠI BỎ Ở ĐÂY!
+            // Column index 6 (CORRECT_ANSWER) IS PURPOSELY OMITTED HERE
             max_score: row[7] || 1
           });
         }
       }
       
-      // Lấy thêm thông tin bài thi từ sheet EXAMS nếu có
-      var sheetE = ss.getSheetByName('EXAMS');
+      // Load exam metadata from EXAMS sheet if present
+      var sheetE = getFlexibleSheet(ss, ['EXAMS', 'Exams', 'exams', 'DE_THI', 'De_Thi']);
       var examMeta = null;
       if (sheetE) {
         var dataE = sheetE.getDataRange().getValues();
         for (var j = 1; j < dataE.length; j++) {
-          if (String(dataE[j][0]).toUpperCase() === examCode.toUpperCase()) {
+          if (String(dataE[j][0]).trim().toUpperCase() === cleanTargetCode) {
             examMeta = {
               exam_code: dataE[j][0],
               title: dataE[j][1],
@@ -124,6 +189,7 @@ function doGet(e) {
               duration_mins: dataE[j][3],
               audio_url: dataE[j][4],
               reading_passage: dataE[j][5],
+              passage_text: dataE[j][5],
               writing_task1_prompt: dataE[j][6],
               writing_task2_prompt: dataE[j][7]
             };
@@ -134,15 +200,17 @@ function doGet(e) {
       
       response = {
         status: 'success',
+        success: true,
         exam_code: examCode,
         exam_meta: examMeta,
         questions_count: questions.length,
-        questions: questions // KHÔNG CHỨA CORRECT_ANSWERS
+        questions: questions, // EXCLUDES CORRECT_ANSWERS
+        data: questions       // Compatible data array
       };
       
     } else if (action === 'get_submissions') {
-      var sheetS = ss.getSheetByName('SUBMISSIONS');
-      if (!sheetS) return createJsonResponse({ status: 'error', message: 'Sheet SUBMISSIONS không tồn tại' });
+      var sheetS = getFlexibleSheet(ss, ['SUBMISSIONS', 'Submissions', 'submissions']);
+      if (!sheetS) return createJsonResponse({ status: 'error', success: false, message: 'Sheet SUBMISSIONS does not exist' });
       
       var dataS = sheetS.getDataRange().getValues();
       var submissions = [];
@@ -171,7 +239,7 @@ function doGet(e) {
       
     } else if (action === 'get_cheatlogs') {
       var sheetC = ss.getSheetByName('CHEATLOGS');
-      if (!sheetC) return createJsonResponse({ status: 'error', message: 'Sheet CHEATLOGS không tồn tại' });
+      if (!sheetC) return createJsonResponse({ status: 'error', message: 'Sheet CHEATLOGS does not exist' });
       
       var dataC = sheetC.getDataRange().getValues();
       var cheatlogs = [];
@@ -188,6 +256,131 @@ function doGet(e) {
         });
       }
       response = { status: 'success', cheatlogs: cheatlogs };
+
+    } else if (action === 'get_practice_decks' || action === 'getPracticeDecks') {
+      // RETRIEVE PRACTICE QUESTIONS FROM GOOGLE SHEETS
+      var sheetP = getFlexibleSheet(ss, ['PRACTICE_QUESTIONS', 'Practice_Questions', 'PRACTICE', 'Practice', 'BAI_LUYEN_TAP']);
+      if (!sheetP) {
+        return createJsonResponse({
+          status: 'not_initialized',
+          success: true,
+          is_initialized: false,
+          message: 'PRACTICE_QUESTIONS tab has not been created in Google Sheets yet. Please initialize from Web App.',
+          decks: []
+        });
+      }
+
+      var dataP = sheetP.getDataRange().getValues();
+      if (dataP.length <= 1) {
+        return createJsonResponse({
+          status: 'empty',
+          success: true,
+          is_initialized: true,
+          message: 'PRACTICE_QUESTIONS tab exists but has no questions yet.',
+          decks: []
+        });
+      }
+
+      var deckMap = {};
+      var deckOrder = [];
+
+      for (var pi = 1; pi < dataP.length; pi++) {
+        var pRow = dataP[pi];
+        var deckId = String(pRow[0] || '').trim();
+        if (!deckId) continue;
+
+        if (!deckMap[deckId]) {
+          deckMap[deckId] = {
+            deck_id: deckId,
+            title: String(pRow[1] || ('Practice Deck ' + deckId)),
+            category: String(pRow[2] || 'Vocabulary'),
+            description: String(pRow[3] || ''),
+            level: String(pRow[4] || 'B1-B2'),
+            target_language: 'English',
+            native_language: 'English',
+            cards: []
+          };
+          deckOrder.push(deckId);
+        }
+
+        var cardId = String(pRow[5] || ('card_' + pi));
+        var opts = parseJsonSafe(pRow[13]);
+        if ((!opts || opts.length === 0) && typeof pRow[13] === 'string' && pRow[13].indexOf('|') >= 0) {
+          opts = pRow[13].split('|').map(function(s) { return s.trim(); });
+        }
+
+        var accepted = parseJsonSafe(pRow[14]);
+        if ((!accepted || accepted.length === 0) && typeof pRow[14] === 'string' && pRow[14].indexOf('|') >= 0) {
+          accepted = pRow[14].split('|').map(function(s) { return s.trim(); });
+        }
+
+        var grammarPts = parseJsonSafe(pRow[16]);
+        if ((!grammarPts || grammarPts.length === 0) && typeof pRow[16] === 'string' && pRow[16].indexOf('|') >= 0) {
+          grammarPts = pRow[16].split('|').map(function(s) { return s.trim(); });
+        }
+
+        deckMap[deckId].cards.push({
+          id: cardId,
+          sentence_en: String(pRow[6] || ''),
+          sentence_vi: String(pRow[7] || ''),
+          cloze_target: String(pRow[8] || '').trim(),
+          target_word: String(pRow[9] || pRow[8] || '').trim(),
+          part_of_speech: String(pRow[10] || 'verb'),
+          phonetic: String(pRow[11] || ''),
+          hints: String(pRow[12] || ''),
+          options: opts,
+          accepted_answers: accepted,
+          explanation: String(pRow[15] || ''),
+          grammar_points: grammarPts,
+          difficulty: String(pRow[17] || 'medium')
+        });
+      }
+
+      var resultDecks = deckOrder.map(function(id) { return deckMap[id]; });
+      var totalCardsCount = 0;
+      for (var di = 0; di < resultDecks.length; di++) {
+        totalCardsCount += resultDecks[di].cards.length;
+      }
+
+      response = {
+        status: 'success',
+        success: true,
+        is_initialized: true,
+        source: 'google_sheets',
+        decks_count: resultDecks.length,
+        total_cards: totalCardsCount,
+        decks: resultDecks
+      };
+    } else if (action === 'get_student_progress' || action === 'getStudentProgress') {
+      // RETRIEVE LEARNER PROGRESS FROM STUDENT_PROGRESS TAB
+      var studentId = (e && e.parameter && e.parameter.student_id) ? String(e.parameter.student_id).trim().toUpperCase() : '';
+      var sheetProg = getFlexibleSheet(ss, ['STUDENT_PROGRESS', 'Student_Progress', 'PRACTICE_PROGRESS']);
+      if (!sheetProg) {
+        return createJsonResponse({ status: 'not_initialized', success: false, records: [] });
+      }
+      var progData = sheetProg.getDataRange().getValues();
+      var records = [];
+      for (var p = 1; p < progData.length; p++) {
+        var pR = progData[p];
+        var rowStudentId = String(pR[0] || '').trim().toUpperCase();
+        if (!studentId || rowStudentId === studentId) {
+          records.push({
+            student_id: String(pR[0] || ''),
+            student_name: String(pR[1] || ''),
+            deck_id: String(pR[2] || ''),
+            deck_title: String(pR[3] || ''),
+            cards_mastered: Number(pR[4]) || 0,
+            total_cards: Number(pR[5]) || 0,
+            mastery_pct: Number(pR[6]) || 0,
+            correct_count: Number(pR[7]) || 0,
+            wrong_count: Number(pR[8]) || 0,
+            daily_streak: Number(pR[9]) || 0,
+            last_studied_at: String(pR[10] || ''),
+            notes: String(pR[11] || '')
+          });
+        }
+      }
+      response = { status: 'success', success: true, count: records.length, records: records };
     }
     
   } catch (err) {
@@ -199,11 +392,11 @@ function doGet(e) {
 
 /**
  * ============================================================================
- * POST API: Nộp bài, Chấm điểm server-side, Tạo SUBMISSION_ID, AppendRow
+ * POST API: Submit Exam, Server-Side Grading, Generate SUBMISSION_ID, AppendRow
  * ============================================================================
  */
 function doPost(e) {
-  var response = { status: 'error', message: 'Không xử lý được yêu cầu' };
+  var response = { status: 'error', message: 'Unable to process request' };
   
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -221,12 +414,12 @@ function doPost(e) {
       var cheatLogs = payload.cheat_logs || [];
       var violationsCount = payload.violations_count || 0;
       
-      // 1. TẠO SUBMISSION_ID THEO CÔNG THỨC: SBD_Code_Time
+      // 1. GENERATE SUBMISSION_ID: SBD_Code_Time
       var timestampStr = Utilities.formatDate(new Date(), "GMT+7", "yyyyMMdd_HHmmss");
       var submissionId = sbd + "_" + examCode + "_" + timestampStr;
       var submittedAt = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss");
       
-      // 2. CHẤM ĐIỂM SERVER-SIDE GRADING (LISTENING & READING)
+      // 2. SERVER-SIDE GRADING (LISTENING & READING)
       var sheetQ = ss.getSheetByName('QUESTIONS');
       var correctAnswersMap = {}; // key: question_id, val: { answer: string, section: string, max_score: number }
       
@@ -244,7 +437,7 @@ function doPost(e) {
         }
       }
       
-      // Tính điểm thô Listening
+      // Calculate Listening raw score
       var listeningRaw = 0;
       var listeningMax = 0;
       for (var lKey in listeningAnswers) {
@@ -257,7 +450,7 @@ function doPost(e) {
         }
       }
       
-      // Tính điểm thô Reading
+      // Calculate Reading raw score
       var readingRaw = 0;
       var readingMax = 0;
       for (var rKey in readingAnswers) {
@@ -270,11 +463,11 @@ function doPost(e) {
         }
       }
       
-      // Quy đổi điểm thô sang Band IELTS (Thang 40 câu)
+      // Convert raw score to IELTS Band Scale
       var listeningBand = convertRawToIeltsBand(listeningRaw, listeningMax || 40);
       var readingBand = convertRawToIeltsBand(readingRaw, readingMax || 40);
       
-      // 3. GHI KẾT QUẢ VÀO SHEET SUBMISSIONS (APPENDROW)
+      // 3. RECORD RESULT INTO SUBMISSIONS SHEET (APPENDROW)
       var sheetSubmissions = ss.getSheetByName('SUBMISSIONS') || ss.insertSheet('SUBMISSIONS');
       sheetSubmissions.appendRow([
         submissionId,
@@ -290,12 +483,12 @@ function doPost(e) {
         JSON.stringify({ TR: 0, CC: 0, LR: 0, GRA: 0 }), // Pending teacher grading
         0, // Writing band
         0, // Overall band
-        'PENDING_TEACHER', // Trạng thái mặc định
+        'PENDING_TEACHER', // Default status
         submittedAt,
         violationsCount
       ]);
       
-      // 4. GHI LOGS VI PHẠM VÀO SHEET CHEATLOGS (APPENDROW)
+      // 4. RECORD VIOLATIONS INTO CHEATLOGS (APPENDROW)
       if (cheatLogs && cheatLogs.length > 0) {
         var sheetCheatlogs = ss.getSheetByName('CHEATLOGS') || ss.insertSheet('CHEATLOGS');
         for (var c = 0; m < cheatLogs.length; c++) {
@@ -326,7 +519,7 @@ function doPost(e) {
       };
       
     } else if (action === 'grade_writing') {
-      // Giáo viên chấm điểm Writing
+      // Instructor grading for Writing
       var submissionIdToGrade = payload.submission_id;
       var scores = payload.writing_scores; // { TR, CC, LR, GRA }
       var feedback = payload.writing_feedback || '';
@@ -342,7 +535,7 @@ function doPost(e) {
             var rBand = Number(dataS[rowIdx][7]) || 0;
             var overallBand = Math.round(((lBand + rBand + writingBand) / 3) * 2) / 2;
             
-            // Cập nhật dòng tương ứng (chú ý index 1-based)
+            // Update corresponding row (1-based index)
             sheetS.getRange(rowIdx + 1, 11).setValue(JSON.stringify(scores)); // WRITING_SCORES_JSON
             sheetS.getRange(rowIdx + 1, 12).setValue(writingBand);            // WRITING_BAND
             sheetS.getRange(rowIdx + 1, 13).setValue(overallBand);           // OVERALL_BAND
@@ -353,24 +546,24 @@ function doPost(e) {
               submission_id: submissionIdToGrade,
               writing_band: writingBand,
               overall_band: overallBand,
-              message: 'Chấm điểm thành công!'
+              message: 'Writing graded successfully!'
             };
             break;
           }
         }
       }
     } else if (action === 'upload_exam') {
-      // 3. ACTION TẢI LÊN ĐỀ THI (UPLOAD_EXAM)
+      // 3. ACTION: UPLOAD EXAM
       var exam = payload.exam_data;
       if (!exam) {
-        return createJsonResponse({ status: 'error', message: 'Không tìm thấy dữ liệu exam_data trong payload' });
+        return createJsonResponse({ status: 'error', message: 'Missing exam_data in payload' });
       }
 
       var sheetE = ss.getSheetByName('EXAMS') || ss.insertSheet('EXAMS');
       var sheetQ = ss.getSheetByName('QUESTIONS') || ss.insertSheet('QUESTIONS');
 
       var examCode = (exam.exam_code || 'IELTS01').toString().trim().toUpperCase();
-      var title = exam.title || ('Đề thi IELTS ' + examCode);
+      var title = exam.title || ('IELTS Exam ' + examCode);
       var testType = exam.test_type || 'Academic';
       var duration = exam.duration_mins || 60;
       var audioUrl = exam.audio_url || '';
@@ -379,7 +572,7 @@ function doPost(e) {
       var writingTask1 = exam.writing_task1_prompt || '';
       var writingTask2 = exam.writing_task2_prompt || '';
 
-      // Ghi 1 dòng vào tab EXAMS gồm các thông số tổng quan
+      // Record 1 row in EXAMS tab with overview info
       sheetE.appendRow([
         examCode,
         title,
@@ -392,7 +585,7 @@ function doPost(e) {
         writingTask2
       ]);
 
-      // Lặp qua mảng listening_questions và reading_questions để ghi từng câu hỏi xuống tab QUESTIONS
+      // Iterate through listening_questions and reading_questions
       var listeningQs = exam.listening_questions || [];
       for (var l = 0; l < listeningQs.length; l++) {
         var lq = listeningQs[l];
@@ -433,9 +626,141 @@ function doPost(e) {
 
       response = {
         status: 'success',
-        message: 'Đã lưu đề thi ' + examCode + ' lên Google Sheets thành công!',
+        message: 'Exam ' + examCode + ' saved to Google Sheets successfully!',
         exam_code: examCode,
         total_questions: listeningQs.length + readingQs.length
+      };
+
+    } else if (action === 'init_practice_sheet' || action === 'sync_practice_decks' || action === 'save_practice_deck') {
+      // INITIALIZE PRACTICE DATABASE & SAVE PRACTICE QUESTIONS TO GOOGLE SHEETS
+      var sheetPractice = ss.getSheetByName('PRACTICE_QUESTIONS') || ss.insertSheet('PRACTICE_QUESTIONS');
+
+      // Initialize headers if empty
+      if (sheetPractice.getLastRow() === 0) {
+        sheetPractice.appendRow([
+          'DECK_ID', 'DECK_TITLE', 'CATEGORY', 'DESCRIPTION', 'LEVEL', 
+          'CARD_ID', 'SENTENCE_EN', 'SENTENCE_VI', 'CLOZE_TARGET', 'TARGET_WORD', 
+          'PART_OF_SPEECH', 'PHONETIC', 'HINTS', 'OPTIONS_JSON', 'ACCEPTED_ANSWERS_JSON', 
+          'EXPLANATION', 'GRAMMAR_POINTS_JSON', 'DIFFICULTY', 'UPDATED_AT'
+        ]);
+        sheetPractice.getRange("1:1").setFontWeight("bold").setBackground("#c7d2fe");
+      }
+
+      var incomingDecks = payload.decks || (payload.deck ? [payload.deck] : []);
+      var syncMode = payload.mode || 'replace_all'; // 'replace_all' | 'append' | 'update_single'
+      var savedCardsCount = 0;
+      var timestamp = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss");
+
+      if (syncMode === 'replace_all') {
+        var lastR = sheetPractice.getLastRow();
+        if (lastR > 1) {
+          sheetPractice.getRange(2, 1, lastR - 1, sheetPractice.getLastColumn()).clearContent();
+        }
+      }
+
+      var rowsToInsert = [];
+      for (var d = 0; d < incomingDecks.length; d++) {
+        var dObj = incomingDecks[d];
+        var dCards = dObj.cards || [];
+        for (var c = 0; c < dCards.length; c++) {
+          var cd = dCards[c];
+          rowsToInsert.push([
+            dObj.deck_id || 'DECK_01',
+            dObj.title || 'Practice Deck',
+            dObj.category || 'Vocabulary',
+            dObj.description || '',
+            dObj.level || 'B1-B2',
+            cd.id || ('card_' + (c + 1)),
+            cd.sentence_en || '',
+            cd.sentence_vi || '',
+            cd.cloze_target || '',
+            cd.target_word || cd.cloze_target || '',
+            cd.part_of_speech || 'word',
+            cd.phonetic || '',
+            cd.hints || '',
+            JSON.stringify(cd.options || []),
+            JSON.stringify(cd.accepted_answers || []),
+            cd.explanation || '',
+            JSON.stringify(cd.grammar_points || []),
+            cd.difficulty || 'medium',
+            timestamp
+          ]);
+          savedCardsCount++;
+        }
+      }
+
+      if (rowsToInsert.length > 0) {
+        var startRow = sheetPractice.getLastRow() + 1;
+        sheetPractice.getRange(startRow, 1, rowsToInsert.length, rowsToInsert[0].length).setValues(rowsToInsert);
+      }
+
+      response = {
+        status: 'success',
+        success: true,
+        message: 'Practice database initialized and ' + savedCardsCount + ' practice questions saved to Google Sheets successfully!',
+        total_cards: savedCardsCount,
+        decks_count: incomingDecks.length,
+        timestamp: timestamp
+      };
+    } else if (action === 'sync_student_progress' || action === 'save_student_progress') {
+      // SAVE / SYNC LEARNER PROGRESS TO STUDENT_PROGRESS TAB
+      var sheetProg = ss.getSheetByName('STUDENT_PROGRESS') || ss.insertSheet('STUDENT_PROGRESS');
+      if (sheetProg.getLastRow() === 0) {
+        sheetProg.appendRow([
+          'STUDENT_ID', 'STUDENT_NAME', 'DECK_ID', 'DECK_TITLE', 
+          'CARDS_MASTERED', 'TOTAL_CARDS', 'MASTERY_PCT', 'CORRECT_COUNT', 
+          'WRONG_COUNT', 'DAILY_STREAK', 'LAST_STUDIED_AT', 'NOTES'
+        ]);
+        sheetProg.getRange("1:1").setFontWeight("bold").setBackground("#ede9fe");
+      }
+
+      var progressList = payload.progress_records || (payload.record ? [payload.record] : []);
+      var pData = sheetProg.getDataRange().getValues();
+      var nowTime = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss");
+      var updatedCount = 0;
+
+      for (var pi = 0; pi < progressList.length; pi++) {
+        var rec = progressList[pi];
+        var sId = String(rec.student_id || 'HV01').trim().toUpperCase();
+        var dId = String(rec.deck_id || 'PRACTICE_01').trim();
+        var rowFound = -1;
+
+        for (var rIdx = 1; rIdx < pData.length; rIdx++) {
+          if (String(pData[rIdx][0]).trim().toUpperCase() === sId && String(pData[rIdx][2]).trim() === dId) {
+            rowFound = rIdx + 1;
+            break;
+          }
+        }
+
+        var rowValues = [
+          sId,
+          rec.student_name || ('Learner ' + sId),
+          dId,
+          rec.deck_title || ('Practice Deck ' + dId),
+          Number(rec.cards_mastered) || 0,
+          Number(rec.total_cards) || 0,
+          Number(rec.mastery_pct) || 0,
+          Number(rec.correct_count) || 0,
+          Number(rec.wrong_count) || 0,
+          Number(rec.daily_streak) || 1,
+          rec.last_studied_at || nowTime,
+          rec.notes || ''
+        ];
+
+        if (rowFound > 0) {
+          sheetProg.getRange(rowFound, 1, 1, rowValues.length).setValues([rowValues]);
+        } else {
+          sheetProg.appendRow(rowValues);
+        }
+        updatedCount++;
+      }
+
+      response = {
+        status: 'success',
+        success: true,
+        message: 'Saved progress for ' + updatedCount + ' practice decks to Google Sheets!',
+        updated_count: updatedCount,
+        timestamp: nowTime
       };
     }
     
@@ -447,7 +772,7 @@ function doPost(e) {
 }
 
 /**
- * Helper: Tạo response JSON với Header chống CORS
+ * Helper: Create JSON response with CORS headers
  */
 function createJsonResponse(data) {
   return ContentService
@@ -456,7 +781,7 @@ function createJsonResponse(data) {
 }
 
 /**
- * Helper: Parse JSON an toàn
+ * Helper: Safe JSON parse
  */
 function parseJsonSafe(str) {
   try {
@@ -467,7 +792,7 @@ function parseJsonSafe(str) {
 }
 
 /**
- * Helper: Quy đổi điểm thô sang Band Score IELTS 0 - 9.0
+ * Helper: Convert raw score to IELTS Band Score 0 - 9.0
  */
 function convertRawToIeltsBand(rawScore, maxScore) {
   if (!rawScore || rawScore <= 0) return 1.0;
@@ -490,3 +815,5 @@ function convertRawToIeltsBand(rawScore, maxScore) {
   return 2.5;
 }
 `;
+
+export const gasScriptCodeTemplate = GOOGLE_APPS_SCRIPT_CODE;

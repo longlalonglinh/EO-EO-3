@@ -965,5 +965,265 @@ To overcome intermittency, advanced lithium-ion battery energy storage systems (
         max_score: 1
       }
     ]
+  },
+  {
+    exam_code: 'IELTS01',
+    title: 'IELTS Academic Official Examination 01 (Full 4-Skills)',
+    test_type: 'TEST',
+    duration_mins: 150,
+    listening_duration_mins: 35,
+    reading_duration_mins: 60,
+    writing_duration_mins: 60,
+    audio_url: 'https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=english-conversation-11823.mp3',
+    audio_title: 'IELTS Listening Parts 1 - 4 Comprehensive Audio Stream',
+    passages: [
+      {
+        passage_index: 1,
+        title: 'Passage 1: The History and Evolution of Renewable Energy Technologies',
+        text: `Paragraph A
+For centuries, human civilization relied almost exclusively on wood, wind, and water power to drive mills, pump water, and navigate the seas. However, the Industrial Revolution ushered in an era dominated by fossil fuels—coal, oil, and natural gas.
+
+Paragraph B
+In the mid-20th century, scientists began sounding alarm bells regarding resource depletion. Early photovoltaic (PV) solar cells were developed in 1954 at Bell Labs, operating at 6% efficiency.
+
+Paragraph C
+Government subsidies and feed-in tariffs in Germany and China expanded manufacturing scale. The cost of solar plummeted by nearly 85% between 2010 and 2020.
+
+Paragraph D
+To overcome intermittency, advanced lithium-ion battery energy storage systems (BESS) and green hydrogen generation are being deployed worldwide.`
+      },
+      {
+        passage_index: 2,
+        title: 'Passage 2: Marine Megafauna and Ocean Thermohaline Circulation',
+        text: `Paragraph A
+The world ocean functions as a giant convective thermal engine. Driven by gradients in temperature and salinity, the global thermohaline circulation (THC) redistributes immense quantities of heat from equatorial waters toward polar latitudes.
+
+Paragraph B
+Recent satellite telemetry reveals that large pelagic organisms—such as blue whales, leatherback turtles, and basking sharks—exert measurable biophysical effects on oceanic mixing.
+
+Paragraph C
+Biologists term this phenomenon 'biomixing'. Anthropogenic overfishing, plastic ingestion, and ship strikes have reduced pelagic megafauna biomass by over 60% since 1950.
+
+Paragraph D
+Marine protected areas (MPAs) spanning international migratory corridors are vital to preserving this biological nutrient pump.`
+      },
+      {
+        passage_index: 3,
+        title: 'Passage 3: The Psychology of Algorithmic Decision-Making and Human Trust',
+        text: `Paragraph A
+As automated artificial intelligence systems assume decisive roles in judicial sentencing, medical diagnosis, and credit allocation, behavioral scientists are interrogating the psychological mechanisms underpinning human trust in algorithms.
+
+Paragraph B
+Experiments conducted by Dr. Berkeley Dietvorst demonstrate that participants who observed an algorithmic forecasting tool make a minor mathematical mistake immediately lost confidence in the system.
+
+Paragraph C
+Conversely, when algorithmic user interfaces permit humans to modify the software's output—even by a trivial margin of 2 to 5 percent—user satisfaction and algorithmic compliance increase exponentially.
+
+Paragraph D
+Designing transparent explainable AI (XAI) frameworks is therefore not merely a technical software objective, but an ergonomic and psychological imperative.`
+      }
+    ],
+    reading_passage_title: 'Passage 1: The History and Evolution of Renewable Energy Technologies',
+    reading_passage: `Paragraph A\nFor centuries, human civilization relied almost exclusively on wood, wind, and water power. However, the Industrial Revolution ushered in an era dominated by fossil fuels—coal, oil, and natural gas.`,
+    writing_task1_prompt: 'The chart below shows the total global renewable energy investment (in billion USD) and capacity addition between 2010 and 2024. Summarise the information by selecting and reporting the main features, and make comparisons where relevant. (Write at least 150 words)',
+    writing_task1_image: 'https://images.unsplash.com/photo-1466611653911-95081537e5b7?auto=format&fit=crop&w=800&q=80',
+    writing_task2_prompt: 'Some people believe that government funding should be devoted exclusively to renewable energy development, while others argue that fossil fuels should continue to receive subsidies to maintain low energy prices for low-income households. Discuss both views and give your own opinion. (Write at least 250 words)',
+    questions: [
+      {
+        question_id: 'L1',
+        section: 'listening',
+        part: 1,
+        question_text: '1. What is the main purpose of the visitor\'s inquiry at the student center?',
+        question_type: 'multiple_choice',
+        options: [
+          'A. To register for a university accommodation placement',
+          'B. To request a course transfer to the engineering department',
+          'C. To inquire about campus library opening hours'
+        ],
+        correct_answer: 'A',
+        max_score: 1
+      },
+      {
+        question_id: 'L2',
+        section: 'listening',
+        part: 1,
+        question_text: '2. Form Completion: Maximum contract duration is ________ months.',
+        question_type: 'form_note_table_flowchart_completion',
+        instruction: 'Write ONE WORD ONLY AND/OR A NUMBER.',
+        word_limit: 'A NUMBER',
+        correct_answer: '12',
+        max_score: 1
+      },
+      {
+        question_id: 'L3',
+        section: 'listening',
+        part: 1,
+        question_text: '3. Rent payment includes internet connectivity and utility bills.',
+        question_type: 'multiple_choice',
+        options: ['A. All utilities included', 'B. Electricity paid separately', 'C. Internet requires extra fee'],
+        correct_answer: 'A',
+        max_score: 1
+      },
+      {
+        question_id: 'L4',
+        section: 'listening',
+        part: 1,
+        question_text: '4. The student must submit their deposit before July ________.',
+        question_type: 'form_note_table_flowchart_completion',
+        word_limit: 'A NUMBER',
+        correct_answer: '15',
+        max_score: 1
+      },
+      {
+        question_id: 'L5',
+        section: 'listening',
+        part: 1,
+        question_text: '5. Student Surname: ________',
+        question_type: 'form_note_table_flowchart_completion',
+        word_limit: 'ONE WORD ONLY',
+        correct_answer: 'WILKINSON',
+        max_score: 1
+      },
+      {
+        question_id: 'L6',
+        section: 'listening',
+        part: 1,
+        question_text: '6. Room type chosen: Single en-suite with shared ________',
+        question_type: 'form_note_table_flowchart_completion',
+        word_limit: 'ONE WORD ONLY',
+        correct_answer: 'KITCHEN',
+        max_score: 1
+      },
+      {
+        question_id: 'L7',
+        section: 'listening',
+        part: 1,
+        question_text: '7. Monthly accommodation fee: £________',
+        question_type: 'form_note_table_flowchart_completion',
+        word_limit: 'A NUMBER',
+        correct_answer: '650',
+        max_score: 1
+      },
+      {
+        question_id: 'L8',
+        section: 'listening',
+        part: 1,
+        question_text: '8. Catering preference: Self-catered with communal dining access.',
+        question_type: 'multiple_choice',
+        options: ['A. Fully catered', 'B. Self-catered', 'C. Half-board meal plan'],
+        correct_answer: 'B',
+        max_score: 1
+      },
+      {
+        question_id: 'L9',
+        section: 'listening',
+        part: 1,
+        question_text: '9. Emergency contact relationship: ________',
+        question_type: 'form_note_table_flowchart_completion',
+        word_limit: 'ONE WORD ONLY',
+        correct_answer: 'UNCLE',
+        max_score: 1
+      },
+      {
+        question_id: 'L10',
+        section: 'listening',
+        part: 1,
+        question_text: '10. Distance from campus: approximately 15 minutes by ________',
+        question_type: 'form_note_table_flowchart_completion',
+        word_limit: 'ONE WORD ONLY',
+        correct_answer: 'BICYCLE',
+        max_score: 1
+      },
+      {
+        question_id: 'R1',
+        section: 'reading',
+        passage_index: 1,
+        question_text: '1. For centuries prior to the Industrial Revolution, human society relied primarily on fossil fuels.',
+        question_type: 'true_false_not_given',
+        correct_answer: 'FALSE',
+        max_score: 1
+      },
+      {
+        question_id: 'R2',
+        section: 'reading',
+        passage_index: 1,
+        question_text: '2. The photovoltaic solar cells developed in 1954 at Bell Labs achieved over 20% conversion efficiency.',
+        question_type: 'true_false_not_given',
+        correct_answer: 'FALSE',
+        max_score: 1
+      },
+      {
+        question_id: 'R3',
+        section: 'reading',
+        passage_index: 1,
+        question_text: '3. Between 2010 and 2020, the levelized cost of energy (LCOE) for solar fell by roughly 85 percent.',
+        question_type: 'true_false_not_given',
+        correct_answer: 'TRUE',
+        max_score: 1
+      },
+      {
+        question_id: 'R4',
+        section: 'reading',
+        passage_index: 1,
+        question_text: '4. Battery energy storage systems (BESS) are designed to help overcome renewable energy intermittency.',
+        question_type: 'true_false_not_given',
+        correct_answer: 'TRUE',
+        max_score: 1
+      },
+      {
+        question_id: 'R5',
+        section: 'reading',
+        passage_index: 1,
+        question_text: '5. Modern offshore wind turbines can reach capacities exceeding 15 megawatts.',
+        question_type: 'true_false_not_given',
+        correct_answer: 'TRUE',
+        max_score: 1
+      },
+      {
+        question_id: 'R6',
+        section: 'reading',
+        passage_index: 2,
+        question_text: '6. The global thermohaline circulation (THC) is driven by temperature and salinity differences.',
+        question_type: 'true_false_not_given',
+        correct_answer: 'TRUE',
+        max_score: 1
+      },
+      {
+        question_id: 'R7',
+        section: 'reading',
+        passage_index: 2,
+        question_text: '7. Pelagic megafauna biomass has increased significantly over the past 70 years.',
+        question_type: 'true_false_not_given',
+        correct_answer: 'FALSE',
+        max_score: 1
+      },
+      {
+        question_id: 'R8',
+        section: 'reading',
+        passage_index: 3,
+        question_text: '8. Algorithm aversion describes human tendency to quickly lose confidence after software mistakes.',
+        question_type: 'true_false_not_given',
+        correct_answer: 'TRUE',
+        max_score: 1
+      },
+      {
+        question_id: 'R9',
+        section: 'reading',
+        passage_index: 3,
+        question_text: '9. Allowing humans to slightly modify an algorithmic prediction increases their satisfaction.',
+        question_type: 'true_false_not_given',
+        correct_answer: 'TRUE',
+        max_score: 1
+      },
+      {
+        question_id: 'R10',
+        section: 'reading',
+        passage_index: 3,
+        question_text: '10. Explainable AI aims to replace human expert oversight entirely in critical fields.',
+        question_type: 'true_false_not_given',
+        correct_answer: 'FALSE',
+        max_score: 1
+      }
+    ]
   }
 ];

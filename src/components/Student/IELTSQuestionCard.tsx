@@ -132,7 +132,7 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
                   onChange={(e) => onAnswerChange(question.question_id, e.target.value)}
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={handleDrop}
-                  placeholder="Gõ đáp án..."
+                  placeholder="Type answer..."
                   className={`inline-block w-32 md:w-40 px-3 py-1.5 mx-1.5 text-sm bg-[#FAF4F8] border rounded-lg font-bold placeholder-[#A38DBE] focus:outline-none focus:ring-2 focus:bg-white text-center shadow-inner transition-all align-middle ${
                     isOverLimit ? 'border-rose-400 text-rose-700 focus:ring-rose-200' : 'border-pink-200 text-[#3C2A63] focus:ring-[#6B51A5]'
                   }`}
@@ -160,7 +160,7 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
       {/* RED THEME - Instruction or Word Limit Banner */}
       {(question.instruction || question.word_limit) && (
         <div className="px-5 py-2.5 bg-[#D32F2F] text-white text-xs md:text-sm font-bold flex items-center gap-2 -mx-5 -mt-5 mb-4 md:-mx-6 md:-mt-6 shadow-sm">
-          <span>{question.instruction || `Yêu cầu: ${question.word_limit}`}</span>
+          <span>{question.instruction || `Requirement: ${question.word_limit}`}</span>
         </div>
       )}
 
@@ -175,7 +175,7 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
           </span>
           {isMultiSelect && (
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-extrabold border border-indigo-200">
-              CHỌN NHIỀU ĐÁP ÁN
+              MULTIPLE CHOICES
             </span>
           )}
         </div>
@@ -184,7 +184,7 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
           {isFilled && (
             <span className="flex items-center space-x-1 text-emerald-800 bg-emerald-100 border border-emerald-200 text-xs font-bold px-2.5 py-0.5 rounded-xl">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
-              <span>Đã trả lời</span>
+              <span>Answered</span>
             </span>
           )}
         </div>
@@ -202,7 +202,7 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
         <div className="mt-4 p-4 bg-[#F8F6FC] rounded-2xl border border-purple-200 shadow-sm">
           <div className="text-xs font-extrabold text-[#503A7A] mb-3 uppercase tracking-wider flex items-center gap-2">
             <GripVertical className="w-4 h-4" />
-            Danh sách từ (Kéo thả vào ô trống)
+            Word Bank (Drag &amp; drop into blank)
           </div>
           <div className="flex flex-wrap gap-2.5">
             {wordBankItems.map((opt, oIdx) => (
@@ -225,20 +225,20 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
       {isGapFill && isOverLimit && (
         <div className="text-xs text-rose-600 font-bold mt-1.5 flex items-center gap-1.5">
           <AlertTriangle className="w-4 h-4" />
-          Bạn đã nhập {currentWordCount} từ (Vượt quá giới hạn {maxWords} từ).
+          You entered {currentWordCount} words (Exceeds limit of {maxWords} words).
         </div>
       )}
 
       {/* ========================================================= */}
-      {/* 1. MULTIPLE CHOICE (CHỌN ĐÁP ÁN ĐÚNG: RADIO / CHECKBOX)  */}
+      {/* 1. MULTIPLE CHOICE (RADIO / CHECKBOX SELECTION)           */}
       {/* ========================================================= */}
       {(question.question_type === 'multiple_choice' || question.question_type === 'multiple_choice_multi') && question.options && (
         <div className="space-y-2.5 pt-1">
           {isMultiSelect ? (
-            // MULTI SELECT (CHECKBOX - CHỌN NHIỀU ĐÁP ÁN)
+            // MULTI-SELECT (CHECKBOX - CHOOSE MULTIPLE OPTIONS)
             <div className="space-y-2">
               <span className="text-xs text-[#7C68A5] font-bold block mb-1">
-                Tích vào các ô vuông đáp án bạn chọn (Có thể chọn nhiều đáp án):
+                Check all applicable options (Multiple selections allowed):
               </span>
               {question.options.map((opt, optIdx) => {
                 const letterMatch = opt.match(/^([A-Z])[\.\s]/);
@@ -266,7 +266,7 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
               })}
             </div>
           ) : (
-            // SINGLE SELECT (RADIO BUTTON - CHỌN 1 ĐÁP ÁN)
+            // SINGLE-SELECT (RADIO BUTTON - CHOOSE ONE OPTION)
             <div className="space-y-2">
               {question.options.map((opt, optIdx) => {
                 const letterMatch = opt.match(/^([A-Z])[\.\s]/);
@@ -366,7 +366,7 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
           {/* Single method: Dashed Drop Box (Removed quick buttons) */}
           <div className="space-y-2">
             <span className="text-xs font-bold text-[#7C68A5] block">
-              Kéo thả tiêu đề (hoặc nhấp chọn) vào ô trống dưới đây:
+              Drag and drop heading (or click) into the box below:
             </span>
 
             <div 
@@ -385,13 +385,13 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
               }`}
             >
               <div className="flex items-center gap-2">
-                <span className="text-xs font-extrabold text-[#7C68A5]">KẾT QUẢ:</span>
+                <span className="text-xs font-extrabold text-[#7C68A5]">SELECTED:</span>
                 {userAnswer ? (
                   <span className="px-3 py-1 bg-[#6B51A5] text-white rounded-xl text-xs font-black font-serif shadow-sm">
                     {userAnswer}
                   </span>
                 ) : (
-                  <span className="text-xs text-slate-400 italic font-medium">[ Thả tiêu đề vào ô này ]</span>
+                  <span className="text-xs text-slate-400 italic font-medium">[ Drop heading into this box ]</span>
                 )}
               </div>
 
@@ -402,7 +402,7 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
                   className="text-xs text-rose-600 hover:text-rose-800 font-bold flex items-center gap-1 cursor-pointer"
                 >
                   <X className="w-3.5 h-3.5" />
-                  <span>Xóa</span>
+                  <span>Clear</span>
                 </button>
               )}
             </div>
@@ -421,7 +421,7 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
           {/* Display options box if matching_options exist */}
           {question.matching_options && question.matching_options.length > 0 && (
             <div className="p-3.5 bg-purple-50 rounded-2xl border border-purple-200 text-xs space-y-1.5">
-              <strong className="block text-[#3C2A63] font-extrabold mb-1">DANH SÁCH LỰA CHỌN (OPTIONS):</strong>
+              <strong className="block text-[#3C2A63] font-extrabold mb-1">LIST OF OPTIONS:</strong>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {question.matching_options.map((mOpt) => (
                   <div key={mOpt.id} className="flex items-start gap-1.5">
@@ -435,7 +435,7 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
 
           {/* Only Bubble buttons (removed redundant Dropdown) */}
           <div className="space-y-2">
-            <span className="text-xs font-bold text-[#7C68A5]">Chọn chữ cái tương ứng:</span>
+            <span className="text-xs font-bold text-[#7C68A5]">Select corresponding letter:</span>
             <div className="flex flex-wrap gap-2">
               {(question.matching_options && question.matching_options.length > 0
                 ? question.matching_options.map(o => o.id)
@@ -482,13 +482,13 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
                 onChange={(e) => onAnswerChange(question.question_id, e.target.value)}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={handleDrop}
-                placeholder="Gõ từ cần điền vào đây (Có thể dán Ctrl+V từ bài đọc)..."
+                placeholder="Type answer here (Copy & paste or drag & drop allowed)..."
                 className={`w-full px-4 py-3 bg-[#FAF4F8] border rounded-2xl text-xs sm:text-sm font-bold placeholder-[#A38DBE] focus:outline-none focus:ring-2 focus:bg-white transition-all shadow-inner ${
                   isOverLimit ? 'border-rose-400 text-rose-700 focus:ring-rose-200' : 'border-pink-200/90 text-[#3C2A63] focus:ring-[#6B51A5]'
                 }`}
               />
               <span className="text-[11px] text-[#7C68A5] italic font-medium block mt-2">
-                * Mẹo: Bạn có thể copy từ bài đọc, dán (Ctrl+V), hoặc kéo thả thẳng vào ô trống.
+                * Tip: You can copy text from the reading passage, paste, or drag and drop directly into the blank.
               </span>
             </div>
           )}
