@@ -53,10 +53,13 @@ export const LoginInstructions: React.FC<LoginInstructionsProps> = ({
       return;
     }
 
-    // Direct Admin Redirection Check via SBD / Code
+    // Direct Admin Redirection Check via SBD / Code (for teachers/admins)
     const upperSbd = cleanSbd.toUpperCase();
     const upperCode = cleanCode.toUpperCase();
-    if ((upperSbd === 'ADMIN123' || upperSbd === 'ADMIN') && (upperCode === 'ADMIN123' || upperCode === 'ADMIN')) {
+    if (
+      (upperSbd === 'ADMIN' || upperSbd === 'ADMIN123' || upperSbd === 'TEACHER') &&
+      (upperCode === 'ADMIN' || upperCode === 'ADMIN123' || upperCode === 'TEACHER' || upperCode === '123456')
+    ) {
       if (onSwitchToAdmin) {
         onSwitchToAdmin();
         return;
@@ -233,18 +236,6 @@ export const LoginInstructions: React.FC<LoginInstructionsProps> = ({
                 <Sparkles className="w-3.5 h-3.5 text-[#6B51A5]" />
                 <span>Practice Questions Hub</span>
               </button>
-
-              {/* Direct Teacher & Admin Portal Access */}
-              {onSwitchToAdmin && (
-                <button
-                  type="button"
-                  onClick={onSwitchToAdmin}
-                  className="w-full py-2.5 px-3 bg-[#F8F6FC] hover:bg-[#E2DDEC] border border-purple-200/80 text-xs font-bold text-[#503A7A] rounded-2xl flex items-center justify-center gap-2 transition cursor-pointer"
-                >
-                  <UserCheck className="w-3.5 h-3.5 text-[#6B51A5]" />
-                  <span>Teacher &amp; Admin Portal (Grading &amp; Monitoring)</span>
-                </button>
-              )}
             </form>
           </div>
         </div>

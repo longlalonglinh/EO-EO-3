@@ -79,10 +79,31 @@ export default function App() {
   const [adminTab, setAdminTab] = useState<'dashboard' | 'grading' | 'upload' | 'preview' | 'gas_setup'>('dashboard');
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('view') === 'admin' || window.location.pathname.includes('admin')) {
-      setActiveView('admin');
-    }
+    const checkAdminQueryOrHash = () => {
+      const params = new URLSearchParams(window.location.search);
+      if (
+        params.get('view') === 'admin' ||
+        window.location.pathname.includes('admin') ||
+        window.location.hash === '#admin'
+      ) {
+        setActiveView('admin');
+      }
+    };
+    checkAdminQueryOrHash();
+    window.addEventListener('hashchange', checkAdminQueryOrHash);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.altKey && (e.key === 'a' || e.key === 'A')) {
+        e.preventDefault();
+        setActiveView(prev => (prev === 'admin' ? 'student' : 'admin'));
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('hashchange', checkAdminQueryOrHash);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
   
   // GAS Web App URL

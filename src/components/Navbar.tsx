@@ -81,7 +81,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            <div>
+            <div
+              onDoubleClick={() => setActiveView(activeView === 'admin' ? 'student' : 'admin')}
+              className="select-none cursor-default"
+              title={activeView === 'admin' ? 'Double-click to return to student view' : undefined}
+            >
               <div className="flex items-center gap-1.5">
                 <h1 className="text-base sm:text-xl font-black tracking-tight text-[#3C2A63]">
                   EO EO Testing
@@ -157,7 +161,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="flex items-center space-x-1.5 sm:space-x-3 shrink-0">
             
             {/* When in Admin mode: Return to Student view */}
-            {activeView === 'admin' ? (
+            {activeView === 'admin' && (
               <button
                 onClick={() => {
                   setActiveView('student');
@@ -169,17 +173,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <BookOpen className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Student View</span>
                 <span className="sm:hidden">Student</span>
-              </button>
-            ) : (
-              /* When in Student mode: Quick Teacher / Admin Portal button */
-              <button
-                onClick={() => setActiveView('admin')}
-                className="px-3 py-1.5 rounded-2xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-sm bg-purple-50 text-[#6B51A5] border border-purple-200 hover:bg-purple-100"
-                title="Open Teacher / Admin Management Portal"
-              >
-                <UserCog className="w-3.5 h-3.5 text-[#6B51A5]" />
-                <span className="hidden sm:inline">Teacher / Admin</span>
-                <span className="sm:hidden">Admin</span>
               </button>
             )}
 
