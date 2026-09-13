@@ -18,6 +18,7 @@ import {
 import { ExamData, Question, ReadingPassageItem, QuestionType } from '../../types';
 import { DEFAULT_EXAMS } from '../../data/defaultExams';
 import { saveExamToIndexedDB } from '../../services/indexedDb';
+import { Task1ImageUploader } from './Task1ImageUploader';
 
 // 1. Zod Validation Schema
 export const questionZodSchema = z.object({
@@ -137,6 +138,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
     control,
     handleSubmit,
     watch,
+    setValue,
     reset,
     formState: { errors }
   } = useForm<ExamFormValues>({
@@ -159,6 +161,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
 
   const watchedPassages = watch('passages');
   const watchedExamCode = watch('exam_code');
+  const watchedTask1Image = watch('writing_task1_image');
 
   const onValidSubmit = async (formData: ExamFormValues) => {
     // Collect all reading questions from 3 passages
@@ -765,14 +768,13 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-black text-[#3C2A63] mb-1">
-                Task 1 Diagram/Chart Image URL:
+              <label className="block text-xs font-black text-[#3C2A63] mb-1.5">
+                Task 1 Diagram / Chart Material (Hình ảnh biểu đồ Task 1):
               </label>
-              <input
-                type="text"
-                {...register('writing_task1_image')}
-                placeholder="https://.../chart.png"
-                className="w-full px-4 py-2 bg-[#F8F6FC] rounded-2xl border border-purple-100 text-xs font-mono text-[#3C2A63] focus:outline-none"
+              <Task1ImageUploader
+                value={watchedTask1Image}
+                onChange={(imgStr) => setValue('writing_task1_image', imgStr, { shouldDirty: true, shouldValidate: true })}
+                onClear={() => setValue('writing_task1_image', '', { shouldDirty: true, shouldValidate: true })}
               />
             </div>
           </div>
