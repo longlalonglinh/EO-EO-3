@@ -57,6 +57,70 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
   // Image zoom modal
   const [isZoomOpen, setIsZoomOpen] = useState(false);
 
+  // Split-view and small screen responsive states
+  const [splitRatio, setSplitRatio] = useState<number>(45); // 45% left (prompt), 55% right (editor)
+  const [isResizing, setIsResizing] = useState<boolean>(false);
+  const [mobileWritingView, setMobileWritingView] = useState<'editor' | 'prompt'>('editor');
+  const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
+  const writingSplitContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Track window resizing for 13-inch screens and browser zoom
+  useEffect(() => {
+    const handleResize = () => {
+      setIsDesktop(window.innerWidth >= 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Split drag handle listener
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing || !writingSplitContainerRef.current) return;
+      const rect = writingSplitContainerRef.current.getBoundingClientRect();
+      const relativeX = e.clientX - rect.left;
+      const percentage = (relativeX / rect.width) * 100;
+      if (percentage >= 25 && percentage <= 75) {
+        setSplitRatio(percentage);
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isResizing || !writingSplitContainerRef.current || !e.touches[0]) return;
+      const rect = writingSplitContainerRef.current.getBoundingClientRect();
+      const relativeX = e.touches[0].clientX - rect.left;
+      const percentage = (relativeX / rect.width) * 100;
+      if (percentage >= 25 && percentage <= 75) {
+        setSplitRatio(percentage);
+      }
+    };
+
+    const handleEnd = () => {
+      if (isResizing) setIsResizing(false);
+    };
+
+    if (isResizing) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleEnd);
+      window.addEventListener('touchmove', handleTouchMove, { passive: true });
+      window.addEventListener('touchend', handleEnd);
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'col-resize';
+    } else {
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleEnd);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleEnd);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+  }, [isResizing]);
+
   // Track initial hydration to prevent overwriting stored draft with empty props
   const hasHydratedRef = useRef(false);
 
@@ -200,112 +264,208 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
         </div>
       )}
 
-      {/* Tabs Switcher for Task 1 and Task 2 with Live Word Count Indicators */}
-      <div className="flex bg-[#E2DDEC] p-1.5 rounded-2xl w-fit space-x-2">
-        <button
-          type="button"
-          onClick={() => setActiveTab('task1')}
-          className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2.5 cursor-pointer ${
-            activeTab === 'task1'
-              ? 'bg-[#6B51A5] text-white shadow-md'
-              : 'text-[#3C2A63] hover:text-[#503A7A]'
-          }`}
-        >
-          <span>Writing Task 1 (Min 150 words)</span>
-          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold flex items-center gap-1 ${
-            task1WordCount >= 150 
-              ? 'bg-emerald-200 text-emerald-950 font-black' 
-              : 'bg-rose-200 text-rose-950 font-black'
-          }`}>
-            {task1WordCount >= 150 ? <CheckCircle2 className="w-3 h-3 text-emerald-800 inline" /> : <AlertTriangle className="w-3 h-3 text-rose-800 inline" />}
-            {task1WordCount} words
-          </span>
-        </button>
+      {/* Tabs Switcher for Task 1 and Task 2 with Live Word Count Indicators & Split Ratio Controls */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex bg-[#E2DDEC] p-1.5 rounded-2xl w-fit space-x-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab('task1')}
+            className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2.5 cursor-pointer ${
+              activeTab === 'task1'
+                ? 'bg-[#6B51A5] text-white shadow-md'
+                : 'text-[#3C2A63] hover:text-[#503A7A]'
+            }`}
+          >
+            <span>Writing Task 1 (Min 150 words)</span>
+            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold flex items-center gap-1 ${
+              task1WordCount >= 150 
+                ? 'bg-emerald-200 text-emerald-950 font-black' 
+                : 'bg-rose-200 text-rose-950 font-black'
+            }`}>
+              {task1WordCount >= 150 ? <CheckCircle2 className="w-3 h-3 text-emerald-800 inline" /> : <AlertTriangle className="w-3 h-3 text-rose-800 inline" />}
+              {task1WordCount} words
+            </span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab('task2')}
-          className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2.5 cursor-pointer ${
-            activeTab === 'task2'
-              ? 'bg-[#6B51A5] text-white shadow-md'
-              : 'text-[#3C2A63] hover:text-[#503A7A]'
-          }`}
-        >
-          <span>Writing Task 2 (Min 250 words)</span>
-          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold flex items-center gap-1 ${
-            task2WordCount >= 250 
-              ? 'bg-emerald-200 text-emerald-950 font-black' 
-              : 'bg-rose-200 text-rose-950 font-black'
-          }`}>
-            {task2WordCount >= 250 ? <CheckCircle2 className="w-3 h-3 text-emerald-800 inline" /> : <AlertTriangle className="w-3 h-3 text-rose-800 inline" />}
-            {task2WordCount} words
-          </span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('task2')}
+            className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2.5 cursor-pointer ${
+              activeTab === 'task2'
+                ? 'bg-[#6B51A5] text-white shadow-md'
+                : 'text-[#3C2A63] hover:text-[#503A7A]'
+            }`}
+          >
+            <span>Writing Task 2 (Min 250 words)</span>
+            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold flex items-center gap-1 ${
+              task2WordCount >= 250 
+                ? 'bg-emerald-200 text-emerald-950 font-black' 
+                : 'bg-rose-200 text-rose-950 font-black'
+            }`}>
+              {task2WordCount >= 250 ? <CheckCircle2 className="w-3 h-3 text-emerald-800 inline" /> : <AlertTriangle className="w-3 h-3 text-rose-800 inline" />}
+              {task2WordCount} words
+            </span>
+          </button>
+        </div>
+
+        {/* Quick Split Ratio Presets for Desktop & 13" laptops */}
+        <div className="hidden md:flex items-center gap-1.5 bg-[#F5F2F9] px-3 py-1.5 rounded-2xl border border-purple-100 text-xs">
+          <span className="text-[11px] font-bold text-[#7C68A5] mr-1">Khung nhìn:</span>
+          <button
+            type="button"
+            onClick={() => setSplitRatio(45)}
+            className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${
+              splitRatio === 45 ? 'bg-[#6B51A5] text-white shadow-xs' : 'bg-white text-[#503A7A] hover:bg-purple-100'
+            }`}
+            title="Cân đối (Đề 45% - Bài 55%)"
+          >
+            45:55
+          </button>
+          <button
+            type="button"
+            onClick={() => setSplitRatio(58)}
+            className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${
+              splitRatio === 58 ? 'bg-[#6B51A5] text-white shadow-xs' : 'bg-white text-[#503A7A] hover:bg-purple-100'
+            }`}
+            title="Mở rộng đề bài & biểu đồ 58%"
+          >
+            Đề 58%
+          </button>
+          <button
+            type="button"
+            onClick={() => setSplitRatio(35)}
+            className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${
+              splitRatio === 35 ? 'bg-[#6B51A5] text-white shadow-xs' : 'bg-white text-[#503A7A] hover:bg-purple-100'
+            }`}
+            title="Mở rộng vùng gõ bài 65%"
+          >
+            Bài 65%
+          </button>
+        </div>
       </div>
 
-      {/* TASK 1 PANEL */}
+      {/* Mobile view toggle (< 768px) */}
+      <div className="flex md:hidden items-center justify-between bg-purple-50 p-1.5 rounded-2xl border border-purple-200">
+        <div className="flex items-center gap-1 w-full">
+          <button
+            type="button"
+            onClick={() => setMobileWritingView('editor')}
+            className={`flex-1 py-2 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+              mobileWritingView === 'editor' ? 'bg-[#6B51A5] text-white shadow-md' : 'text-[#503A7A] hover:bg-purple-100'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Vùng làm bài ({activeTab === 'task1' ? task1WordCount : task2WordCount} từ)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileWritingView('prompt')}
+            className={`flex-1 py-2 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+              mobileWritingView === 'prompt' ? 'bg-[#6B51A5] text-white shadow-md' : 'text-[#503A7A] hover:bg-purple-100'
+            }`}
+          >
+            <ImageIcon className="w-3.5 h-3.5" />
+            <span>Đề bài &amp; Dữ liệu</span>
+          </button>
+        </div>
+      </div>
+
+      {/* TASK 1 SPLIT-SCREEN WORKSPACE */}
       {activeTab === 'task1' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          
-          {/* Prompt Box & Image Material */}
-          <div className="lg:col-span-5 bg-white border border-purple-100/80 rounded-3xl p-6 shadow-xl shadow-purple-950/5 space-y-4">
-            <div className="flex items-center justify-between">
+        <div
+          ref={writingSplitContainerRef}
+          className="flex flex-col md:flex-row h-[560px] md:h-[calc(100dvh-13.5rem)] md:min-h-[460px] md:max-h-[850px] bg-white rounded-3xl border border-purple-100/80 overflow-hidden shadow-xl shadow-purple-950/5 relative"
+        >
+          {/* Left Column: Task 1 Prompt, Instructions & Graphic */}
+          <div
+            className={`h-full flex flex-col bg-[#F8F6FC] md:border-r border-purple-100 overflow-hidden w-full ${
+              mobileWritingView === 'editor' ? 'hidden md:flex' : 'flex'
+            }`}
+            style={{ width: isDesktop ? `${splitRatio}%` : '100%' }}
+          >
+            <div className="p-3.5 bg-white border-b border-purple-100 flex items-center justify-between shrink-0">
               <span className="text-xs px-3 py-1 rounded-full bg-purple-100 text-[#503A7A] font-extrabold border border-purple-200">
                 TASK 1 PROMPT &amp; DATA
               </span>
+              <span className="text-[11px] text-[#7C68A5] font-semibold">Spend ~20 mins</span>
             </div>
 
-            <div className="text-sm font-medium text-[#3C2A63] leading-relaxed whitespace-pre-wrap font-sans">
-              {task1Prompt || 'You should spend about 20 minutes on this task. Summarise the information by selecting and reporting the main features, and make comparisons where relevant. Write at least 150 words.'}
-            </div>
+            <div className="flex-1 p-4 sm:p-6 overflow-y-auto overscroll-contain space-y-4">
+              <div className="text-sm font-medium text-[#3C2A63] leading-relaxed whitespace-pre-wrap font-sans">
+                {task1Prompt || 'You should spend about 20 minutes on this task. Summarise the information by selecting and reporting the main features, and make comparisons where relevant. Write at least 150 words.'}
+              </div>
 
-            {/* Task 1 Graphic / Chart Image Display */}
-            {task1Image && (
-              <div className="space-y-2">
-                <div className="relative group rounded-2xl overflow-hidden border border-purple-200/80 bg-[#F8F6FC] shadow-sm">
-                  <img
-                    src={task1Image}
-                    alt="IELTS Writing Task 1 Diagram / Chart"
-                    className="w-full max-h-72 object-contain bg-white cursor-pointer transition duration-200 group-hover:scale-[1.01]"
-                    onClick={() => setIsZoomOpen(true)}
-                    referrerPolicy="no-referrer"
-                  />
-                  
-                  {/* Overlay button to zoom */}
-                  <button
-                    type="button"
-                    onClick={() => setIsZoomOpen(true)}
-                    className="absolute top-2 right-2 bg-[#3C2A63]/80 hover:bg-[#3C2A63] text-white p-2 rounded-xl backdrop-blur transition shadow-md cursor-pointer opacity-90 group-hover:opacity-100 flex items-center gap-1 text-[11px] font-bold"
-                    title="Zoom chart image"
-                  >
-                    <Maximize2 className="w-3.5 h-3.5" />
-                    <span>Zoom</span>
-                  </button>
+              {/* Task 1 Graphic / Chart Image Display */}
+              {task1Image && (
+                <div className="space-y-2">
+                  <div className="relative group rounded-2xl overflow-hidden border border-purple-200/80 bg-white shadow-sm">
+                    <img
+                      src={task1Image}
+                      alt="IELTS Writing Task 1 Diagram / Chart"
+                      className="w-full max-h-80 object-contain bg-white cursor-pointer transition duration-200 group-hover:scale-[1.01]"
+                      onClick={() => setIsZoomOpen(true)}
+                      referrerPolicy="no-referrer"
+                    />
+                    
+                    {/* Overlay button to zoom */}
+                    <button
+                      type="button"
+                      onClick={() => setIsZoomOpen(true)}
+                      className="absolute top-2 right-2 bg-[#3C2A63]/80 hover:bg-[#3C2A63] text-white p-2 rounded-xl backdrop-blur transition shadow-md cursor-pointer opacity-90 group-hover:opacity-100 flex items-center gap-1 text-[11px] font-bold"
+                      title="Zoom chart image"
+                    >
+                      <Maximize2 className="w-3.5 h-3.5" />
+                      <span>Zoom</span>
+                    </button>
 
-                  <div className="p-2.5 bg-white/90 border-t border-purple-100 flex items-center justify-between text-xs text-[#7C68A5]">
-                    <span className="font-semibold text-[11px]">📊 Task 1 Visual / Chart Material</span>
-                    <span className="text-[10px] text-purple-600 font-bold bg-purple-50 px-2 py-0.5 rounded-md">
-                      Click to enlarge
-                    </span>
+                    <div className="p-2.5 bg-white/90 border-t border-purple-100 flex items-center justify-between text-xs text-[#7C68A5]">
+                      <span className="font-semibold text-[11px]">📊 Task 1 Visual / Chart Material</span>
+                      <span className="text-[10px] text-purple-600 font-bold bg-purple-50 px-2 py-0.5 rounded-md">
+                        Click to enlarge
+                      </span>
+                    </div>
                   </div>
                 </div>
+              )}
+
+              <div className="p-3.5 bg-white rounded-2xl border border-purple-100 text-xs text-[#7C68A5] font-medium leading-relaxed">
+                💡 <strong>Requirement:</strong> Summarise main features and trends. Minimum requirement is <strong>150 words</strong>.
               </div>
-            )}
-            
-            <div className="p-3.5 bg-[#F8F6FC] rounded-2xl border border-purple-100 text-xs text-[#7C68A5] font-medium leading-relaxed">
-              💡 <strong>Requirement:</strong> Summarise main features and trends. Minimum requirement is <strong>150 words</strong>.
             </div>
           </div>
 
-          {/* Text Area Input */}
-          <div className="lg:col-span-7 bg-white border border-purple-100/80 rounded-3xl p-6 shadow-xl shadow-purple-950/5 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-extrabold text-[#3C2A63] uppercase tracking-wider">
-                Task 1 Response Editor
+          {/* Draggable Resizer Split Handle */}
+          <div
+            onMouseDown={() => setIsResizing(true)}
+            onTouchStart={() => setIsResizing(true)}
+            onDoubleClick={() => setSplitRatio(45)}
+            className={`hidden md:flex w-3 hover:w-3.5 bg-[#E2DDEC] hover:bg-[#6B51A5] active:bg-[#503A7A] cursor-col-resize items-center justify-center transition-all shrink-0 z-20 select-none touch-none ${
+              isResizing ? 'bg-[#6B51A5] shadow-lg ring-2 ring-[#6B51A5]/40' : ''
+            }`}
+            title="Drag to resize split panes (Double-click to reset 45/55)"
+          >
+            <div className="h-8 w-1 bg-white/60 rounded-full flex flex-col justify-center items-center gap-0.5 pointer-events-none">
+              <div className="w-0.5 h-1 bg-[#3C2A63] rounded-full" />
+              <div className="w-0.5 h-1 bg-[#3C2A63] rounded-full" />
+              <div className="w-0.5 h-1 bg-[#3C2A63] rounded-full" />
+            </div>
+          </div>
+
+          {/* Right Column: Task 1 Response Editor */}
+          <div
+            className={`h-full flex flex-col bg-white overflow-hidden w-full ${
+              mobileWritingView === 'prompt' ? 'hidden md:flex' : 'flex'
+            }`}
+            style={{ width: isDesktop ? `${100 - splitRatio}%` : '100%' }}
+          >
+            <div className="p-3.5 bg-[#F8F6FC] border-b border-purple-100 flex flex-wrap items-center justify-between gap-2 shrink-0">
+              <span className="text-xs font-extrabold text-[#3C2A63] uppercase tracking-wider flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5 text-[#6B51A5]" />
+                <span>Task 1 Response Editor</span>
               </span>
-              
-              {/* Requirement 5: Color-coded warning if <150 words */}
-              <span className={`text-xs font-black px-3 py-1.5 rounded-full border flex items-center gap-1.5 transition ${
+
+              {/* Word Count Indicator */}
+              <span className={`text-xs font-black px-3 py-1 rounded-full border flex items-center gap-1.5 transition ${
                 task1WordCount >= 150
                   ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                   : 'bg-rose-100 text-rose-800 border-rose-300'
@@ -313,36 +473,36 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
                 {task1WordCount >= 150 ? (
                   <>
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
-                    <span>Word Count: {task1WordCount} / 150 (Requirement Met)</span>
+                    <span>{task1WordCount} / 150 words (Met)</span>
                   </>
                 ) : (
                   <>
                     <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-                    <span>Word Count: {task1WordCount} / 150 (Under Minimum by {150 - task1WordCount})</span>
+                    <span>{task1WordCount} / 150 words (Need {150 - task1WordCount} more)</span>
                   </>
                 )}
               </span>
             </div>
 
-            <textarea
-              value={task1Text}
-              onChange={(e) => onTask1Change(e.target.value)}
-              onPaste={handlePaste}
-              spellCheck={false}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              rows={14}
-              placeholder="Type your Task 1 essay response here..."
-              className="w-full p-4 bg-[#F8F6FC] border border-purple-100 rounded-2xl text-sm text-[#3C2A63] placeholder-[#7C68A5] focus:outline-none focus:ring-2 focus:ring-[#6B51A5] transition-all font-mono leading-relaxed"
-            />
+            <div className="flex-1 p-4 flex flex-col overflow-hidden">
+              <textarea
+                value={task1Text}
+                onChange={(e) => onTask1Change(e.target.value)}
+                onPaste={handlePaste}
+                spellCheck={false}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                placeholder="Type your Task 1 response here... (Paste is disabled, auto-saves to IndexedDB)"
+                className="w-full flex-1 p-4 bg-[#F8F6FC] border border-purple-100 rounded-2xl text-sm text-[#3C2A63] placeholder-[#7C68A5] focus:outline-none focus:ring-2 focus:ring-[#6B51A5] transition-all font-mono leading-relaxed resize-none overflow-y-auto"
+              />
+            </div>
 
-            <div className="flex items-center justify-between text-[11px] text-[#7C68A5] font-medium">
-              <span>Keystrokes debounced &amp; auto-saved to IndexedDB every 1000ms</span>
+            <div className="p-3 bg-white border-t border-purple-100 flex flex-wrap items-center justify-between text-[11px] text-[#7C68A5] font-medium shrink-0">
+              <span>Auto-saved to IndexedDB every 1000ms {autoSaveTime && `(${autoSaveTime})`}</span>
               <span>Spellcheck: Disabled | Paste: Blocked</span>
             </div>
           </div>
-
         </div>
       )}
 
@@ -379,33 +539,69 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
         </div>
       )}
 
-      {/* TASK 2 PANEL */}
+      {/* TASK 2 SPLIT-SCREEN WORKSPACE */}
       {activeTab === 'task2' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          
-          {/* Prompt Box */}
-          <div className="lg:col-span-5 bg-white border border-purple-100/80 rounded-3xl p-6 shadow-xl shadow-purple-950/5 space-y-4">
-            <span className="text-xs px-3 py-1 rounded-full bg-purple-100 text-[#503A7A] font-extrabold border border-purple-200">
-              TASK 2 PROMPT
-            </span>
-            <div className="text-sm font-medium text-[#3C2A63] leading-relaxed whitespace-pre-wrap font-sans">
-              {task2Prompt || 'You should spend about 40 minutes on this task. Write about the following topic: Some people think that universities should provide graduates with the knowledge and skills needed in the workplace. Others think the true function of a university should be to give access to knowledge for its own sake. Discuss both views and give your opinion. Write at least 250 words.'}
+        <div
+          ref={writingSplitContainerRef}
+          className="flex flex-col md:flex-row h-[560px] md:h-[calc(100dvh-13.5rem)] md:min-h-[460px] md:max-h-[850px] bg-white rounded-3xl border border-purple-100/80 overflow-hidden shadow-xl shadow-purple-950/5 relative"
+        >
+          {/* Left Column: Task 2 Prompt & Instructions */}
+          <div
+            className={`h-full flex flex-col bg-[#F8F6FC] md:border-r border-purple-100 overflow-hidden w-full ${
+              mobileWritingView === 'editor' ? 'hidden md:flex' : 'flex'
+            }`}
+            style={{ width: isDesktop ? `${splitRatio}%` : '100%' }}
+          >
+            <div className="p-3.5 bg-white border-b border-purple-100 flex items-center justify-between shrink-0">
+              <span className="text-xs px-3 py-1 rounded-full bg-purple-100 text-[#503A7A] font-extrabold border border-purple-200">
+                TASK 2 PROMPT
+              </span>
+              <span className="text-[11px] text-[#7C68A5] font-semibold">Spend ~40 mins (2/3 score)</span>
             </div>
-            
-            <div className="p-3.5 bg-[#F8F6FC] rounded-2xl border border-purple-100 text-xs text-[#7C68A5] font-medium leading-relaxed">
-              💡 <strong>Requirement:</strong> Task 2 accounts for 2/3 of your total Writing score. Minimum requirement is <strong>250 words</strong>.
+
+            <div className="flex-1 p-4 sm:p-6 overflow-y-auto overscroll-contain space-y-4">
+              <div className="text-sm font-medium text-[#3C2A63] leading-relaxed whitespace-pre-wrap font-sans">
+                {task2Prompt || 'You should spend about 40 minutes on this task. Write about the following topic: Some people think that universities should provide graduates with the knowledge and skills needed in the workplace. Others think the true function of a university should be to give access to knowledge for its own sake. Discuss both views and give your opinion. Write at least 250 words.'}
+              </div>
+
+              <div className="p-3.5 bg-white rounded-2xl border border-purple-100 text-xs text-[#7C68A5] font-medium leading-relaxed">
+                💡 <strong>Requirement:</strong> Task 2 accounts for 2/3 of your total Writing score. Minimum requirement is <strong>250 words</strong>.
+              </div>
             </div>
           </div>
 
-          {/* Text Area Input */}
-          <div className="lg:col-span-7 bg-white border border-purple-100/80 rounded-3xl p-6 shadow-xl shadow-purple-950/5 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-extrabold text-[#3C2A63] uppercase tracking-wider">
-                Task 2 Essay Editor
+          {/* Draggable Resizer Split Handle */}
+          <div
+            onMouseDown={() => setIsResizing(true)}
+            onTouchStart={() => setIsResizing(true)}
+            onDoubleClick={() => setSplitRatio(45)}
+            className={`hidden md:flex w-3 hover:w-3.5 bg-[#E2DDEC] hover:bg-[#6B51A5] active:bg-[#503A7A] cursor-col-resize items-center justify-center transition-all shrink-0 z-20 select-none touch-none ${
+              isResizing ? 'bg-[#6B51A5] shadow-lg ring-2 ring-[#6B51A5]/40' : ''
+            }`}
+            title="Drag to resize split panes (Double-click to reset 45/55)"
+          >
+            <div className="h-8 w-1 bg-white/60 rounded-full flex flex-col justify-center items-center gap-0.5 pointer-events-none">
+              <div className="w-0.5 h-1 bg-[#3C2A63] rounded-full" />
+              <div className="w-0.5 h-1 bg-[#3C2A63] rounded-full" />
+              <div className="w-0.5 h-1 bg-[#3C2A63] rounded-full" />
+            </div>
+          </div>
+
+          {/* Right Column: Task 2 Response Editor */}
+          <div
+            className={`h-full flex flex-col bg-white overflow-hidden w-full ${
+              mobileWritingView === 'prompt' ? 'hidden md:flex' : 'flex'
+            }`}
+            style={{ width: isDesktop ? `${100 - splitRatio}%` : '100%' }}
+          >
+            <div className="p-3.5 bg-[#F8F6FC] border-b border-purple-100 flex flex-wrap items-center justify-between gap-2 shrink-0">
+              <span className="text-xs font-extrabold text-[#3C2A63] uppercase tracking-wider flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5 text-[#6B51A5]" />
+                <span>Task 2 Essay Editor</span>
               </span>
-              
-              {/* Requirement 5: Color-coded warning if <250 words */}
-              <span className={`text-xs font-black px-3 py-1.5 rounded-full border flex items-center gap-1.5 transition ${
+
+              {/* Word Count Indicator */}
+              <span className={`text-xs font-black px-3 py-1 rounded-full border flex items-center gap-1.5 transition ${
                 task2WordCount >= 250
                   ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                   : 'bg-rose-100 text-rose-800 border-rose-300'
@@ -413,36 +609,36 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
                 {task2WordCount >= 250 ? (
                   <>
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
-                    <span>Word Count: {task2WordCount} / 250 (Requirement Met)</span>
+                    <span>{task2WordCount} / 250 words (Met)</span>
                   </>
                 ) : (
                   <>
                     <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-                    <span>Word Count: {task2WordCount} / 250 (Under Minimum by {250 - task2WordCount})</span>
+                    <span>{task2WordCount} / 250 words (Need {250 - task2WordCount} more)</span>
                   </>
                 )}
               </span>
             </div>
 
-            <textarea
-              value={task2Text}
-              onChange={(e) => onTask2Change(e.target.value)}
-              onPaste={handlePaste}
-              spellCheck={false}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              rows={16}
-              placeholder="Type your Task 2 essay response here..."
-              className="w-full p-4 bg-[#F8F6FC] border border-purple-100 rounded-2xl text-sm text-[#3C2A63] placeholder-[#7C68A5] focus:outline-none focus:ring-2 focus:ring-[#6B51A5] transition-all font-mono leading-relaxed"
-            />
+            <div className="flex-1 p-4 flex flex-col overflow-hidden">
+              <textarea
+                value={task2Text}
+                onChange={(e) => onTask2Change(e.target.value)}
+                onPaste={handlePaste}
+                spellCheck={false}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                placeholder="Type your Task 2 essay response here... (Paste is disabled, auto-saves to IndexedDB)"
+                className="w-full flex-1 p-4 bg-[#F8F6FC] border border-purple-100 rounded-2xl text-sm text-[#3C2A63] placeholder-[#7C68A5] focus:outline-none focus:ring-2 focus:ring-[#6B51A5] transition-all font-mono leading-relaxed resize-none overflow-y-auto"
+              />
+            </div>
 
-            <div className="flex items-center justify-between text-[11px] text-[#7C68A5] font-medium">
-              <span>Keystrokes debounced &amp; auto-saved to IndexedDB every 1000ms</span>
+            <div className="p-3 bg-white border-t border-purple-100 flex flex-wrap items-center justify-between text-[11px] text-[#7C68A5] font-medium shrink-0">
+              <span>Auto-saved to IndexedDB every 1000ms {autoSaveTime && `(${autoSaveTime})`}</span>
               <span>Spellcheck: Disabled | Paste: Blocked</span>
             </div>
           </div>
-
         </div>
       )}
 

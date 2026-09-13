@@ -13,49 +13,50 @@ import {
   Clock, 
   HelpCircle,
   Sliders,
-  RotateCcw
+  RotateCcw,
+  Sparkles
 } from 'lucide-react';
 import { ExamData, Question, ReadingPassageItem, QuestionType } from '../../types';
 import { DEFAULT_EXAMS } from '../../data/defaultExams';
 import { saveExamToIndexedDB } from '../../services/indexedDb';
 import { Task1ImageUploader } from './Task1ImageUploader';
 
-// 1. Zod Validation Schema
+// 1. Zod Validation Schema - Highly flexible to allow single-skill exams & partial question sets
 export const questionZodSchema = z.object({
-  question_id: z.string().min(1, 'Question ID is required (e.g. R1, L1)'),
-  section: z.enum(['listening', 'reading']),
+  question_id: z.string().optional().default(''),
+  section: z.enum(['listening', 'reading']).optional().default('reading'),
   passage_index: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
   part: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).optional(),
-  question_text: z.string().min(2, 'Question text cannot be empty'),
-  question_type: z.string().min(1, 'Question type is required'),
-  options: z.array(z.string()).optional(),
-  correct_answer: z.string().optional(),
-  explanation: z.string().optional(),
-  max_score: z.number().min(1)
+  question_text: z.string().optional().default(''),
+  question_type: z.string().optional().default('multiple_choice'),
+  options: z.array(z.string()).optional().default([]),
+  correct_answer: z.string().optional().default(''),
+  explanation: z.string().optional().default(''),
+  max_score: z.number().optional().default(1)
 });
 
 export const passageZodSchema = z.object({
   passage_index: z.union([z.literal(1), z.literal(2), z.literal(3)]),
-  title: z.string().min(1, 'Passage title is required'),
-  text: z.string(),
-  questions: z.array(questionZodSchema)
+  title: z.string().optional().default('Reading Passage'),
+  text: z.string().optional().default(''),
+  questions: z.array(questionZodSchema).optional().default([])
 });
 
 export const examZodSchema = z.object({
-  exam_code: z.string().min(2, 'Exam code required (e.g. TEST01)').max(20),
-  title: z.string().min(3, 'Exam title must be at least 3 characters'),
+  exam_code: z.string().min(1, 'Vui lòng nhập mã đề thi (VD: READ01, TEST01)').max(30),
+  title: z.string().min(2, 'Tiêu đề bài thi phải có ít nhất 2 ký tự'),
   test_type: z.enum(['TEST', 'PRACTICE']),
-  duration_mins: z.number().min(10).max(300),
-  listening_duration_mins: z.number().min(5).max(120),
-  reading_duration_mins: z.number().min(10).max(120),
-  writing_duration_mins: z.number().min(10).max(120),
-  audio_url: z.string().optional(),
-  audio_title: z.string().optional(),
-  passages: z.array(passageZodSchema).length(3, 'Exam must contain exactly 3 reading passages'),
-  listening_questions: z.array(questionZodSchema).optional(),
-  writing_task1_prompt: z.string().optional(),
-  writing_task1_image: z.string().optional(),
-  writing_task2_prompt: z.string().optional()
+  duration_mins: z.number().min(1, 'Thời lượng tối thiểu 1 phút').max(360),
+  listening_duration_mins: z.number().min(0).max(120).optional().default(35),
+  reading_duration_mins: z.number().min(0).max(120).optional().default(60),
+  writing_duration_mins: z.number().min(0).max(120).optional().default(60),
+  audio_url: z.string().optional().default(''),
+  audio_title: z.string().optional().default(''),
+  passages: z.array(passageZodSchema).optional().default([]),
+  listening_questions: z.array(questionZodSchema).optional().default([]),
+  writing_task1_prompt: z.string().optional().default(''),
+  writing_task1_image: z.string().optional().default(''),
+  writing_task2_prompt: z.string().optional().default('')
 });
 
 export type ExamFormValues = z.infer<typeof examZodSchema>;
@@ -142,7 +143,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
     reset,
     formState: { errors }
   } = useForm<ExamFormValues>({
-    resolver: zodResolver(examZodSchema),
+    resolver: zodResolver(examZodSchema) as any,
     defaultValues: formatInitialData(initialExamData),
     mode: 'onChange'
   });
@@ -164,33 +165,59 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
   const watchedTask1Image = watch('writing_task1_image');
 
   const onValidSubmit = async (formData: ExamFormValues) => {
-    // Collect all reading questions from 3 passages
+    // Sanitize reading questions and passages (allow empty or partial passages)
     const flatReadingQuestions: Question[] = [];
-    const standardizedPassages: ReadingPassageItem[] = formData.passages.map(p => {
-      const pQs: Question[] = p.questions.map(q => ({
-        ...q,
-        section: 'reading' as const,
-        passage_index: p.passage_index,
-        question_type: q.question_type as QuestionType,
-        correct_answer: q.correct_answer || ''
-      }));
+    const rawPassages = formData.passages || [];
 
-      pQs.forEach(q => flatReadingQuestions.push(q));
+    const standardizedPassages: ReadingPassageItem[] = rawPassages.map((p, pIdx) => {
+      const pNumber = ((p.passage_index || pIdx + 1) as 1 | 2 | 3);
+      const validQs = (p.questions || [])
+        .filter(q => q && (q.question_text?.trim() || q.correct_answer?.trim()))
+        .map((q, qIdx) => ({
+          ...q,
+          question_id: q.question_id?.trim() || `R${pNumber}_Q${qIdx + 1}`,
+          section: 'reading' as const,
+          passage_index: pNumber,
+          question_type: (q.question_type || 'multiple_choice') as QuestionType,
+          correct_answer: q.correct_answer?.trim() || '',
+          max_score: q.max_score || 1
+        }));
+
+      validQs.forEach(q => flatReadingQuestions.push(q));
 
       return {
-        passage_index: p.passage_index,
-        title: p.title,
-        text: p.text,
-        questions: pQs
+        passage_index: pNumber,
+        title: p.title?.trim() || `Reading Passage ${pNumber}`,
+        text: p.text || '',
+        questions: validQs
       };
     });
 
-    const flatListeningQuestions: Question[] = (formData.listening_questions || []).map(q => ({
-      ...q,
-      section: 'listening' as const,
-      question_type: q.question_type as QuestionType,
-      correct_answer: q.correct_answer || ''
-    }));
+    // Sanitize listening questions
+    const flatListeningQuestions: Question[] = (formData.listening_questions || [])
+      .filter(q => q && (q.question_text?.trim() || q.correct_answer?.trim()))
+      .map((q, qIdx) => ({
+        ...q,
+        question_id: q.question_id?.trim() || `L_Q${qIdx + 1}`,
+        section: 'listening' as const,
+        question_type: (q.question_type || 'multiple_choice') as QuestionType,
+        correct_answer: q.correct_answer?.trim() || '',
+        max_score: q.max_score || 1
+      }));
+
+    const hasReading = flatReadingQuestions.length > 0 || standardizedPassages.some(p => p.text?.trim().length > 0);
+    const hasListening = flatListeningQuestions.length > 0 || Boolean(formData.audio_url?.trim());
+    const hasWriting = Boolean(formData.writing_task1_prompt?.trim() || formData.writing_task2_prompt?.trim() || formData.writing_task1_image?.trim());
+
+    if (!hasReading && !hasListening && !hasWriting) {
+      alert('Vui lòng thêm nội dung cho ít nhất một kỹ năng (Reading, Listening, hoặc Writing) để lưu đề thi!');
+      return;
+    }
+
+    const includedSkills: string[] = [];
+    if (hasListening) includedSkills.push('Listening');
+    if (hasReading) includedSkills.push('Reading');
+    if (hasWriting) includedSkills.push('Writing');
 
     const completeExam: ExamData = {
       exam_code: formData.exam_code.trim().toUpperCase(),
@@ -200,22 +227,22 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
       listening_duration_mins: formData.listening_duration_mins,
       reading_duration_mins: formData.reading_duration_mins,
       writing_duration_mins: formData.writing_duration_mins,
-      audio_url: formData.audio_url,
-      audio_title: formData.audio_title,
+      audio_url: formData.audio_url?.trim() || '',
+      audio_title: formData.audio_title?.trim() || '',
       passages: standardizedPassages,
       reading_questions: flatReadingQuestions,
       listening_questions: flatListeningQuestions,
       questions: [...flatListeningQuestions, ...flatReadingQuestions],
-      writing_task1_prompt: formData.writing_task1_prompt,
-      writing_task1_image: formData.writing_task1_image,
-      writing_task2_prompt: formData.writing_task2_prompt,
+      writing_task1_prompt: formData.writing_task1_prompt?.trim() || '',
+      writing_task1_image: formData.writing_task1_image?.trim() || '',
+      writing_task2_prompt: formData.writing_task2_prompt?.trim() || '',
       created_at: new Date().toISOString()
     };
 
     // 1. Dual save to IndexedDB
     await saveExamToIndexedDB(completeExam);
 
-    // 2. Dual save to localStorage
+    // 2. Dual save to localStorage safely
     try {
       const existingRaw = localStorage.getItem('ielts_saved_exams');
       let existingList: ExamData[] = existingRaw ? JSON.parse(existingRaw) : [];
@@ -235,8 +262,8 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
     // 3. Callback to parent
     onSaveExam(completeExam);
 
-    setSaveSuccessMessage(`Exam ${completeExam.exam_code} validated by Zod and saved to IndexedDB & Cloud!`);
-    setTimeout(() => setSaveSuccessMessage(null), 4000);
+    setSaveSuccessMessage(`Đã lưu thành công đề thi ${completeExam.exam_code} [${includedSkills.join(' + ')}]!`);
+    setTimeout(() => setSaveSuccessMessage(null), 4500);
   };
 
   const handleAddQuestionToPassage = () => {
@@ -265,6 +292,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
       part: 1,
       question_text: `${nextQNum}. Enter listening question prompt`,
       question_type: 'fill_in_the_blank',
+      options: [],
       correct_answer: 'ANSWER',
       max_score: 1,
       explanation: ''
@@ -307,18 +335,59 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
     writing_task2_prompt: ''
   });
 
-  const handleResetToDefaultTemplate = () => {
-    if (window.confirm('Reset this exam to a blank sheet? All questions will be cleared. (Xoá toàn bộ câu hỏi và trở về blank sheet?)')) {
-      reset(createBlankExamData(watchedExamCode || 'NEW_EXAM'));
-      setSelectedPassageIdx(0);
-      setSaveSuccessMessage('Exam reset to blank sheet! All questions have been cleared.');
-      setTimeout(() => setSaveSuccessMessage(null), 4000);
-    }
+  const [showResetModal, setShowResetModal] = useState(false);
+
+  const executeResetToBlankSheet = () => {
+    const currentCode = watchedExamCode || 'NEW_EXAM';
+    reset(createBlankExamData(currentCode));
+    setSelectedPassageIdx(0);
+    setShowResetModal(false);
+    setSaveSuccessMessage('✅ Đã xoá toàn bộ câu hỏi và nội dung! Đề thi đã trở về Blank Sheet.');
+    setTimeout(() => setSaveSuccessMessage(null), 5000);
   };
 
   return (
-    <form onSubmit={handleSubmit(onValidSubmit)} className="space-y-6">
+    <form onSubmit={handleSubmit(onValidSubmit)} className="space-y-6 relative">
       
+      {/* RESET CONFIRMATION MODAL */}
+      {showResetModal && (
+        <div className="fixed inset-0 z-50 bg-purple-950/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full border border-purple-100 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="p-3 bg-rose-50 rounded-2xl">
+                <RotateCcw className="w-6 h-6 text-rose-600" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-[#3C2A63]">Xác nhận Reset Blank Sheet</h3>
+                <p className="text-xs text-[#7C68A5]">Hành động này sẽ xoá sạch mọi câu hỏi</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-[#503A7A] leading-relaxed bg-[#F8F6FC] p-3.5 rounded-2xl border border-purple-100">
+              Toàn bộ bài đọc, danh sách câu hỏi Reading, Listening và nội dung Writing Task 1, Task 2 của đề thi này sẽ được làm trống hoàn toàn để bạn bắt đầu tạo mới từ đầu.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowResetModal(false)}
+                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-[#3C2A63] text-xs font-bold rounded-xl transition cursor-pointer"
+              >
+                Huỷ bỏ
+              </button>
+              <button
+                type="button"
+                onClick={executeResetToBlankSheet}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Xoá hết &amp; Về Blank Sheet</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* HEADER CONTROLS */}
       <div className="bg-white rounded-3xl p-4 sm:p-6 border border-purple-100 shadow-xl shadow-purple-950/5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
@@ -338,7 +407,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
         <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto justify-between md:justify-end">
           <button
             type="button"
-            onClick={handleResetToDefaultTemplate}
+            onClick={() => setShowResetModal(true)}
             title="Xoá hết câu hỏi, trở về blank sheet"
             className="px-3.5 py-2 bg-[#F5F2F9] hover:bg-[#E2DDEC] text-[#3C2A63] rounded-2xl text-xs font-black transition flex items-center gap-1.5 cursor-pointer border border-purple-100"
           >
@@ -365,12 +434,70 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
         </div>
       )}
 
+      {/* QUICK SKILL PRESETS & FLEXIBILITY GUIDANCE */}
+      <div className="bg-gradient-to-r from-purple-50/90 to-indigo-50/70 border border-purple-200/80 rounded-2xl p-3.5 space-y-2">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="p-1.5 bg-[#6B51A5] text-white rounded-xl">
+              <Sparkles className="w-3.5 h-3.5" />
+            </span>
+            <span className="text-xs font-black text-[#3C2A63]">
+              Chế độ tạo đề linh hoạt: Tạo trọn bộ hoặc lẻ từng kỹ năng
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveSection('reading');
+                setValue('duration_mins', 60);
+              }}
+              className="px-2.5 py-1 text-[11px] font-bold bg-white text-[#503A7A] hover:bg-purple-100 rounded-lg border border-purple-200 transition cursor-pointer shadow-2xs"
+            >
+              📖 Chỉ Reading (60p)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveSection('listening');
+                setValue('duration_mins', 35);
+              }}
+              className="px-2.5 py-1 text-[11px] font-bold bg-white text-[#503A7A] hover:bg-purple-100 rounded-lg border border-purple-200 transition cursor-pointer shadow-2xs"
+            >
+              🎧 Chỉ Listening (35p)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveSection('writing');
+                setValue('duration_mins', 60);
+              }}
+              className="px-2.5 py-1 text-[11px] font-bold bg-white text-[#503A7A] hover:bg-purple-100 rounded-lg border border-purple-200 transition cursor-pointer shadow-2xs"
+            >
+              ✍️ Chỉ Writing (60p)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setValue('duration_mins', 155);
+              }}
+              className="px-2.5 py-1 text-[11px] font-bold bg-purple-100 text-[#3C2A63] hover:bg-purple-200 rounded-lg border border-purple-300 transition cursor-pointer shadow-2xs"
+            >
+              ✨ Full 3 kỹ năng
+            </button>
+          </div>
+        </div>
+        <p className="text-[11px] text-[#6E5B8E] font-medium leading-relaxed">
+          💡 Giáo viên có thể tạo đề thi riêng biệt cho từng kỹ năng hoặc kết hợp tuỳ ý. Bạn có thể để trống hoàn toàn 1 hoặc 2 kỹ năng, hoặc không cần nhập đủ 40 câu hỏi mà hệ thống vẫn lưu và học viên vẫn làm bài bình thường.
+        </p>
+      </div>
+
       {/* TOP-LEVEL TABS */}
       <div className="flex items-center gap-2 border-b border-purple-100 pb-3 overflow-x-auto no-scrollbar">
         <button
           type="button"
           onClick={() => setActiveSection('reading')}
-          className={`px-4 py-2.5 rounded-2xl text-xs font-black transition flex items-center gap-2 cursor-pointer ${
+          className={`px-4 py-2.5 rounded-2xl text-xs font-black transition flex items-center gap-2 cursor-pointer shrink-0 whitespace-nowrap ${
             activeSection === 'reading'
               ? 'bg-[#6B51A5] text-white shadow-md'
               : 'bg-white text-[#503A7A] hover:bg-purple-50 border border-purple-100'
@@ -386,7 +513,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
         <button
           type="button"
           onClick={() => setActiveSection('listening')}
-          className={`px-4 py-2.5 rounded-2xl text-xs font-black transition flex items-center gap-2 cursor-pointer ${
+          className={`px-4 py-2.5 rounded-2xl text-xs font-black transition flex items-center gap-2 cursor-pointer shrink-0 whitespace-nowrap ${
             activeSection === 'listening'
               ? 'bg-[#6B51A5] text-white shadow-md'
               : 'bg-white text-[#503A7A] hover:bg-purple-50 border border-purple-100'
@@ -402,7 +529,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
         <button
           type="button"
           onClick={() => setActiveSection('writing')}
-          className={`px-4 py-2.5 rounded-2xl text-xs font-black transition flex items-center gap-2 cursor-pointer ${
+          className={`px-4 py-2.5 rounded-2xl text-xs font-black transition flex items-center gap-2 cursor-pointer shrink-0 whitespace-nowrap ${
             activeSection === 'writing'
               ? 'bg-[#6B51A5] text-white shadow-md'
               : 'bg-white text-[#503A7A] hover:bg-purple-50 border border-purple-100'
@@ -415,7 +542,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
         <button
           type="button"
           onClick={() => setActiveSection('settings')}
-          className={`px-4 py-2.5 rounded-2xl text-xs font-black transition flex items-center gap-2 cursor-pointer ${
+          className={`px-4 py-2.5 rounded-2xl text-xs font-black transition flex items-center gap-2 cursor-pointer shrink-0 whitespace-nowrap ${
             activeSection === 'settings'
               ? 'bg-[#6B51A5] text-white shadow-md'
               : 'bg-white text-[#503A7A] hover:bg-purple-50 border border-purple-100'

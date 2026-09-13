@@ -524,55 +524,69 @@ export function standardizeExamData(rawExam: any, cleanCode: string): ExamData {
   const readingQs = rawExam.reading_questions || allQs.filter((q: any) => q.section === 'reading');
 
   let rawPassages: any[] = rawExam.passages || [];
-  if (!Array.isArray(rawPassages) || rawPassages.length === 0) {
-    rawPassages = [
-      {
-        passage_index: 1,
-        title: rawExam.passage_title || rawExam.reading_passage_title || 'Reading Passage 1',
-        text: rawExam.passage_text || rawExam.reading_passage || ''
-      },
-      {
-        passage_index: 2,
-        title: 'Reading Passage 2',
-        text: ''
-      },
-      {
-        passage_index: 3,
-        title: 'Reading Passage 3',
-        text: ''
-      }
-    ];
-  }
 
-  // Ensure 3 passages exist
-  const standardizedPassages: ReadingPassageItem[] = [1, 2, 3].map((pIdx) => {
-    const existingP = rawPassages.find((p: any) => p.passage_index === pIdx) || rawPassages[pIdx - 1];
-    const pTitle = existingP?.title || `Reading Passage ${pIdx}`;
-    const pText = existingP?.text || (pIdx === 1 ? (rawExam.passage_text || rawExam.reading_passage || '') : '');
-    
-    // Locate questions belonging to this passage
-    let pQuestions = existingP?.questions;
-    if (!Array.isArray(pQuestions) || pQuestions.length === 0) {
-      pQuestions = readingQs.filter((q: any) => {
-        if (q.passage_index === pIdx) return true;
-        if (!q.passage_index) {
-          // Default partition Q1-13 -> 1, Q14-26 -> 2, Q27-40 -> 3
-          const qIndex = readingQs.indexOf(q);
-          if (pIdx === 1 && qIndex < 13) return true;
-          if (pIdx === 2 && qIndex >= 13 && qIndex < 26) return true;
-          if (pIdx === 3 && qIndex >= 26) return true;
+  // Check if Reading skill exists in this exam
+  const hasReadingContent = readingQs.length > 0 || rawPassages.some((p: any) => (p?.text && p.text.trim()) || (p?.questions && p.questions.length > 0));
+
+  let standardizedPassages: ReadingPassageItem[] = [];
+
+  if (hasReadingContent) {
+    if (!Array.isArray(rawPassages) || rawPassages.length === 0) {
+      rawPassages = [
+        {
+          passage_index: 1,
+          title: rawExam.passage_title || rawExam.reading_passage_title || 'Reading Passage 1',
+          text: rawExam.passage_text || rawExam.reading_passage || ''
+        },
+        {
+          passage_index: 2,
+          title: 'Reading Passage 2',
+          text: ''
+        },
+        {
+          passage_index: 3,
+          title: 'Reading Passage 3',
+          text: ''
         }
-        return false;
-      });
+      ];
     }
 
-    return {
-      passage_index: pIdx as 1 | 2 | 3,
-      title: pTitle,
-      text: pText,
-      questions: pQuestions
-    };
-  });
+    // Determine how many passages to preserve
+    const maxPIdx = Math.max(
+      1,
+      ...rawPassages.map((p: any) => p.passage_index || 1),
+      ...readingQs.map((q: any) => q.passage_index || 1)
+    );
+    const passageIndices = Array.from({ length: Math.min(3, Math.max(1, maxPIdx)) }, (_, i) => i + 1);
+
+    standardizedPassages = passageIndices.map((pIdx) => {
+      const existingP = rawPassages.find((p: any) => p.passage_index === pIdx) || rawPassages[pIdx - 1];
+      const pTitle = existingP?.title || `Reading Passage ${pIdx}`;
+      const pText = existingP?.text || (pIdx === 1 ? (rawExam.passage_text || rawExam.reading_passage || '') : '');
+      
+      // Locate questions belonging to this passage
+      let pQuestions = existingP?.questions;
+      if (!Array.isArray(pQuestions) || pQuestions.length === 0) {
+        pQuestions = readingQs.filter((q: any) => {
+          if (q.passage_index === pIdx) return true;
+          if (!q.passage_index) {
+            const qIndex = readingQs.indexOf(q);
+            if (pIdx === 1 && qIndex < 13) return true;
+            if (pIdx === 2 && qIndex >= 13 && qIndex < 26) return true;
+            if (pIdx === 3 && qIndex >= 26) return true;
+          }
+          return false;
+        });
+      }
+
+      return {
+        passage_index: pIdx as 1 | 2 | 3,
+        title: pTitle,
+        text: pText,
+        questions: pQuestions
+      };
+    });
+  }
 
   return {
     ...rawExam,
@@ -618,12 +632,12 @@ export async function fetchExam(
             const rawExamObj: ExamData = {
               exam_code: cleanCode,
               title: meta.title || `IELTS Examination - ${cleanCode}`,
-              audio_url: meta.audio_url || DEFAULT_EXAMS[0].audio_url,
-              passages: meta.passages || DEFAULT_EXAMS[0].passages,
+              audio_url: meta.audio_url || '',
+              passages: meta.passages || [],
               questions: extracted.questions,
-              writing_task1_prompt: meta.writing_task1_prompt || DEFAULT_EXAMS[0].writing_task1_prompt,
-              writing_task1_image: meta.writing_task1_image || DEFAULT_EXAMS[0].writing_task1_image,
-              writing_task2_prompt: meta.writing_task2_prompt || DEFAULT_EXAMS[0].writing_task2_prompt
+              writing_task1_prompt: meta.writing_task1_prompt || '',
+              writing_task1_image: meta.writing_task1_image || '',
+              writing_task2_prompt: meta.writing_task2_prompt || ''
             };
 
             const standardized = standardizeExamData(rawExamObj, cleanCode);

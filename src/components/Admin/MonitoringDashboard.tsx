@@ -177,8 +177,8 @@ export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({
       {/* SUBMISSIONS VIEW */}
       {activeSubTab === 'submissions' && (
         <>
-          {/* Mobile Card List (visible on mobile or when cards mode selected) */}
-          <div className={`${viewMode === 'table' ? 'hidden sm:hidden' : 'block md:hidden'} space-y-3`}>
+          {/* Mobile Card List (visible on small screens or when cards mode selected) */}
+          <div className={`${viewMode === 'table' ? 'hidden' : 'block md:hidden'} space-y-3`}>
             {filteredSubmissions.length === 0 ? (
               <div className="bg-white border border-purple-100 rounded-3xl p-8 text-center text-xs text-[#7C68A5] italic">
                 No candidate submissions found matching your search.
@@ -235,7 +235,7 @@ export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({
             )}
           </div>
 
-          {/* Desktop Table View */}
+          {/* Table View (Desktop default, or mobile if table selected) */}
           <div className={`${viewMode === 'cards' ? 'hidden md:block' : 'block'} bg-white border border-purple-100/80 rounded-3xl overflow-hidden shadow-xl shadow-purple-950/5`}>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs text-[#3C2A63]">

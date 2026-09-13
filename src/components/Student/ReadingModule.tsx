@@ -51,6 +51,17 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
   const [filterMode, setFilterMode] = useState<'current_passage' | 'all' | 'unanswered'>('current_passage');
   const [mobileTab, setMobileTab] = useState<'questions' | 'passage'>('questions');
   const [highlightedQuestionId, setHighlightedQuestionId] = useState<string | null>(null);
+  const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
+  const [fontScale, setFontScale] = useState<'sm' | 'base' | 'lg'>('base');
+
+  // Track window resize to ensure fluid responsive layout on 13-inch screens / zoom changes
+  useEffect(() => {
+    const handleResize = () => {
+      setIsDesktop(window.innerWidth >= 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const passageContainerRef = useRef<HTMLDivElement | null>(null);
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
@@ -58,10 +69,13 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
   // 1. Standardize and normalize passages with direct questions embedding
   const normalizedPassages = useMemo<ReadingPassageItem[]>(() => {
     if (passages && Array.isArray(passages) && passages.length > 0) {
-      // If questions are already inside passages
-      const hasQuestionsInside = passages.some(p => p.questions && p.questions.length > 0);
+      // Filter passages that have either text or questions
+      const validPassages = passages.filter(p => (p.text && p.text.trim()) || (p.questions && p.questions.length > 0));
+      const sourcePassages = validPassages.length > 0 ? validPassages : passages;
+
+      const hasQuestionsInside = sourcePassages.some(p => p.questions && p.questions.length > 0);
       if (hasQuestionsInside) {
-        return passages.map((p, idx) => ({
+        return sourcePassages.map((p, idx) => ({
           passage_index: (p.passage_index || idx + 1) as 1 | 2 | 3,
           title: p.title || `Reading Passage ${p.passage_index || idx + 1}`,
           text: p.text || '',
@@ -70,7 +84,7 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
       }
 
       // If passages exist but questions were provided at root level
-      return passages.map((p, idx) => {
+      return sourcePassages.map((p, idx) => {
         const pIdx = (p.passage_index || idx + 1) as 1 | 2 | 3;
         const pQs = questions.filter(q => {
           if (q.passage_index) return q.passage_index === pIdx;
@@ -90,31 +104,39 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
       });
     }
 
-    // Fallback: parse passageText or construct default 3-passage structure from questions
+    // Fallback: parse passageText or construct from questions
     const p1Questions = questions.filter(q => q.passage_index === 1 || (!q.passage_index && questions.indexOf(q) < 13));
     const p2Questions = questions.filter(q => q.passage_index === 2 || (!q.passage_index && questions.indexOf(q) >= 13 && questions.indexOf(q) < 26));
     const p3Questions = questions.filter(q => q.passage_index === 3 || (!q.passage_index && questions.indexOf(q) >= 26));
 
-    return [
+    const result: ReadingPassageItem[] = [
       {
         passage_index: 1,
         title: passageTitle || 'Reading Passage 1',
-        text: passageText || 'No passage text available for Passage 1.',
+        text: passageText || (questions.length > 0 ? 'Reading Passage' : 'No passage text available for Passage 1.'),
         questions: p1Questions
-      },
-      {
-        passage_index: 2,
-        title: 'Reading Passage 2',
-        text: 'Passage 2 text content.',
-        questions: p2Questions
-      },
-      {
-        passage_index: 3,
-        title: 'Reading Passage 3',
-        text: 'Passage 3 text content.',
-        questions: p3Questions
       }
     ];
+
+    if (p2Questions.length > 0) {
+      result.push({
+        passage_index: 2,
+        title: 'Reading Passage 2',
+        text: '',
+        questions: p2Questions
+      });
+    }
+
+    if (p3Questions.length > 0) {
+      result.push({
+        passage_index: 3,
+        title: 'Reading Passage 3',
+        text: '',
+        questions: p3Questions
+      });
+    }
+
+    return result;
   }, [passages, passageText, passageTitle, questions]);
 
   // 2. Build flat list of all 40 questions with global indexing and passage assignment
@@ -183,7 +205,17 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
       }
     };
 
-    const handleMouseUp = () => {
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isResizing || !splitContainerRef.current || !e.touches[0]) return;
+      const rect = splitContainerRef.current.getBoundingClientRect();
+      const relativeX = e.touches[0].clientX - rect.left;
+      const percentage = (relativeX / rect.width) * 100;
+      if (percentage >= 25 && percentage <= 75) {
+        setLeftWidth(percentage);
+      }
+    };
+
+    const handleEnd = () => {
       if (isResizing) {
         setIsResizing(false);
       }
@@ -191,7 +223,9 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
 
     if (isResizing) {
       window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
+      window.addEventListener('mouseup', handleEnd);
+      window.addEventListener('touchmove', handleTouchMove, { passive: true });
+      window.addEventListener('touchend', handleEnd);
       document.body.style.userSelect = 'none';
       document.body.style.cursor = 'col-resize';
     } else {
@@ -201,7 +235,9 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('mouseup', handleEnd);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleEnd);
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
     };
@@ -241,9 +277,15 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
   };
 
   const renderHighlightedPassage = (textToRender: string) => {
+    const fontClass = fontScale === 'sm' 
+      ? 'text-[13.5px] leading-relaxed' 
+      : fontScale === 'lg' 
+      ? 'text-[17px] leading-loose' 
+      : 'text-[15px] leading-relaxed';
+
     if (highlights.length === 0) {
       return (
-        <div className="whitespace-pre-wrap leading-relaxed text-[#2D1E4B] font-serif text-[15px] font-normal space-y-4">
+        <div className={`whitespace-pre-wrap ${fontClass} text-[#2D1E4B] font-serif font-normal space-y-4`}>
           {textToRender}
         </div>
       );
@@ -260,7 +302,7 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
 
     return (
       <div
-        className="whitespace-pre-wrap leading-relaxed text-[#2D1E4B] font-serif text-[15px] font-normal space-y-4"
+        className={`whitespace-pre-wrap ${fontClass} text-[#2D1E4B] font-serif font-normal space-y-4`}
         dangerouslySetInnerHTML={{ __html: htmlContent }}
       />
     );
@@ -416,20 +458,20 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
       {/* 4. SPLIT SCREEN WORKSPACE WITH DRAGGABLE RESIZER */}
       <div
         ref={splitContainerRef}
-        className="flex flex-col md:flex-row md:h-[calc(100vh-17rem)] md:min-h-[580px] bg-white rounded-3xl border border-purple-100/80 md:overflow-hidden shadow-xl shadow-purple-950/5 relative"
+        className="flex flex-col md:flex-row h-[560px] md:h-[calc(100dvh-13.5rem)] md:min-h-[460px] md:max-h-[850px] bg-white rounded-3xl border border-purple-100/80 overflow-hidden shadow-xl shadow-purple-950/5 relative"
       >
         
         {/* LEFT COLUMN: READING PASSAGE & HIGHLIGHTER */}
         <div
-          className={`h-[420px] md:h-full flex flex-col bg-[#F8F6FC] md:border-r border-purple-100 overflow-hidden w-full ${
+          className={`h-full flex flex-col bg-[#F8F6FC] md:border-r border-purple-100 overflow-hidden w-full ${
             mobileTab === 'questions' ? 'hidden md:flex' : 'flex'
           }`}
           style={{
-            width: typeof window !== 'undefined' && window.innerWidth >= 768 ? `${leftWidth}%` : '100%'
+            width: isDesktop ? `${leftWidth}%` : '100%'
           }}
         >
           {/* Passage Toolbar */}
-          <div className="p-3 bg-white border-b border-purple-100 flex items-center justify-between shrink-0">
+          <div className="p-3 bg-white border-b border-purple-100 flex flex-wrap items-center justify-between gap-2 shrink-0">
             <div className="flex items-center space-x-2">
               <Paintbrush className="w-4 h-4 text-[#6B51A5]" />
               <span className="text-xs font-extrabold text-[#3C2A63] uppercase tracking-wider">Highlight:</span>
@@ -461,6 +503,74 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
                   title="Blue Highlight"
                 />
               </div>
+
+              {/* Font Size Zoom Controls */}
+              <div className="flex items-center gap-1 border-l border-purple-100 pl-2">
+                <button
+                  type="button"
+                  onClick={() => setFontScale('sm')}
+                  className={`px-1.5 py-0.5 text-[10px] font-bold rounded transition cursor-pointer ${
+                    fontScale === 'sm' ? 'bg-[#3C2A63] text-white shadow-xs' : 'bg-purple-50 text-[#503A7A] hover:bg-purple-100'
+                  }`}
+                  title="Cỡ chữ nhỏ (tiết kiệm không gian cho màn hình 13 inch)"
+                >
+                  A-
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFontScale('base')}
+                  className={`px-1.5 py-0.5 text-[10px] font-bold rounded transition cursor-pointer ${
+                    fontScale === 'base' ? 'bg-[#3C2A63] text-white shadow-xs' : 'bg-purple-50 text-[#503A7A] hover:bg-purple-100'
+                  }`}
+                  title="Cỡ chữ tiêu chuẩn"
+                >
+                  A
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFontScale('lg')}
+                  className={`px-1.5 py-0.5 text-[10px] font-bold rounded transition cursor-pointer ${
+                    fontScale === 'lg' ? 'bg-[#3C2A63] text-white shadow-xs' : 'bg-purple-50 text-[#503A7A] hover:bg-purple-100'
+                  }`}
+                  title="Cỡ chữ lớn"
+                >
+                  A+
+                </button>
+              </div>
+
+              {/* Quick Split Ratio Presets on 13" and Desktop */}
+              <div className="hidden md:flex items-center gap-1 pl-2 border-l border-purple-100">
+                <button
+                  type="button"
+                  onClick={() => setLeftWidth(50)}
+                  className={`px-2 py-0.5 text-[10px] font-bold rounded-lg transition cursor-pointer ${
+                    leftWidth === 50 ? 'bg-[#6B51A5] text-white shadow-xs' : 'bg-purple-50 text-[#503A7A] hover:bg-purple-100'
+                  }`}
+                  title="Cân bằng 50/50"
+                >
+                  50:50
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLeftWidth(60)}
+                  className={`px-2 py-0.5 text-[10px] font-bold rounded-lg transition cursor-pointer ${
+                    leftWidth === 60 ? 'bg-[#6B51A5] text-white shadow-xs' : 'bg-purple-50 text-[#503A7A] hover:bg-purple-100'
+                  }`}
+                  title="Mở rộng bài đọc 60%"
+                >
+                  Đọc 60%
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLeftWidth(40)}
+                  className={`px-2 py-0.5 text-[10px] font-bold rounded-lg transition cursor-pointer ${
+                    leftWidth === 40 ? 'bg-[#6B51A5] text-white shadow-xs' : 'bg-purple-50 text-[#503A7A] hover:bg-purple-100'
+                  }`}
+                  title="Mở rộng câu hỏi 60%"
+                >
+                  Hỏi 60%
+                </button>
+              </div>
             </div>
 
             <div className="flex items-center gap-2">
@@ -480,11 +590,11 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
           <div
             ref={passageContainerRef}
             onMouseUp={handleTextSelection}
-            className="flex-1 p-5 sm:p-8 overflow-y-auto select-text font-serif leading-relaxed text-[#3C2A63]"
+            className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto overscroll-contain select-text font-serif leading-relaxed text-[#3C2A63]"
           >
             <div className="mb-4 pb-3 border-b border-purple-200">
               <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-purple-100 text-[#503A7A] uppercase tracking-wider">
-                Passage {currentPassage.passage_index} of 3
+                Passage {currentPassage.passage_index} of {normalizedPassages.length}
               </span>
               <h2 className="text-xl font-extrabold text-[#3C2A63] font-sans mt-2">
                 {currentPassage.title}
@@ -518,8 +628,9 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
         {/* DRAGGABLE RESIZER SPLIT HANDLE (Desktop only) */}
         <div
           onMouseDown={() => setIsResizing(true)}
+          onTouchStart={() => setIsResizing(true)}
           onDoubleClick={() => setLeftWidth(50)}
-          className={`hidden md:flex w-3 hover:w-3.5 bg-[#E2DDEC] hover:bg-[#6B51A5] active:bg-[#503A7A] cursor-col-resize items-center justify-center transition-all shrink-0 z-20 select-none ${
+          className={`hidden md:flex w-3 hover:w-3.5 bg-[#E2DDEC] hover:bg-[#6B51A5] active:bg-[#503A7A] cursor-col-resize items-center justify-center transition-all shrink-0 z-20 select-none touch-none ${
             isResizing ? 'bg-[#6B51A5] shadow-lg ring-2 ring-[#6B51A5]/40' : ''
           }`}
           title="Drag to resize split panes (Double-click to reset 50/50)"
@@ -533,11 +644,11 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
 
         {/* RIGHT COLUMN: READING QUESTIONS */}
         <div
-          className={`h-auto md:h-full flex flex-col bg-white overflow-hidden w-full ${
+          className={`h-full flex flex-col bg-white overflow-hidden w-full ${
             mobileTab === 'passage' ? 'hidden md:flex' : 'flex'
           }`}
           style={{
-            width: typeof window !== 'undefined' && window.innerWidth >= 768 ? `${100 - leftWidth}%` : '100%'
+            width: isDesktop ? `${100 - leftWidth}%` : '100%'
           }}
         >
           {/* Header Bar */}
@@ -546,7 +657,7 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
               <FileText className="w-3.5 h-3.5 text-[#6B51A5]" />
               <span>
                 {filterMode === 'all'
-                  ? 'All 40 Questions (Passages 1 - 3)'
+                  ? `All Questions (${all40Questions.length} Qs)`
                   : filterMode === 'unanswered'
                   ? `Unanswered Questions (${displayedQuestions.length} remaining)`
                   : `Passage ${activePassageIndex} Questions (${displayedQuestions.length} questions)`}
@@ -577,7 +688,7 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
           </div>
 
           {/* Scrollable Questions List */}
-          <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-6">
+          <div className="flex-1 p-4 sm:p-6 overflow-y-auto overscroll-contain space-y-6">
             {displayedQuestions.length === 0 ? (
               <div className="p-12 text-center bg-purple-50/50 rounded-3xl border border-dashed border-purple-200">
                 <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto mb-2" />
