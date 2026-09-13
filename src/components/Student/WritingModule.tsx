@@ -1,12 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   ShieldAlert, 
   Save, 
   FileText, 
   Image as ImageIcon, 
   Maximize2, 
-  X
+  X,
+  AlertTriangle,
+  CheckCircle2,
+  Sparkles
 } from 'lucide-react';
+import { 
+  saveWritingDraftToIndexedDB, 
+  getWritingDraftFromIndexedDB 
+} from '../../services/indexedDb';
+import { CountdownTimer } from './CountdownTimer';
 
 interface WritingModuleProps {
   task1Prompt?: string;
@@ -18,6 +26,11 @@ interface WritingModuleProps {
   onTask1Change: (text: string) => void;
   onTask2Change: (text: string) => void;
   submissionId?: string;
+  examCode?: string;
+  candidateId?: string;
+  testMode?: 'TEST' | 'PRACTICE';
+  durationMins?: number;
+  onTimeExpire?: () => void;
 }
 
 export const WritingModule: React.FC<WritingModuleProps> = ({
@@ -28,25 +41,92 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
   task2Text,
   onTask1Change,
   onTask2Change,
-  submissionId
+  submissionId,
+  examCode = 'IELTS01',
+  candidateId = 'STUDENT',
+  testMode = 'TEST',
+  durationMins = 60,
+  onTimeExpire
 }) => {
   const [activeTab, setActiveTab] = useState<'task1' | 'task2'>('task1');
   const [pasteWarning, setErrorPasteWarning] = useState<string | null>(null);
   const [autoSaveTime, setAutoSaveTime] = useState<string>('');
+  const [restoredNotice, setRestoredNotice] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   
-  // Image zoom state (view-only for student)
+  // Image zoom modal
   const [isZoomOpen, setIsZoomOpen] = useState(false);
 
-  // Count words trimming extra spaces
+  // Track initial hydration to prevent overwriting stored draft with empty props
+  const hasHydratedRef = useRef(false);
+
+  // Requirement 5: Realtime Word Counter using regex \b\S+\b
   const countWords = (str: string): number => {
-    if (!str || !str.trim()) return 0;
-    return str.trim().split(/\s+/).filter(Boolean).length;
+    if (!str) return 0;
+    const matches = str.match(/\b\S+\b/g);
+    return matches ? matches.length : 0;
   };
 
   const task1WordCount = countWords(task1Text);
   const task2WordCount = countWords(task2Text);
 
-  // Strictly Block Paste
+  // Requirement 5: Restore unsubmitted draft from IndexedDB/LocalStorage on reload
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const draft = await getWritingDraftFromIndexedDB(examCode, candidateId);
+        if (isMounted && draft && !hasHydratedRef.current) {
+          let hasRestored = false;
+          if ((!task1Text || task1Text.trim() === '') && draft.task1 && draft.task1.trim() !== '') {
+            onTask1Change(draft.task1);
+            hasRestored = true;
+          }
+          if ((!task2Text || task2Text.trim() === '') && draft.task2 && draft.task2.trim() !== '') {
+            onTask2Change(draft.task2);
+            hasRestored = true;
+          }
+
+          if (hasRestored) {
+            setRestoredNotice('Unsubmitted writing draft restored from IndexedDB local storage.');
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to restore writing draft from IndexedDB:', err);
+      } finally {
+        hasHydratedRef.current = true;
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [examCode, candidateId]);
+
+  // Requirement 5: Debounced write after 1000ms from the last keystroke
+  useEffect(() => {
+    if (!hasHydratedRef.current && !task1Text && !task2Text) return;
+
+    setIsSaving(true);
+    const handler = setTimeout(async () => {
+      try {
+        await saveWritingDraftToIndexedDB(examCode, candidateId, {
+          task1: task1Text,
+          task2: task2Text
+        });
+        const now = new Date();
+        setAutoSaveTime(now.toLocaleTimeString());
+      } catch (err) {
+        console.warn('Auto-save writing draft failed:', err);
+      } finally {
+        setIsSaving(false);
+      }
+    }, 1000);
+
+    return () => clearTimeout(handler);
+  }, [task1Text, task2Text, examCode, candidateId]);
+
+  // Strictly Block Paste per IELTS exam integrity
   const handlePaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
     setErrorPasteWarning('⚠️ PASTE ACTION IS DISABLED! Please type your response directly using your keyboard.');
@@ -55,23 +135,17 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
     }, 4000);
   };
 
-  // Continuous Auto-save to LocalStorage
-  useEffect(() => {
-    const saveKey = `ielts_writing_draft_${submissionId || 'default'}`;
-    const draftData = {
-      task1: task1Text,
-      task2: task2Text,
-      updated_at: new Date().toISOString()
-    };
-    localStorage.setItem(saveKey, JSON.stringify(draftData));
-    
-    const now = new Date();
-    setAutoSaveTime(now.toLocaleTimeString());
-  }, [task1Text, task2Text, submissionId]);
-
   return (
     <div className="space-y-6">
       
+      {/* 0. Top Countdown Timer Bar */}
+      <CountdownTimer
+        initialMinutes={durationMins}
+        testMode={testMode}
+        sectionName="ACADEMIC WRITING (Task 1 & Task 2 - 60 Minutes)"
+        onTimeExpire={onTimeExpire}
+      />
+
       {/* Top Banner & Status */}
       <div className="bg-white border border-purple-100/80 rounded-3xl p-5 shadow-xl shadow-purple-950/5 flex flex-col md:flex-row md:items-center justify-between gap-4 backdrop-blur">
         <div className="flex items-center space-x-3">
@@ -80,22 +154,43 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
           </div>
           <div>
             <h3 className="text-base font-extrabold text-[#3C2A63] flex items-center gap-2">
-              Writing Section (IELTS Writing Task 1 & Task 2)
+              Writing Section (IELTS Writing Task 1 &amp; Task 2)
             </h3>
             <p className="text-xs text-[#7C68A5] font-medium">
-              Spellcheck: DISABLED | Paste Action: BLOCKED | Word Counter: REAL-TIME (Trims whitespace)
+              Spellcheck: DISABLED | Paste: BLOCKED | Word Counter: \b\S+\b Regex | 1000ms IndexedDB Auto-Backup
             </p>
           </div>
         </div>
 
-        {/* LocalAutoSave Badge */}
+        {/* Local IndexedDB AutoSave Badge */}
         <div className="flex items-center space-x-3">
-          <span className="text-xs text-emerald-800 font-extrabold bg-emerald-100 border border-emerald-200 px-3.5 py-2 rounded-2xl flex items-center gap-1.5">
-            <Save className="w-3.5 h-3.5 animate-pulse text-emerald-700" />
-            Auto-saved Locally ({autoSaveTime})
+          <span className={`text-xs font-extrabold px-3.5 py-2 rounded-2xl flex items-center gap-1.5 border transition ${
+            isSaving 
+              ? 'bg-amber-50 text-amber-800 border-amber-200' 
+              : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+          }`}>
+            <Save className={`w-3.5 h-3.5 ${isSaving ? 'animate-spin text-amber-600' : 'text-emerald-700'}`} />
+            {isSaving ? 'Saving Draft...' : autoSaveTime ? `Saved to IndexedDB (${autoSaveTime})` : 'Draft Autosave Active'}
           </span>
         </div>
       </div>
+
+      {/* Restored Draft Notice Banner */}
+      {restoredNotice && (
+        <div className="p-3.5 bg-purple-50 border border-purple-200 rounded-2xl text-xs text-[#503A7A] font-bold flex items-center justify-between shadow-sm">
+          <div className="flex items-center space-x-2">
+            <Sparkles className="w-4 h-4 text-[#6B51A5] shrink-0" />
+            <span>{restoredNotice}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setRestoredNotice(null)}
+            className="text-purple-700 hover:text-purple-900 font-extrabold text-xs cursor-pointer ml-2"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Paste Blocked Warning Toast */}
       {pasteWarning && (
@@ -105,21 +200,24 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
         </div>
       )}
 
-      {/* Tabs Switcher for Task 1 and Task 2 */}
+      {/* Tabs Switcher for Task 1 and Task 2 with Live Word Count Indicators */}
       <div className="flex bg-[#E2DDEC] p-1.5 rounded-2xl w-fit space-x-2">
         <button
           type="button"
           onClick={() => setActiveTab('task1')}
-          className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 cursor-pointer ${
+          className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2.5 cursor-pointer ${
             activeTab === 'task1'
               ? 'bg-[#6B51A5] text-white shadow-md'
               : 'text-[#3C2A63] hover:text-[#503A7A]'
           }`}
         >
           <span>Writing Task 1 (Min 150 words)</span>
-          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
-            task1WordCount >= 150 ? 'bg-emerald-200 text-emerald-900' : 'bg-purple-200 text-[#3C2A63]'
+          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold flex items-center gap-1 ${
+            task1WordCount >= 150 
+              ? 'bg-emerald-200 text-emerald-950 font-black' 
+              : 'bg-rose-200 text-rose-950 font-black'
           }`}>
+            {task1WordCount >= 150 ? <CheckCircle2 className="w-3 h-3 text-emerald-800 inline" /> : <AlertTriangle className="w-3 h-3 text-rose-800 inline" />}
             {task1WordCount} words
           </span>
         </button>
@@ -127,16 +225,19 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
         <button
           type="button"
           onClick={() => setActiveTab('task2')}
-          className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 cursor-pointer ${
+          className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2.5 cursor-pointer ${
             activeTab === 'task2'
               ? 'bg-[#6B51A5] text-white shadow-md'
               : 'text-[#3C2A63] hover:text-[#503A7A]'
           }`}
         >
           <span>Writing Task 2 (Min 250 words)</span>
-          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
-            task2WordCount >= 250 ? 'bg-emerald-200 text-emerald-900' : 'bg-purple-200 text-[#3C2A63]'
+          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold flex items-center gap-1 ${
+            task2WordCount >= 250 
+              ? 'bg-emerald-200 text-emerald-950 font-black' 
+              : 'bg-rose-200 text-rose-950 font-black'
           }`}>
+            {task2WordCount >= 250 ? <CheckCircle2 className="w-3 h-3 text-emerald-800 inline" /> : <AlertTriangle className="w-3 h-3 text-rose-800 inline" />}
             {task2WordCount} words
           </span>
         </button>
@@ -158,7 +259,7 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
               {task1Prompt || 'You should spend about 20 minutes on this task. Summarise the information by selecting and reporting the main features, and make comparisons where relevant. Write at least 150 words.'}
             </div>
 
-            {/* Task 1 Graphic / Chart Image Display (Provided by Teacher) */}
+            {/* Task 1 Graphic / Chart Image Display */}
             {task1Image && (
               <div className="space-y-2">
                 <div className="relative group rounded-2xl overflow-hidden border border-purple-200/80 bg-[#F8F6FC] shadow-sm">
@@ -192,7 +293,7 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
             )}
             
             <div className="p-3.5 bg-[#F8F6FC] rounded-2xl border border-purple-100 text-xs text-[#7C68A5] font-medium leading-relaxed">
-              💡 <strong>Note:</strong> Task 1 requires describing key features, prominent trends, and comparing data from the visual. Minimum requirement is 150 words.
+              💡 <strong>Requirement:</strong> Summarise main features and trends. Minimum requirement is <strong>150 words</strong>.
             </div>
           </div>
 
@@ -202,12 +303,24 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
               <span className="text-xs font-extrabold text-[#3C2A63] uppercase tracking-wider">
                 Task 1 Response Editor
               </span>
-              <span className={`text-xs font-extrabold px-3 py-1 rounded-full border ${
+              
+              {/* Requirement 5: Color-coded warning if <150 words */}
+              <span className={`text-xs font-black px-3 py-1.5 rounded-full border flex items-center gap-1.5 transition ${
                 task1WordCount >= 150
-                  ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                  : 'bg-amber-100 text-amber-800 border-amber-200'
+                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                  : 'bg-rose-100 text-rose-800 border-rose-300'
               }`}>
-                Word Count: {task1WordCount} / 150+
+                {task1WordCount >= 150 ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Word Count: {task1WordCount} / 150 (Requirement Met)</span>
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Word Count: {task1WordCount} / 150 (Under Minimum by {150 - task1WordCount})</span>
+                  </>
+                )}
               </span>
             </div>
 
@@ -225,8 +338,8 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
             />
 
             <div className="flex items-center justify-between text-[11px] text-[#7C68A5] font-medium">
-              <span>Keystrokes are automatically saved continuously</span>
-              <span>Spellcheck: Disabled</span>
+              <span>Keystrokes debounced &amp; auto-saved to IndexedDB every 1000ms</span>
+              <span>Spellcheck: Disabled | Paste: Blocked</span>
             </div>
           </div>
 
@@ -280,7 +393,7 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
             </div>
             
             <div className="p-3.5 bg-[#F8F6FC] rounded-2xl border border-purple-100 text-xs text-[#7C68A5] font-medium leading-relaxed">
-              💡 <strong>Note:</strong> Task 2 accounts for 2/3 of your total Writing score. Minimum requirement is 250 words.
+              💡 <strong>Requirement:</strong> Task 2 accounts for 2/3 of your total Writing score. Minimum requirement is <strong>250 words</strong>.
             </div>
           </div>
 
@@ -290,12 +403,24 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
               <span className="text-xs font-extrabold text-[#3C2A63] uppercase tracking-wider">
                 Task 2 Essay Editor
               </span>
-              <span className={`text-xs font-extrabold px-3 py-1 rounded-full border ${
+              
+              {/* Requirement 5: Color-coded warning if <250 words */}
+              <span className={`text-xs font-black px-3 py-1.5 rounded-full border flex items-center gap-1.5 transition ${
                 task2WordCount >= 250
-                  ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                  : 'bg-amber-100 text-amber-800 border-amber-200'
+                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                  : 'bg-rose-100 text-rose-800 border-rose-300'
               }`}>
-                Word Count: {task2WordCount} / 250+
+                {task2WordCount >= 250 ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Word Count: {task2WordCount} / 250 (Requirement Met)</span>
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Word Count: {task2WordCount} / 250 (Under Minimum by {250 - task2WordCount})</span>
+                  </>
+                )}
               </span>
             </div>
 
@@ -313,8 +438,8 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
             />
 
             <div className="flex items-center justify-between text-[11px] text-[#7C68A5] font-medium">
-              <span>Keystrokes are automatically saved continuously</span>
-              <span>Spellcheck: Disabled</span>
+              <span>Keystrokes debounced &amp; auto-saved to IndexedDB every 1000ms</span>
+              <span>Spellcheck: Disabled | Paste: Blocked</span>
             </div>
           </div>
 

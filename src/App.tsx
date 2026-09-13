@@ -35,10 +35,14 @@ import {
   Sparkles,
   Lock,
   ArrowRight,
-  Activity
+  Activity,
+  Hourglass,
+  AlertTriangle
 } from 'lucide-react';
 
-import { DEFAULT_API_URL, fetchExam } from './services/api';
+import { DEFAULT_API_URL, fetchExam, submitExamPayload } from './services/api';
+import { gradeExamAnswers } from './services/answerScoring';
+import { getCurrentAnswersFromIndexedDB, getWritingDraftFromIndexedDB } from './services/indexedDb';
 import { DEFAULT_EXAMS } from './data/defaultExams';
 import { DatabaseDiagnosticsModal } from './components/Common/DatabaseDiagnosticsModal';
 import { extractQuestionsFromRawResponse } from './services/dbDiagnostics';
@@ -189,6 +193,7 @@ export default function App() {
 
   // Submission & Retry State
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isForcedSubmitting, setIsForcedSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<SubmissionResponse | null>(null);
   const [offlinePending, setOfflinePending] = useState(false);
   const [copiedGasCode, setCopiedGasCode] = useState(false);
@@ -393,16 +398,41 @@ export default function App() {
     }));
   };
 
-  // Submit Exam & Batching Payload
-  const handleSubmitExam = async () => {
+  // Submit Exam & Batching Payload (handles both STANDARD candidate click and TIMEOUT_FORCED)
+  const handleSubmitExam = async (submissionType: 'STANDARD' | 'TIMEOUT_FORCED' = 'STANDARD') => {
     if (isSubmitting) return;
     setIsSubmitting(true);
+    if (submissionType === 'TIMEOUT_FORCED') {
+      setIsForcedSubmitting(true);
+    }
+
+    // Step 1: Pull the latest answers from local state and IndexedDB to guarantee nothing is missed
+    let latestAnswers = { ...userAnswers };
+    try {
+      const idbAnswers = await getCurrentAnswersFromIndexedDB(examCode, sbd);
+      if (idbAnswers && Object.keys(idbAnswers).length > 0) {
+        latestAnswers = { ...idbAnswers, ...latestAnswers };
+      }
+    } catch (e) {
+      console.warn('Could not read latest answers from IndexedDB during submission:', e);
+    }
+
+    // Pull latest writing draft from IndexedDB
+    let currentTask1 = writingTask1;
+    let currentTask2 = writingTask2;
+    try {
+      const writingDraft = await getWritingDraftFromIndexedDB(examCode, sbd);
+      if (writingDraft) {
+        if (!currentTask1 && writingDraft.task1) currentTask1 = writingDraft.task1;
+        if (!currentTask2 && writingDraft.task2) currentTask2 = writingDraft.task2;
+      }
+    } catch (e) {
+      console.warn('Could not read latest writing draft during submission:', e);
+    }
 
     // Retrieve cheat logs from LocalStorage
     const rawCheatLogs = localStorage.getItem('ielts_cheat_logs');
     const cheatLogs: CheatLog[] = rawCheatLogs ? JSON.parse(rawCheatLogs) : [];
-
-    // Filter cheat logs for this submission
     const currentLogs = cheatLogs.filter(log => log.sbd === sbd && log.exam_code === examCode);
 
     const payload: SubmissionPayload = {
@@ -410,71 +440,21 @@ export default function App() {
       sbd,
       exam_code: examCode,
       test_mode: testMode,
-      answers: userAnswers,
-      writing_task1: writingTask1,
-      writing_task2: writingTask2,
+      submission_type: submissionType,
+      answers: latestAnswers,
+      listening_answers: latestAnswers,
+      reading_answers: latestAnswers,
+      writing_task1: currentTask1,
+      writing_task2: currentTask2,
+      writing_task1_text: currentTask1,
+      writing_task2_text: currentTask2,
       cheat_logs: currentLogs,
+      violation_logs: currentLogs,
       submitted_at: new Date().toISOString()
     };
 
-    let serverResponse: SubmissionResponse | null = null;
-
-    try {
-      if (gasUrl && !gasUrl.includes('AKfycbx_mock')) {
-        const res = await fetch(gasUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'text/plain;charset=utf-8' // GAS requirement for CORS
-          },
-          body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        if (data && data.submission_id) {
-          serverResponse = data;
-        }
-      }
-    } catch (err) {
-      console.error('GAS API POST Submission Error (will retry offline):', err);
-      // Save to pending offline submissions queue
-      const pendingRaw = localStorage.getItem('ielts_pending_submissions');
-      const pendingArr: SubmissionPayload[] = pendingRaw ? JSON.parse(pendingRaw) : [];
-      pendingArr.push(payload);
-      localStorage.setItem('ielts_pending_submissions', JSON.stringify(pendingArr));
-      setOfflinePending(true);
-    }
-
-    // Client-side Fallback Grading calculation if server response is unavailable
-    if (!serverResponse) {
-      let listeningCorrect = 0;
-      examData.listening_questions.forEach(q => {
-        const ans = userAnswers[q.question_id];
-        if (ans && q.correct_answer && ans.trim().toLowerCase() === q.correct_answer.trim().toLowerCase()) {
-          listeningCorrect += 1;
-        } else if (ans) {
-          listeningCorrect += 1; // Give raw points for answered questions in fallback
-        }
-      });
-
-      let readingCorrect = 0;
-      examData.reading_questions.forEach(q => {
-        const ans = userAnswers[q.question_id];
-        if (ans && q.correct_answer && ans.trim().toLowerCase() === q.correct_answer.trim().toLowerCase()) {
-          readingCorrect += 1;
-        } else if (ans) {
-          readingCorrect += 1;
-        }
-      });
-
-      serverResponse = {
-        submission_id: submissionId,
-        sbd,
-        exam_code: examCode,
-        listening_score: Math.min(listeningCorrect, 40),
-        reading_score: Math.min(readingCorrect, 40),
-        writing_status: 'PENDING_TEACHER',
-        created_at: new Date().toISOString()
-      };
-    }
+    // Use submitExamPayload with lock retry, local IndexedDB backup, normalized scoring and band conversion
+    const serverResponse = await submitExamPayload(gasUrl, payload, examData);
 
     // Save submission locally
     const subsRaw = localStorage.getItem('ielts_student_submissions');
@@ -484,6 +464,7 @@ export default function App() {
 
     setSubmitResult(serverResponse);
     setIsSubmitting(false);
+    setIsForcedSubmitting(false);
     setCurrentModule('results');
   };
 
@@ -738,7 +719,18 @@ function doGet(e) {
 }
 
 function doPost(e) {
+  var lock = LockService.getScriptLock();
+  var hasLock = false;
   try {
+    // Acquire sequential write lock (wait up to 30s for concurrent submissions)
+    hasLock = lock.tryLock(30000);
+    if (!hasLock) {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'ERROR',
+        message: 'Google Sheets concurrent write lock is busy. Server is processing another submission, retry queued...'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
     var contents = JSON.parse(e.postData.contents);
     var action = (contents.action || 'submitExam').toLowerCase();
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -886,9 +878,20 @@ function doPost(e) {
     var subId = contents.submission_id || (contents.sbd + '_' + contents.exam_code + '_' + new Date().getTime());
     var sbd = contents.sbd;
     var examCode = (contents.exam_code || '').toString().trim().toUpperCase();
-    var answers = contents.answers || {};
+    var answers = contents.answers || contents.listening_answers || contents.reading_answers || {};
+    var submissionType = contents.submission_type || 'STANDARD';
 
-    // Auto-grade Listening & Reading objective questions
+    // Auto-grade Listening & Reading objective questions with Answer Normalization Engine
+    function normalizeAns(str) {
+      if (!str) return '';
+      return str.toString()
+        .toLowerCase()
+        .replace(/^(a|an|the)\s+/, '')
+        .replace(/[.,/#!$%^&*;:{}=\-_~()]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
     var questionsSheet = ss.getSheetByName('QUESTIONS');
     var listeningScore = 0;
     var readingScore = 0;
@@ -900,18 +903,64 @@ function doPost(e) {
         if (qRow[0] && qRow[0].toString().trim().toUpperCase() === examCode) {
           var qId = (qRow[1] || '').toString().trim();
           var section = (qRow[2] || '').toString().trim().toLowerCase();
-          var correctAns = qRow[6] ? qRow[6].toString().trim().toLowerCase() : '';
-          var userAns = answers[qId] ? answers[qId].toString().trim().toLowerCase() : '';
+          var rawCorrect = qRow[6] ? qRow[6].toString() : '';
+          var userAns = answers[qId] ? normalizeAns(answers[qId]) : '';
 
-          if (userAns && correctAns && userAns === correctAns) {
-            if (section === 'listening') listeningScore++;
-            if (section === 'reading') readingScore++;
+          if (userAns && rawCorrect) {
+            // Support pipe-separated answers: "1,400 kilometres|1400 kilometres|1400 km"
+            var acceptedVariants = rawCorrect.split('|').map(function(item) {
+              return normalizeAns(item);
+            });
+            if (acceptedVariants.indexOf(userAns) !== -1) {
+              if (section === 'listening') listeningScore++;
+              if (section === 'reading') readingScore++;
+            }
           }
         }
       }
     }
 
-    // Record into SUBMISSIONS sheet
+    // Official IELTS Academic Raw-to-Band mapping
+    function rawToReadingBand(raw) {
+      if (raw >= 39) return 9.0;
+      if (raw >= 37) return 8.5;
+      if (raw >= 35) return 8.0;
+      if (raw >= 33) return 7.5;
+      if (raw >= 30) return 7.0;
+      if (raw >= 27) return 6.5;
+      if (raw >= 23) return 6.0;
+      if (raw >= 19) return 5.5;
+      if (raw >= 15) return 5.0;
+      if (raw >= 13) return 4.5;
+      if (raw >= 10) return 4.0;
+      if (raw >= 8) return 3.5;
+      if (raw >= 6) return 3.0;
+      if (raw >= 4) return 2.5;
+      return 2.0;
+    }
+
+    function rawToListeningBand(raw) {
+      if (raw >= 39) return 9.0;
+      if (raw >= 37) return 8.5;
+      if (raw >= 35) return 8.0;
+      if (raw >= 32) return 7.5;
+      if (raw >= 30) return 7.0;
+      if (raw >= 26) return 6.5;
+      if (raw >= 23) return 6.0;
+      if (raw >= 18) return 5.5;
+      if (raw >= 16) return 5.0;
+      if (raw >= 13) return 4.5;
+      if (raw >= 10) return 4.0;
+      if (raw >= 8) return 3.5;
+      if (raw >= 6) return 3.0;
+      if (raw >= 4) return 2.5;
+      return 2.0;
+    }
+
+    var listeningBand = rawToListeningBand(listeningScore);
+    var readingBand = rawToReadingBand(readingScore);
+
+    // Record into SUBMISSIONS sheet (with submission_type & band scores)
     if (subSheet) {
       subSheet.appendRow([
         subId,
@@ -920,10 +969,13 @@ function doPost(e) {
         listeningScore,
         readingScore,
         'PENDING_TEACHER', // Writing status
-        contents.writing_task1 || '',
-        contents.writing_task2 || '',
+        contents.writing_task1 || contents.writing_task1_text || '',
+        contents.writing_task2 || contents.writing_task2_text || '',
         '', '', '', '', '', '', // TR, CC, LR, GRA, Band, Feedback
-        new Date().toISOString()
+        new Date().toISOString(),
+        submissionType,
+        listeningBand,
+        readingBand
       ]);
     }
 
@@ -947,8 +999,11 @@ function doPost(e) {
       submission_id: subId,
       sbd: sbd,
       exam_code: contents.exam_code,
+      submission_type: submissionType,
       listening_score: listeningScore,
       reading_score: readingScore,
+      listening_band: listeningBand,
+      reading_band: readingBand,
       writing_status: 'PENDING_TEACHER',
       created_at: new Date().toISOString()
     };
@@ -959,6 +1014,12 @@ function doPost(e) {
   } catch (error) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: error.toString() }))
       .setMimeType(ContentService.MimeType.JSON);
+  } finally {
+    if (hasLock) {
+      try {
+        lock.releaseLock();
+      } catch (lockErr) {}
+    }
   }
 }
 `;
@@ -1001,6 +1062,32 @@ function doPost(e) {
             <RefreshCw className="w-3 h-3" />
             Retry Now
           </button>
+        </div>
+      )}
+
+      {/* Forced Auto-Submission Blocking Modal Overlay */}
+      {isForcedSubmitting && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-purple-200 text-center space-y-5 animate-in fade-in zoom-in duration-300">
+            <div className="w-16 h-16 bg-rose-100 rounded-3xl flex items-center justify-center mx-auto text-rose-600 shadow-inner">
+              <Hourglass className="w-8 h-8 animate-spin" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-xl font-black text-[#3C2A63]">
+                Time is up!
+              </h3>
+              <p className="text-sm font-semibold text-rose-600">
+                Your exam is being submitted automatically...
+              </p>
+              <p className="text-xs text-[#7C68A5]">
+                All answers, passages, and writing drafts are being locked, scored, and securely synchronized to the official exam record. Please do not close your browser.
+              </p>
+            </div>
+            <div className="flex items-center justify-center space-x-2 text-xs font-bold text-[#503A7A] bg-[#F5F2F9] py-2.5 px-4 rounded-2xl border border-purple-100">
+              <RefreshCw className="w-4 h-4 animate-spin text-[#6B51A5]" />
+              <span>Locking session &amp; computing official scores...</span>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1129,7 +1216,7 @@ function doPost(e) {
 
                     {/* SUBMIT BUTTON */}
                     <button
-                      onClick={handleSubmitExam}
+                      onClick={() => handleSubmitExam('STANDARD')}
                       disabled={isSubmitting}
                       className="px-6 py-3 bg-[#6B51A5] hover:bg-[#583F8F] text-white font-extrabold text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-purple-900/15 flex items-center gap-2 transition disabled:opacity-50 cursor-pointer"
                     >
@@ -1153,10 +1240,14 @@ function doPost(e) {
                   <div className="space-y-4">
                     <ListeningModule
                       audioUrl={examData.audio_url}
-                      questions={examData.listening_questions}
+                      questions={examData.listening_questions || []}
                       userAnswers={userAnswers}
                       onAnswerChange={handleAnswerChange}
                       testMode={testMode}
+                      durationMins={examData.listening_duration_mins || 30}
+                      examCode={examCode}
+                      candidateId={sbd}
+                      onTimeExpire={() => handleSubmitExam('TIMEOUT_FORCED')}
                     />
 
                     {/* Section Progression Footer */}
@@ -1196,6 +1287,7 @@ function doPost(e) {
                       onAnswerChange={handleAnswerChange}
                       testMode={testMode}
                       durationMins={examData.reading_duration_mins || 60}
+                      onTimeExpire={() => handleSubmitExam('TIMEOUT_FORCED')}
                     />
 
                     {/* Section Progression Footer */}
@@ -1235,6 +1327,11 @@ function doPost(e) {
                       onTask1Change={setWritingTask1}
                       onTask2Change={setWritingTask2}
                       submissionId={submissionId}
+                      examCode={examCode}
+                      candidateId={sbd}
+                      testMode={testMode}
+                      durationMins={examData.writing_duration_mins || 60}
+                      onTimeExpire={() => handleSubmitExam('TIMEOUT_FORCED')}
                     />
 
                     {/* Section Progression Footer */}
@@ -1251,7 +1348,7 @@ function doPost(e) {
                         </div>
                       </div>
                       <button
-                        onClick={handleSubmitExam}
+                        onClick={() => handleSubmitExam('STANDARD')}
                         disabled={isSubmitting}
                         className="px-8 py-3.5 bg-[#6B51A5] hover:bg-[#583F8F] text-white font-extrabold text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-purple-900/15 flex items-center gap-2 transition disabled:opacity-50 cursor-pointer shrink-0"
                       >

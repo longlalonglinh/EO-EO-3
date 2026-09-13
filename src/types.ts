@@ -40,8 +40,10 @@ export interface Question {
   matching_options?: MatchingOption[]; // For Matching Features/Endings: [{ id: "A", text: "..." }, ...]
   diagram_image_url?: string; // For Diagram/Map/Plan Labelling
   diagram_labels?: string[]; // Labels available on diagram (e.g. ["A", "B", "C", "D", "E"])
-  correct_answer?: string; // e.g. "A", "library", "TRUE", "YES", "iii"
+  correct_answer?: string | string[]; // e.g. "A", "library", or pipe-separated "1,400 kilometres|1400 kilometres|1400 km|1,400km"
+  acceptable_answers?: string[]; // Multiple accepted alternatives
   correct_answers_multi?: string[]; // e.g. ["B", "D"] for choose 2 out of 5
+  explanation?: string;
   max_score: number;
   image_url?: string;
 }
@@ -50,6 +52,7 @@ export interface ReadingPassageItem {
   passage_index: 1 | 2 | 3;
   title: string;
   text: string;
+  questions: Question[];
 }
 
 export interface ExamData {
@@ -68,7 +71,7 @@ export interface ExamData {
   reading_passage_title?: string;
   passage_text?: string;
   reading_passage?: string;
-  passages?: ReadingPassageItem[]; // Multi-passage support (Passage 1, 2, 3)
+  passages: ReadingPassageItem[]; // Multi-passage support (Passage 1, 2, 3) - each contains passage_index, title, text, and questions
   reading_questions?: Question[];
   questions?: Question[];
   writing_task1_prompt?: string;
@@ -101,6 +104,7 @@ export interface SubmissionRecord {
   sbd: string;
   exam_code: string;
   test_mode?: 'TEST' | 'PRACTICE';
+  submission_type?: 'STANDARD' | 'TIMEOUT_FORCED';
   listening_answers?: Record<string, string>;
   reading_answers?: Record<string, string>;
   writing_task1_text?: string;
@@ -133,6 +137,7 @@ export interface SubmissionPayload {
   sbd: string;
   exam_code: string;
   test_mode?: 'TEST' | 'PRACTICE';
+  submission_type?: 'STANDARD' | 'TIMEOUT_FORCED';
   listening_answers?: Record<string, string>;
   reading_answers?: Record<string, string>;
   writing_task1_text?: string;
@@ -151,6 +156,7 @@ export interface SubmissionResponse {
   submission_id: string;
   sbd: string;
   exam_code: string;
+  submission_type?: 'STANDARD' | 'TIMEOUT_FORCED';
   listening_raw_score?: number;
   listening_max_score?: number;
   listening_band?: number;

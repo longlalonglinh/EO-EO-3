@@ -1,6 +1,6 @@
 import { Exam } from '../types';
 
-export const DEFAULT_EXAMS: Exam[] = [
+const RAW_DEFAULT_EXAMS = [
   {
     exam_code: 'TEST01',
     title: 'IELTS Academic Official Mock Test 01 (Full 4-Skills)',
@@ -1227,3 +1227,31 @@ Designing transparent explainable AI (XAI) frameworks is therefore not merely a 
     ]
   }
 ];
+
+export const DEFAULT_EXAMS: Exam[] = RAW_DEFAULT_EXAMS.map(exam => {
+  const allQs = exam.questions || [];
+  const passages = (exam.passages || []).map((p: any) => {
+    const pQs = allQs.filter((q: any) => 
+      q.section === 'reading' && 
+      (q.passage_index === p.passage_index || (!q.passage_index && p.passage_index === 1))
+    );
+    return {
+      passage_index: p.passage_index as 1 | 2 | 3,
+      title: p.title || `Reading Passage ${p.passage_index}`,
+      text: p.text || '',
+      questions: (p.questions && p.questions.length > 0 ? p.questions : pQs)
+    };
+  });
+
+  const listeningQs = allQs.filter((q: any) => q.section === 'listening');
+  const readingQs = allQs.filter((q: any) => q.section === 'reading');
+
+  return {
+    ...exam,
+    passages,
+    listening_questions: listeningQs,
+    reading_questions: readingQs,
+    questions: allQs
+  } as Exam;
+});
+

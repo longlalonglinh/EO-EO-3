@@ -33,48 +33,66 @@ export const ResultPage: React.FC<ResultPageProps> = ({
           <h1 className="text-3xl md:text-4xl font-black text-white">
             EXAM COMPLETED SUCCESSFULLY!
           </h1>
-          <p className="text-sm text-purple-100 max-w-xl mx-auto font-medium">
-            Submission ID: <strong className="text-white font-bold">{result.submission_id}</strong>
-          </p>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <p className="text-sm text-purple-100 font-medium">
+              Submission ID: <strong className="text-white font-bold">{result.submission_id}</strong>
+            </p>
+            {result.submission_type === 'TIMEOUT_FORCED' && (
+              <span className="px-3 py-1 bg-amber-400 text-amber-950 font-black text-xs rounded-full uppercase tracking-wider shadow-md flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5" />
+                <span>Auto-Submitted (Timeout Forced)</span>
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Raw Score Display Cards (Listening & Reading) */}
+      {/* Raw & Band Score Display Cards (Listening & Reading) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
-        {/* Listening Raw Score */}
+        {/* Listening Raw & Band Score */}
         <div className="bg-white border border-purple-100/80 rounded-3xl p-6 shadow-xl shadow-purple-950/5 flex flex-col items-center justify-between text-center space-y-4 hover:border-emerald-300 transition-all">
           <div className="p-4 bg-emerald-100 text-emerald-800 rounded-2xl border border-emerald-200">
             <Headphones className="w-8 h-8" />
           </div>
 
           <div>
-            <h4 className="text-xs font-extrabold text-[#7C68A5] uppercase tracking-wider">LISTENING RAW SCORE</h4>
+            <h4 className="text-xs font-extrabold text-[#7C68A5] uppercase tracking-wider">LISTENING RAW &amp; BAND</h4>
             <div className="text-4xl font-black text-emerald-700 mt-2">
-              {result.listening_score} <span className="text-xl text-[#7C68A5]">/ 40</span>
+              {result.listening_score ?? result.listening_raw_score ?? 0} <span className="text-xl text-[#7C68A5]">/ 40</span>
             </div>
+            {result.listening_band !== undefined && (
+              <div className="mt-1 text-sm font-black text-[#3C2A63]">
+                Estimated Band: <span className="text-emerald-600 font-black text-base">{result.listening_band.toFixed(1)}</span>
+              </div>
+            )}
           </div>
 
           <span className="text-[11px] text-emerald-800 font-extrabold bg-emerald-100 px-3.5 py-1 rounded-full border border-emerald-200">
-            Server-side Auto-Graded
+            Normalized Auto-Graded
           </span>
         </div>
 
-        {/* Reading Raw Score */}
+        {/* Reading Raw & Band Score */}
         <div className="bg-white border border-purple-100/80 rounded-3xl p-6 shadow-xl shadow-purple-950/5 flex flex-col items-center justify-between text-center space-y-4 hover:border-purple-300 transition-all">
           <div className="p-4 bg-purple-100 text-[#503A7A] rounded-2xl border border-purple-200">
             <BookOpen className="w-8 h-8" />
           </div>
 
           <div>
-            <h4 className="text-xs font-extrabold text-[#7C68A5] uppercase tracking-wider">READING RAW SCORE</h4>
+            <h4 className="text-xs font-extrabold text-[#7C68A5] uppercase tracking-wider">READING RAW &amp; BAND</h4>
             <div className="text-4xl font-black text-[#6B51A5] mt-2">
-              {result.reading_score} <span className="text-xl text-[#7C68A5]">/ 40</span>
+              {result.reading_score ?? result.reading_raw_score ?? 0} <span className="text-xl text-[#7C68A5]">/ 40</span>
             </div>
+            {result.reading_band !== undefined && (
+              <div className="mt-1 text-sm font-black text-[#3C2A63]">
+                Estimated Band: <span className="text-[#6B51A5] font-black text-base">{result.reading_band.toFixed(1)}</span>
+              </div>
+            )}
           </div>
 
           <span className="text-[11px] text-emerald-800 font-extrabold bg-purple-100 px-3.5 py-1 rounded-full border border-purple-200">
-            Server-side Auto-Graded
+            Normalized Auto-Graded
           </span>
         </div>
 

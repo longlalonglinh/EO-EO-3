@@ -1,182 +1,213 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { HighlightingTool, Question, ReadingPassageItem } from '../../types';
 import { 
   Paintbrush, 
   Eraser, 
   MoveHorizontal, 
   CheckCircle, 
-  ListChecks, 
+  CheckCircle2, 
   BookOpen, 
   HelpCircle, 
   FileText, 
-  CheckCircle2, 
-  AlertTriangle,
-  ChevronRight
+  ChevronRight,
+  ChevronLeft,
+  Filter,
+  Check,
+  RotateCcw,
+  Sparkles,
+  Maximize2
 } from 'lucide-react';
 import { CountdownTimer } from './CountdownTimer';
 import { IELTSQuestionCard } from './IELTSQuestionCard';
 
 interface ReadingModuleProps {
   passageTitle?: string;
-  passageText: string;
+  passageText?: string;
   passages?: ReadingPassageItem[];
-  questions: Question[];
+  questions?: Question[];
   userAnswers: Record<string, string>;
   onAnswerChange: (questionId: string, value: string) => void;
   testMode?: 'TEST' | 'PRACTICE';
   durationMins?: number;
+  onTimeExpire?: () => void;
 }
 
 export const ReadingModule: React.FC<ReadingModuleProps> = ({
   passageTitle,
-  passageText,
+  passageText = '',
   passages,
-  questions,
+  questions = [],
   userAnswers,
   onAnswerChange,
   testMode = 'TEST',
-  durationMins = 60
+  durationMins = 60,
+  onTimeExpire
 }) => {
-  const [leftWidth, setLeftWidth] = useState(50); // 50% split default
-  const [isResizing, setIsResizing] = useState(false);
+  const [leftWidth, setLeftWidth] = useState<number>(50); // 50% default split
+  const [isResizing, setIsResizing] = useState<boolean>(false);
   const [activeColor, setActiveColor] = useState<'yellow' | 'green' | 'blue'>('yellow');
   const [highlights, setHighlights] = useState<HighlightingTool[]>([]);
   const [activePassageIndex, setActivePassageIndex] = useState<1 | 2 | 3>(1);
-  const [mobileTab, setMobileTab] = useState<'questions' | 'passage' | 'both'>('questions');
+  const [filterMode, setFilterMode] = useState<'current_passage' | 'all' | 'unanswered'>('current_passage');
+  const [mobileTab, setMobileTab] = useState<'questions' | 'passage'>('questions');
+  const [highlightedQuestionId, setHighlightedQuestionId] = useState<string | null>(null);
+
   const passageContainerRef = useRef<HTMLDivElement | null>(null);
+  const splitContainerRef = useRef<HTMLDivElement | null>(null);
 
-  // Multi-Passage Parser:
-  // Automatically detects if passages is an array OR if passageText contains multiple delimited parts
-  const parsedPassages = React.useMemo<ReadingPassageItem[]>(() => {
+  // 1. Standardize and normalize passages with direct questions embedding
+  const normalizedPassages = useMemo<ReadingPassageItem[]>(() => {
     if (passages && Array.isArray(passages) && passages.length > 0) {
-      return passages;
-    }
+      // If questions are already inside passages
+      const hasQuestionsInside = passages.some(p => p.questions && p.questions.length > 0);
+      if (hasQuestionsInside) {
+        return passages.map((p, idx) => ({
+          passage_index: (p.passage_index || idx + 1) as 1 | 2 | 3,
+          title: p.title || `Reading Passage ${p.passage_index || idx + 1}`,
+          text: p.text || '',
+          questions: p.questions || []
+        }));
+      }
 
-    if (!passageText || !passageText.trim()) {
-      return [{
-        passage_index: 1,
-        title: passageTitle || 'Reading Passage 1',
-        text: 'No reading passage content available for this section.'
-      }];
-    }
-
-    // Check if passageText contains multiple parts delimited by common IELTS markers:
-    // e.g. "PASSAGE 1", "PASSAGE 2", "PASSAGE 3", "PART 1", "SECTION 1", "--- Passage 2 ---"
-    const splitRegex = /(?:^|\n\s*\n+)(?=(?:(?:READING\s+)?PASSAGE\s+[1-3]|PART\s+[1-3]|SECTION\s+[1-3]|---\s*(?:Reading\s+)?Passage\s+[1-3]\s*---))/i;
-    
-    if (splitRegex.test(passageText)) {
-      const parts = passageText.split(splitRegex);
-      if (parts.length > 1) {
-        const extracted: ReadingPassageItem[] = [];
-        parts.forEach((chunk, index) => {
-          const trimmed = chunk.trim();
-          if (!trimmed) return;
-          
-          const matchIdx = trimmed.match(/(?:(?:READING\s+)?PASSAGE|PART|SECTION)\s+([1-3])/i);
-          const pIdx = matchIdx ? (parseInt(matchIdx[1], 10) as 1 | 2 | 3) : ((index + 1) as 1 | 2 | 3);
-          
-          const lines = trimmed.split('\n').filter(l => l.trim().length > 0);
-          const firstLine = lines[0] || '';
-          const title = firstLine.length < 90 ? firstLine : `Reading Passage ${pIdx}`;
-          
-          extracted.push({
-            passage_index: pIdx,
-            title: title,
-            text: trimmed
-          });
+      // If passages exist but questions were provided at root level
+      return passages.map((p, idx) => {
+        const pIdx = (p.passage_index || idx + 1) as 1 | 2 | 3;
+        const pQs = questions.filter(q => {
+          if (q.passage_index) return q.passage_index === pIdx;
+          const qIdx = questions.indexOf(q);
+          if (pIdx === 1 && qIdx < 13) return true;
+          if (pIdx === 2 && qIdx >= 13 && qIdx < 26) return true;
+          if (pIdx === 3 && qIdx >= 26) return true;
+          return false;
         });
 
-        if (extracted.length > 0) {
-          // Sort by passage index
-          return extracted.sort((a, b) => a.passage_index - b.passage_index);
-        }
+        return {
+          passage_index: pIdx,
+          title: p.title || `Reading Passage ${pIdx}`,
+          text: p.text || '',
+          questions: pQs
+        };
+      });
+    }
+
+    // Fallback: parse passageText or construct default 3-passage structure from questions
+    const p1Questions = questions.filter(q => q.passage_index === 1 || (!q.passage_index && questions.indexOf(q) < 13));
+    const p2Questions = questions.filter(q => q.passage_index === 2 || (!q.passage_index && questions.indexOf(q) >= 13 && questions.indexOf(q) < 26));
+    const p3Questions = questions.filter(q => q.passage_index === 3 || (!q.passage_index && questions.indexOf(q) >= 26));
+
+    return [
+      {
+        passage_index: 1,
+        title: passageTitle || 'Reading Passage 1',
+        text: passageText || 'No passage text available for Passage 1.',
+        questions: p1Questions
+      },
+      {
+        passage_index: 2,
+        title: 'Reading Passage 2',
+        text: 'Passage 2 text content.',
+        questions: p2Questions
+      },
+      {
+        passage_index: 3,
+        title: 'Reading Passage 3',
+        text: 'Passage 3 text content.',
+        questions: p3Questions
       }
+    ];
+  }, [passages, passageText, passageTitle, questions]);
+
+  // 2. Build flat list of all 40 questions with global indexing and passage assignment
+  const all40Questions = useMemo(() => {
+    let list: (Question & { globalNumber: number; assignedPassage: 1 | 2 | 3 })[] = [];
+    let counter = 1;
+
+    normalizedPassages.forEach((p) => {
+      (p.questions || []).forEach((q) => {
+        list.push({
+          ...q,
+          globalNumber: counter++,
+          assignedPassage: p.passage_index
+        });
+      });
+    });
+
+    // Fallback if normalizedPassages had no questions but questions prop exists
+    if (list.length === 0 && questions.length > 0) {
+      list = questions.map((q, idx) => {
+        const assigned: 1 | 2 | 3 = q.passage_index || (idx < 13 ? 1 : idx < 26 ? 2 : 3);
+        return {
+          ...q,
+          globalNumber: idx + 1,
+          assignedPassage: assigned
+        };
+      });
     }
 
-    // Single passage default
-    return [{
-      passage_index: 1,
-      title: passageTitle || 'Reading Passage 1',
-      text: passageText
-    }];
-  }, [passages, passageText, passageTitle]);
+    return list;
+  }, [normalizedPassages, questions]);
 
-  // Group questions into IELTS Passages:
-  // 1. Explicit q.passage_index (1, 2, 3)
-  // 2. If single short passage and <= 14 questions, map all to 1
-  // 3. Otherwise distribute Q1-13 -> 1, Q14-26 -> 2, Q27-40 -> 3
-  const getPassageForQuestion = (q: Question, idx: number): 1 | 2 | 3 => {
-    if (q.passage_index && [1, 2, 3].includes(q.passage_index)) {
-      return q.passage_index as 1 | 2 | 3;
-    }
-    if (parsedPassages.length === 1 && questions.length <= 14) {
-      return 1;
-    }
-    if (idx < 13) return 1;
-    if (idx < 26) return 2;
-    return 3;
-  };
-
-  const questionsWithPassage = React.useMemo(() => {
-    return questions.map((q, idx) => ({
-      ...q,
-      computedPassage: getPassageForQuestion(q, idx),
-      originalIndex: idx + 1
-    }));
-  }, [questions, parsedPassages]);
-
-  // Available passage tabs to show
-  const availablePassageIndices = React.useMemo<(1 | 2 | 3)[]>(() => {
-    const indicesFromPassages = parsedPassages.map(p => p.passage_index);
-    const indicesFromQuestions = questionsWithPassage.map(q => q.computedPassage);
-    const unique = Array.from(new Set([...indicesFromPassages, ...indicesFromQuestions])).sort((a, b) => a - b) as (1 | 2 | 3)[];
-    
-    // If questions span up to 40 or >= 14, ensure all 3 parts are selectable if applicable
-    if (questions.length > 14 && unique.length < 3) {
-      return [1, 2, 3];
-    }
-
-    return unique.length > 0 ? unique : [1];
-  }, [parsedPassages, questionsWithPassage, questions.length]);
-
-  // Safe active passage fallback
-  const safeActivePassage = availablePassageIndices.includes(activePassageIndex)
-    ? activePassageIndex
-    : availablePassageIndices[0] || 1;
-
-  const displayedQuestions = questionsWithPassage.filter(q => q.computedPassage === safeActivePassage);
-
-  // Determine current active passage text and title
-  const currentPassageData = React.useMemo(() => {
-    const found = parsedPassages.find(p => p.passage_index === safeActivePassage);
+  // 3. Current active passage data
+  const currentPassage = useMemo(() => {
+    const found = normalizedPassages.find(p => p.passage_index === activePassageIndex);
     if (found) return found;
-
-    // Fallback if passage 2 or 3 doesn't have custom text
-    return {
-      passage_index: safeActivePassage,
-      title: passageTitle ? `${passageTitle} (Part ${safeActivePassage})` : `Reading Passage ${safeActivePassage}`,
-      text: parsedPassages[0]?.text || passageText
+    return normalizedPassages[0] || {
+      passage_index: 1,
+      title: 'Reading Passage 1',
+      text: passageText,
+      questions: []
     };
-  }, [parsedPassages, safeActivePassage, passageTitle, passageText]);
+  }, [normalizedPassages, activePassageIndex, passageText]);
 
-  // Handle Resizer Drag
-  const handleMouseDown = () => {
-    setIsResizing(true);
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isResizing) return;
-    const newWidth = (e.clientX / window.innerWidth) * 100;
-    if (newWidth >= 25 && newWidth <= 75) {
-      setLeftWidth(newWidth);
+  // 4. Questions filtered according to filterMode
+  const displayedQuestions = useMemo(() => {
+    if (filterMode === 'all') {
+      return all40Questions;
     }
-  };
+    if (filterMode === 'unanswered') {
+      return all40Questions.filter(q => !userAnswers[q.question_id] || userAnswers[q.question_id].trim() === '');
+    }
+    // 'current_passage' mode: questions belonging directly to activePassageIndex
+    return all40Questions.filter(q => q.assignedPassage === activePassageIndex);
+  }, [all40Questions, filterMode, activePassageIndex, userAnswers]);
 
-  const handleMouseUp = () => {
-    setIsResizing(false);
-  };
+  // 5. Resizable Split-Screen Drag Logic with Global Window Listeners
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing || !splitContainerRef.current) return;
+      const rect = splitContainerRef.current.getBoundingClientRect();
+      const relativeX = e.clientX - rect.left;
+      const percentage = (relativeX / rect.width) * 100;
+      if (percentage >= 25 && percentage <= 75) {
+        setLeftWidth(percentage);
+      }
+    };
 
-  // Multi-color highlighter logic
+    const handleMouseUp = () => {
+      if (isResizing) {
+        setIsResizing(false);
+      }
+    };
+
+    if (isResizing) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'col-resize';
+    } else {
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+  }, [isResizing]);
+
+  // 6. Multi-color highlighter logic
   const handleTextSelection = () => {
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || !selection.toString().trim()) return;
@@ -185,9 +216,9 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
     if (selectedText.length < 2) return;
 
     const colorHexMap = {
-      yellow: '#fef08a', // Tailwind yellow-200
-      green: '#86efac',  // Tailwind green-300
-      blue: '#93c5fd',   // Tailwind blue-300
+      yellow: '#fef08a', // yellow-200
+      green: '#86efac',  // green-300
+      blue: '#93c5fd',   // blue-300
     };
 
     const newHighlight: HighlightingTool = {
@@ -198,7 +229,7 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
     };
 
     setHighlights((prev) => [...prev, newHighlight]);
-    selection.removeAllRanges(); // clear selection box
+    selection.removeAllRanges();
   };
 
   const handleRemoveHighlight = (id: string) => {
@@ -209,17 +240,15 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
     setHighlights([]);
   };
 
-  // Helper to render passage with highlighted spans
   const renderHighlightedPassage = (textToRender: string) => {
     if (highlights.length === 0) {
       return (
-        <div className="whitespace-pre-wrap leading-loose text-[#2D1E4B] font-serif text-[15px] font-medium space-y-4">
+        <div className="whitespace-pre-wrap leading-relaxed text-[#2D1E4B] font-serif text-[15px] font-normal space-y-4">
           {textToRender}
         </div>
       );
     }
 
-    // Replace highlighted terms safely
     let htmlContent = textToRender;
     highlights.forEach((hl) => {
       const regex = new RegExp(`(${hl.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
@@ -231,44 +260,67 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
 
     return (
       <div
-        className="whitespace-pre-wrap leading-loose text-[#2D1E4B] font-serif text-[15px] font-medium space-y-4"
+        className="whitespace-pre-wrap leading-relaxed text-[#2D1E4B] font-serif text-[15px] font-normal space-y-4"
         dangerouslySetInnerHTML={{ __html: htmlContent }}
       />
     );
   };
 
-  const scrollToQuestion = (questionId: string) => {
-    const el = document.getElementById(`rq_box_${questionId}`);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // 7. Question Navigation Helper: scroll and auto-switch passage
+  const handleJumpToQuestion = (question: Question & { globalNumber: number; assignedPassage: 1 | 2 | 3 }) => {
+    if (activePassageIndex !== question.assignedPassage) {
+      setActivePassageIndex(question.assignedPassage);
     }
+    if (filterMode === 'unanswered' && !!userAnswers[question.question_id]) {
+      setFilterMode('current_passage');
+    }
+
+    setHighlightedQuestionId(question.question_id);
+    setTimeout(() => {
+      const el = document.getElementById(`rq_box_${question.question_id}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      setTimeout(() => setHighlightedQuestionId(null), 2500);
+    }, 100);
   };
 
+  // Global counts
+  const totalAnswered = useMemo(() => {
+    return all40Questions.filter(q => !!userAnswers[q.question_id] && userAnswers[q.question_id].trim() !== '').length;
+  }, [all40Questions, userAnswers]);
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-28">
       
-      {/* TOP COUNTDOWN TIMER BAR */}
+      {/* 1. TOP COUNTDOWN TIMER BAR */}
       <CountdownTimer
         initialMinutes={durationMins}
         testMode={testMode}
         sectionName="ACADEMIC READING (40 Questions / 3 Passages)"
+        onTimeExpire={onTimeExpire}
       />
 
-      {/* PASSAGE TABS & QUESTION MATRIX BAR */}
+      {/* 2. PASSAGE TABS & FILTER MATRIX BAR */}
       <div className="bg-white border border-purple-100/80 rounded-3xl p-4 shadow-xl shadow-purple-950/5 flex flex-wrap items-center justify-between gap-3">
         
-        {/* Passage Switcher Buttons */}
+        {/* Passage Switcher Tabs */}
         <div className="flex flex-wrap items-center gap-2">
-          {availablePassageIndices.map((pIdx) => {
-            const pQuestions = questionsWithPassage.filter(q => q.computedPassage === pIdx);
-            const answeredCount = pQuestions.filter(q => !!userAnswers[q.question_id]).length;
-            const isActive = safeActivePassage === pIdx;
+          {normalizedPassages.map((p) => {
+            const pQuestions = all40Questions.filter(q => q.assignedPassage === p.passage_index);
+            const answeredInPassage = pQuestions.filter(q => !!userAnswers[q.question_id] && userAnswers[q.question_id].trim() !== '').length;
+            const isActive = activePassageIndex === p.passage_index;
 
             return (
               <button
-                key={pIdx}
+                key={p.passage_index}
                 type="button"
-                onClick={() => setActivePassageIndex(pIdx as 1 | 2 | 3)}
+                onClick={() => {
+                  setActivePassageIndex(p.passage_index);
+                  if (filterMode !== 'all' && filterMode !== 'unanswered') {
+                    setFilterMode('current_passage');
+                  }
+                }}
                 className={`px-4 py-2 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
                   isActive
                     ? 'bg-[#6B51A5] text-white shadow-md'
@@ -276,31 +328,66 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
                 }`}
               >
                 <BookOpen className="w-3.5 h-3.5" />
-                <span>Passage {pIdx}</span>
+                <span>Passage {p.passage_index}</span>
                 <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
                   isActive
                     ? 'bg-white/20 text-white'
-                    : answeredCount === pQuestions.length && pQuestions.length > 0
+                    : answeredInPassage === pQuestions.length && pQuestions.length > 0
                     ? 'bg-emerald-100 text-emerald-800'
                     : 'bg-purple-200/80 text-[#503A7A]'
                 }`}>
-                  {answeredCount}/{pQuestions.length || 13}
+                  {answeredInPassage}/{pQuestions.length}
                 </span>
               </button>
             );
           })}
         </div>
 
-        {/* Global Answered Summary */}
-        <div className="text-xs text-[#7C68A5] font-medium flex items-center gap-3">
-          <span>
-            Answered: <strong className="text-[#6B51A5] font-black">{Object.keys(userAnswers).filter(k => questions.some(q => q.question_id === k && !!userAnswers[k])).length}</strong> / {questions.length} questions
-          </span>
+        {/* Question Filter Modes */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center bg-[#F5F2F9] p-1 rounded-2xl border border-purple-100 text-xs">
+            <button
+              type="button"
+              onClick={() => setFilterMode('current_passage')}
+              className={`px-3 py-1.5 rounded-xl font-extrabold transition cursor-pointer ${
+                filterMode === 'current_passage' ? 'bg-[#6B51A5] text-white shadow-sm' : 'text-[#503A7A] hover:text-[#3C2A63]'
+              }`}
+            >
+              Passage {activePassageIndex}
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterMode('all')}
+              className={`px-3 py-1.5 rounded-xl font-extrabold transition cursor-pointer ${
+                filterMode === 'all' ? 'bg-[#6B51A5] text-white shadow-sm' : 'text-[#503A7A] hover:text-[#3C2A63]'
+              }`}
+            >
+              All 40 Questions
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterMode('unanswered')}
+              className={`px-3 py-1.5 rounded-xl font-extrabold transition cursor-pointer flex items-center gap-1 ${
+                filterMode === 'unanswered' ? 'bg-amber-600 text-white shadow-sm' : 'text-[#503A7A] hover:text-[#3C2A63]'
+              }`}
+            >
+              <span>Unanswered</span>
+              <span className="text-[10px] bg-black/10 px-1.5 py-0.2 rounded-full font-mono">
+                {all40Questions.length - totalAnswered}
+              </span>
+            </button>
+          </div>
+
+          <div className="hidden lg:flex items-center text-xs text-[#7C68A5] font-medium pl-2">
+            <span>
+              Total Answered: <strong className="text-[#6B51A5] font-black">{totalAnswered}</strong> / {all40Questions.length}
+            </span>
+          </div>
         </div>
 
       </div>
 
-      {/* MOBILE VIEW SWITCHER (Visible on screens < 768px) */}
+      {/* 3. MOBILE VIEW SWITCHER (< 768px) */}
       <div className="flex md:hidden items-center justify-between bg-purple-50 p-1.5 rounded-2xl border border-purple-200">
         <div className="flex items-center gap-1 w-full">
           <button
@@ -321,34 +408,25 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
             }`}
           >
             <BookOpen className="w-3.5 h-3.5" />
-            <span>Passage {safeActivePassage}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setMobileTab('both')}
-            className={`flex-1 py-2 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-              mobileTab === 'both' ? 'bg-[#6B51A5] text-white shadow-md' : 'text-[#503A7A] hover:bg-purple-100'
-            }`}
-          >
-            <MoveHorizontal className="w-3.5 h-3.5 rotate-90" />
-            <span>Both</span>
+            <span>Passage {activePassageIndex}</span>
           </button>
         </div>
       </div>
 
-      {/* SPLIT SCREEN WORKSPACE */}
+      {/* 4. SPLIT SCREEN WORKSPACE WITH DRAGGABLE RESIZER */}
       <div
-        className="flex flex-col md:flex-row md:h-[calc(100vh-13rem)] md:min-h-[580px] bg-white rounded-3xl border border-purple-100/80 md:overflow-hidden shadow-xl shadow-purple-950/5 select-none"
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
+        ref={splitContainerRef}
+        className="flex flex-col md:flex-row md:h-[calc(100vh-17rem)] md:min-h-[580px] bg-white rounded-3xl border border-purple-100/80 md:overflow-hidden shadow-xl shadow-purple-950/5 relative"
       >
         
-        {/* LEFT COLUMN: READING PASSAGE & MULTI-COLOR HIGHLIGHTER */}
+        {/* LEFT COLUMN: READING PASSAGE & HIGHLIGHTER */}
         <div
           className={`h-[420px] md:h-full flex flex-col bg-[#F8F6FC] md:border-r border-purple-100 overflow-hidden w-full ${
             mobileTab === 'questions' ? 'hidden md:flex' : 'flex'
           }`}
-          style={typeof window !== 'undefined' && window.innerWidth >= 768 ? { width: `${leftWidth}%` } : undefined}
+          style={{
+            width: typeof window !== 'undefined' && window.innerWidth >= 768 ? `${leftWidth}%` : '100%'
+          }}
         >
           {/* Passage Toolbar */}
           <div className="p-3 bg-white border-b border-purple-100 flex items-center justify-between shrink-0">
@@ -357,7 +435,7 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
               <span className="text-xs font-extrabold text-[#3C2A63] uppercase tracking-wider">Highlight:</span>
               
               {/* Color Pickers */}
-              <div className="flex items-center space-x-1.5 ml-2">
+              <div className="flex items-center space-x-1.5 ml-1">
                 <button
                   type="button"
                   onClick={() => setActiveColor('yellow')}
@@ -385,18 +463,20 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
               </div>
             </div>
 
-            {highlights.length > 0 && (
-              <button
-                onClick={clearAllHighlights}
-                className="px-2.5 py-1 bg-rose-100 hover:bg-rose-200 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold flex items-center gap-1 transition cursor-pointer"
-              >
-                <Eraser className="w-3 h-3" />
-                Clear ({highlights.length})
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {highlights.length > 0 && (
+                <button
+                  onClick={clearAllHighlights}
+                  className="px-2.5 py-1 bg-rose-100 hover:bg-rose-200 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold flex items-center gap-1 transition cursor-pointer"
+                >
+                  <Eraser className="w-3 h-3" />
+                  <span>Clear ({highlights.length})</span>
+                </button>
+              )}
+            </div>
           </div>
 
-          {/* Scrollable Passage Text */}
+          {/* Scrollable Passage Content */}
           <div
             ref={passageContainerRef}
             onMouseUp={handleTextSelection}
@@ -404,24 +484,13 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
           >
             <div className="mb-4 pb-3 border-b border-purple-200">
               <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-purple-100 text-[#503A7A] uppercase tracking-wider">
-                Passage {safeActivePassage}
+                Passage {currentPassage.passage_index} of 3
               </span>
               <h2 className="text-xl font-extrabold text-[#3C2A63] font-sans mt-2">
-                {currentPassageData.title}
+                {currentPassage.title}
               </h2>
             </div>
-            {renderHighlightedPassage(currentPassageData.text)}
-          </div>
-
-          {/* Mobile shortcut to questions */}
-          <div className="md:hidden p-2.5 bg-purple-100 border-t border-purple-200 flex justify-end">
-            <button
-              type="button"
-              onClick={() => setMobileTab('questions')}
-              className="px-4 py-2 bg-[#6B51A5] text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow"
-            >
-              <span>Questions →</span>
-            </button>
+            {renderHighlightedPassage(currentPassage.text)}
           </div>
 
           {/* Active Highlight Chips */}
@@ -433,7 +502,7 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
                   className="px-2.5 py-0.5 rounded-lg text-slate-950 font-bold flex items-center gap-1 shadow-sm text-[11px]"
                   style={{ backgroundColor: hl.color_hex }}
                 >
-                  <span className="max-w-[100px] truncate">{hl.text}</span>
+                  <span className="max-w-[120px] truncate">{hl.text}</span>
                   <button
                     onClick={() => handleRemoveHighlight(hl.id)}
                     className="hover:text-rose-700 font-black ml-1 cursor-pointer"
@@ -446,13 +515,20 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
           )}
         </div>
 
-        {/* DRAGGABLE RESIZER BAR (Desktop only) */}
+        {/* DRAGGABLE RESIZER SPLIT HANDLE (Desktop only) */}
         <div
-          onMouseDown={handleMouseDown}
-          className="hidden md:flex w-2 bg-[#E2DDEC] hover:bg-[#6B51A5] cursor-col-resize items-center justify-center border-x border-purple-100 transition-all shrink-0"
-          title="Drag to adjust split view ratio"
+          onMouseDown={() => setIsResizing(true)}
+          onDoubleClick={() => setLeftWidth(50)}
+          className={`hidden md:flex w-3 hover:w-3.5 bg-[#E2DDEC] hover:bg-[#6B51A5] active:bg-[#503A7A] cursor-col-resize items-center justify-center transition-all shrink-0 z-20 select-none ${
+            isResizing ? 'bg-[#6B51A5] shadow-lg ring-2 ring-[#6B51A5]/40' : ''
+          }`}
+          title="Drag to resize split panes (Double-click to reset 50/50)"
         >
-          <MoveHorizontal className="w-3 h-3 text-[#7C68A5]" />
+          <div className="h-8 w-1 bg-white/60 rounded-full flex flex-col justify-center items-center gap-0.5 pointer-events-none">
+            <div className="w-0.5 h-1 bg-[#3C2A63] rounded-full" />
+            <div className="w-0.5 h-1 bg-[#3C2A63] rounded-full" />
+            <div className="w-0.5 h-1 bg-[#3C2A63] rounded-full" />
+          </div>
         </div>
 
         {/* RIGHT COLUMN: READING QUESTIONS */}
@@ -460,31 +536,40 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
           className={`h-auto md:h-full flex flex-col bg-white overflow-hidden w-full ${
             mobileTab === 'passage' ? 'hidden md:flex' : 'flex'
           }`}
-          style={typeof window !== 'undefined' && window.innerWidth >= 768 ? { width: `${100 - leftWidth}%` } : undefined}
+          style={{
+            width: typeof window !== 'undefined' && window.innerWidth >= 768 ? `${100 - leftWidth}%` : '100%'
+          }}
         >
-          {/* Header & Question Matrix for active passage */}
+          {/* Header Bar */}
           <div className="p-3.5 bg-[#F8F6FC] border-b border-purple-100 flex flex-wrap items-center justify-between gap-2 shrink-0">
-            <span className="text-xs font-extrabold text-[#3C2A63] uppercase tracking-wider">
-              Passage {activePassageIndex} Questions ({displayedQuestions.length} questions)
+            <span className="text-xs font-extrabold text-[#3C2A63] uppercase tracking-wider flex items-center gap-1.5">
+              <FileText className="w-3.5 h-3.5 text-[#6B51A5]" />
+              <span>
+                {filterMode === 'all'
+                  ? 'All 40 Questions (Passages 1 - 3)'
+                  : filterMode === 'unanswered'
+                  ? `Unanswered Questions (${displayedQuestions.length} remaining)`
+                  : `Passage ${activePassageIndex} Questions (${displayedQuestions.length} questions)`}
+              </span>
             </span>
 
-            {/* Quick jump question numbers */}
+            {/* Jump buttons within current filtered view */}
             <div className="flex flex-wrap gap-1">
               {displayedQuestions.map((q) => {
-                const isAns = !!userAnswers[q.question_id];
+                const isAns = !!userAnswers[q.question_id] && userAnswers[q.question_id].trim() !== '';
                 return (
                   <button
                     key={q.question_id}
                     type="button"
-                    onClick={() => scrollToQuestion(q.question_id)}
-                    className={`w-7 h-7 md:w-6 md:h-6 rounded-lg text-[11px] md:text-[10px] font-black transition cursor-pointer flex items-center justify-center ${
+                    onClick={() => handleJumpToQuestion(q)}
+                    className={`w-6 h-6 rounded-lg text-[10px] font-black transition cursor-pointer flex items-center justify-center ${
                       isAns
-                        ? 'bg-emerald-600 text-white'
+                        ? 'bg-emerald-600 text-white shadow-xs'
                         : 'bg-[#E2DDEC] hover:bg-[#D9D3E4] text-[#3C2A63]'
                     }`}
-                    title={`Question ${q.originalIndex}`}
+                    title={`Question ${q.globalNumber}`}
                   >
-                    {q.originalIndex}
+                    {q.globalNumber}
                   </button>
                 );
               })}
@@ -494,24 +579,113 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
           {/* Scrollable Questions List */}
           <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-6">
             {displayedQuestions.length === 0 ? (
-              <div className="p-8 text-center bg-purple-50/50 rounded-2xl border border-dashed border-purple-200">
-                <p className="text-sm text-[#7C68A5] italic">No questions available for this section or data is loading...</p>
+              <div className="p-12 text-center bg-purple-50/50 rounded-3xl border border-dashed border-purple-200">
+                <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto mb-2" />
+                <h4 className="text-sm font-extrabold text-[#3C2A63]">All questions in this section are answered!</h4>
+                <p className="text-xs text-[#7C68A5] mt-1">
+                  Use the navigation bar below to review or proceed to other passages.
+                </p>
               </div>
             ) : (
               displayedQuestions.map((q) => (
-                <IELTSQuestionCard
+                <div
                   key={q.question_id}
-                  question={q}
-                  questionNumber={q.originalIndex}
-                  userAnswer={userAnswers[q.question_id] || ''}
-                  onAnswerChange={onAnswerChange}
-                  headingsList={q.headings_list}
-                />
+                  id={`rq_box_${q.question_id}`}
+                  className={`transition-all duration-300 rounded-3xl ${
+                    highlightedQuestionId === q.question_id ? 'ring-4 ring-[#6B51A5] shadow-xl' : ''
+                  }`}
+                >
+                  <IELTSQuestionCard
+                    question={q}
+                    questionNumber={q.globalNumber}
+                    userAnswer={userAnswers[q.question_id] || ''}
+                    onAnswerChange={onAnswerChange}
+                    headingsList={q.headings_list}
+                  />
+                </div>
               ))
             )}
           </div>
         </div>
 
+      </div>
+
+      {/* 5. DEDICATED 40-QUESTION NAVIGATION FOOTER */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-purple-200/80 shadow-2xl px-4 py-3">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
+          
+          {/* Left metrics */}
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-xs font-black text-[#3C2A63]">Question Matrix:</span>
+            </div>
+            <span className="text-xs font-bold text-[#6B51A5] bg-purple-50 px-2.5 py-1 rounded-xl border border-purple-100">
+              {totalAnswered} / {all40Questions.length} Answered
+            </span>
+          </div>
+
+          {/* Center 40 Questions Grid */}
+          <div className="flex-1 overflow-x-auto max-w-full pb-1">
+            <div className="flex items-center gap-1 min-w-max justify-center">
+              {all40Questions.map((q) => {
+                const isAnswered = !!userAnswers[q.question_id] && userAnswers[q.question_id].trim() !== '';
+                const isCurrentPassage = activePassageIndex === q.assignedPassage;
+
+                return (
+                  <button
+                    key={q.question_id}
+                    type="button"
+                    onClick={() => handleJumpToQuestion(q)}
+                    className={`w-7 h-7 rounded-lg text-[11px] font-black transition-all cursor-pointer flex items-center justify-center ${
+                      isAnswered
+                        ? 'bg-emerald-600 text-white shadow-sm hover:bg-emerald-700'
+                        : isCurrentPassage
+                        ? 'bg-[#E2DDEC] hover:bg-[#D4CEE2] text-[#3C2A63] border border-purple-300'
+                        : 'bg-[#F5F2F9] text-[#7C68A5] hover:bg-[#E2DDEC]'
+                    } ${
+                      highlightedQuestionId === q.question_id ? 'ring-2 ring-[#6B51A5] scale-110' : ''
+                    }`}
+                    title={`Question ${q.globalNumber} (Passage ${q.assignedPassage}) - ${isAnswered ? 'Answered' : 'Not answered'}`}
+                  >
+                    {q.globalNumber}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Right Navigation Shortcut Controls */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                if (activePassageIndex > 1) {
+                  setActivePassageIndex((activePassageIndex - 1) as 1 | 2 | 3);
+                }
+              }}
+              disabled={activePassageIndex <= 1}
+              className="px-3 py-1.5 bg-[#F5F2F9] hover:bg-[#E2DDEC] text-[#3C2A63] disabled:opacity-30 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span>Prev Passage</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (activePassageIndex < 3) {
+                  setActivePassageIndex((activePassageIndex + 1) as 1 | 2 | 3);
+                }
+              }}
+              disabled={activePassageIndex >= 3}
+              className="px-3 py-1.5 bg-[#6B51A5] hover:bg-[#583F8F] text-white disabled:opacity-30 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow-md"
+            >
+              <span>Next Passage</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+        </div>
       </div>
 
     </div>

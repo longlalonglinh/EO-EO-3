@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { ShieldAlert, Lock, Maximize2, Radio } from 'lucide-react';
+import { ShieldAlert, Lock, Maximize2, Radio, Clock } from 'lucide-react';
 import { CheatLog } from '../../types';
+import { saveCheatLogToIndexedDB } from '../../services/indexedDb';
 
 interface ProctoringMonitorProps {
   submissionId: string;
@@ -24,6 +25,8 @@ export const ProctoringMonitor: React.FC<ProctoringMonitorProps> = ({
   const [warningMsg, setWarningMsg] = useState<string | null>(null);
 
   const lockTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const blurGraceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastBlurViolationTimeRef = useRef<number>(0);
 
   // Monitor Fullscreen Status
   useEffect(() => {
@@ -65,7 +68,7 @@ export const ProctoringMonitor: React.FC<ProctoringMonitorProps> = ({
     }, 1000);
   };
 
-  // Record Violation directly to LocalStorage
+  // Record Violation directly to LocalStorage and IndexedDB
   const recordViolation = (reason: string) => {
     if (testMode !== 'TEST') return; // Only strictly record in TEST mode
 
@@ -79,10 +82,17 @@ export const ProctoringMonitor: React.FC<ProctoringMonitorProps> = ({
     };
 
     // Save to LocalStorage
-    const existing = localStorage.getItem('ielts_cheat_logs');
-    const logsArr: CheatLog[] = existing ? JSON.parse(existing) : [];
-    logsArr.push(newLog);
-    localStorage.setItem('ielts_cheat_logs', JSON.stringify(logsArr));
+    try {
+      const existing = localStorage.getItem('ielts_cheat_logs');
+      const logsArr: CheatLog[] = existing ? JSON.parse(existing) : [];
+      logsArr.push(newLog);
+      localStorage.setItem('ielts_cheat_logs', JSON.stringify(logsArr));
+    } catch (e) {
+      console.warn('Could not save to localStorage:', e);
+    }
+
+    // Save to IndexedDB backup vault
+    saveCheatLogToIndexedDB(newLog).catch(() => {});
 
     setViolationCount((prev) => prev + 1);
 
@@ -105,16 +115,19 @@ export const ProctoringMonitor: React.FC<ProctoringMonitorProps> = ({
     }
   }, [violationCount]);
 
-  // Clean up lock timer on unmount
+  // Clean up lock and blur timers on unmount
   useEffect(() => {
     return () => {
       if (lockTimerRef.current) {
         clearInterval(lockTimerRef.current);
       }
+      if (blurGraceTimerRef.current) {
+        clearTimeout(blurGraceTimerRef.current);
+      }
     };
   }, []);
 
-  // Attach Security Listeners (Right Click, F12, Tab Change / Blur)
+  // Attach Security Listeners (Right Click, F12, Tab Change / Blur with 3s Grace Period & Debounce)
   useEffect(() => {
     if (testMode !== 'TEST') return;
 
@@ -136,19 +149,61 @@ export const ProctoringMonitor: React.FC<ProctoringMonitorProps> = ({
       }
     };
 
-    // Tab Blur / Switch Window
+    // Tab Blur / Switch Window with 3s Grace Period & Debounce
+    const cancelBlurGraceTimer = () => {
+      if (blurGraceTimerRef.current) {
+        clearTimeout(blurGraceTimerRef.current);
+        blurGraceTimerRef.current = null;
+      }
+    };
+
+    const triggerBlurGracePeriod = () => {
+      if (blurGraceTimerRef.current) return; // Grace period already ticking
+
+      blurGraceTimerRef.current = setTimeout(() => {
+        blurGraceTimerRef.current = null;
+        // Verify candidate is still unfocused after full 3-second grace period
+        const isStillUnfocused = (typeof document.hasFocus === 'function' && !document.hasFocus()) || document.hidden;
+        if (isStillUnfocused) {
+          const now = Date.now();
+          // Debounce: prevent duplicate violation spam within 5 seconds
+          if (now - lastBlurViolationTimeRef.current >= 5000) {
+            lastBlurViolationTimeRef.current = now;
+            recordViolation('Tab switched / Left exam window (exceeded 3-second grace period)');
+          }
+        }
+      }, 3000); // 3-second grace period
+    };
+
     const handleWindowBlur = () => {
-      recordViolation('Tab switched / Left exam window (window.onblur)');
+      triggerBlurGracePeriod();
+    };
+
+    const handleWindowFocus = () => {
+      cancelBlurGraceTimer();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        triggerBlurGracePeriod();
+      } else {
+        cancelBlurGraceTimer();
+      }
     };
 
     window.addEventListener('contextmenu', handleContextMenu);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
+      cancelBlurGraceTimer();
       window.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [testMode, submissionId, sbd, examCode]);
 

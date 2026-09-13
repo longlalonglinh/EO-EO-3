@@ -39,6 +39,7 @@ export const CustomPracticeManager: React.FC<CustomPracticeManagerProps> = ({ ga
   const [isEditing, setIsEditing] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [mobileTab, setMobileTab] = useState<'library' | 'editor'>('library');
 
   // Sheets Database Management State
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
@@ -150,6 +151,7 @@ export const CustomPracticeManager: React.FC<CustomPracticeManagerProps> = ({ ga
     setIsEditing(false);
     setSuccessMsg(null);
     setErrorMsg(null);
+    setMobileTab('editor');
   };
 
   const handleNewDeck = () => {
@@ -160,6 +162,7 @@ export const CustomPracticeManager: React.FC<CustomPracticeManagerProps> = ({ ga
     setCategory('Vocabulary');
     setDescription('Objectives and key focus of this practice set...');
     setLevel('B1-B2');
+    setMobileTab('editor');
     setCards([
       {
         id: `c_${Date.now()}_1`,
@@ -428,11 +431,42 @@ export const CustomPracticeManager: React.FC<CustomPracticeManagerProps> = ({ ga
         </div>
       )}
 
+      {/* Mobile Tab Switcher */}
+      <div className="lg:hidden flex items-center bg-slate-900 border border-slate-800 p-1.5 rounded-2xl">
+        <button
+          type="button"
+          onClick={() => setMobileTab('library')}
+          className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+            mobileTab === 'library'
+              ? 'bg-indigo-600 text-white shadow-md'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <BookOpen className="w-4 h-4" />
+          <span>Decks Library ({decks.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setMobileTab('editor')}
+          className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+            mobileTab === 'editor'
+              ? 'bg-indigo-600 text-white shadow-md'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Edit3 className="w-4 h-4" />
+          <span>Deck Editor {selectedDeck ? `(${selectedDeck.deck_id})` : ''}</span>
+        </button>
+      </div>
+
       {/* Main Grid: Deck List (Left) vs Deck Editor (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* Left Column: Deck Library (4 Cols) */}
-        <div className="lg:col-span-4 bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-xl space-y-4">
+        <div className={`lg:col-span-4 bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-xl space-y-4 ${
+          mobileTab === 'editor' ? 'hidden lg:block' : 'block'
+        }`}>
           <div className="flex items-center justify-between pb-3 border-b border-slate-800">
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
               <BookOpen className="w-4 h-4 text-indigo-400" />
@@ -478,7 +512,22 @@ export const CustomPracticeManager: React.FC<CustomPracticeManagerProps> = ({ ga
         </div>
 
         {/* Right Column: Deck Details & Question Editor (8 Cols) */}
-        <div className="lg:col-span-8 bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-6">
+        <div className={`lg:col-span-8 bg-slate-900/90 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-xl space-y-6 ${
+          mobileTab === 'library' ? 'hidden lg:block' : 'block'
+        }`}>
+          {/* Back to library button on mobile */}
+          <div className="lg:hidden flex items-center justify-between pb-3 border-b border-slate-800">
+            <button
+              type="button"
+              onClick={() => setMobileTab('library')}
+              className="text-xs font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1.5 cursor-pointer"
+            >
+              <span>← Back to Decks Library</span>
+            </button>
+            <span className="text-[11px] font-mono text-slate-400">
+              {selectedDeck ? selectedDeck.deck_id : 'New'}
+            </span>
+          </div>
           
           {/* Action Bar */}
           <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-800">
