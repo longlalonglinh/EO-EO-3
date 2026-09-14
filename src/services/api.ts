@@ -777,9 +777,9 @@ export function prefetchExam(
       }
     } catch (e) {}
 
-    // 3. Check built-in default
+    // 3. Check built-in default (STRICT exact code match only)
     const foundDefault = DEFAULT_EXAMS.find(
-      (ex) => ex.exam_code.toUpperCase() === cleanCode || cleanCode.includes(ex.exam_code.toUpperCase())
+      (ex) => ex.exam_code.trim().toUpperCase() === cleanCode
     );
     if (foundDefault) {
       const standardized = standardizeExamData(foundDefault, cleanCode);
@@ -900,9 +900,9 @@ export async function fetchExam(
     console.warn('Error reading from localStorage:', e);
   }
 
-  // Tier 5: Built-In Default Exams Repository (~0.1ms)
+  // Tier 5: Built-In Default Exams Repository (~0.1ms) - STRICT EXACT MATCH ONLY
   const foundDefault = DEFAULT_EXAMS.find(
-    (ex) => ex.exam_code.toUpperCase() === cleanCode || cleanCode.includes(ex.exam_code.toUpperCase())
+    (ex) => ex.exam_code.trim().toUpperCase() === cleanCode
   );
   if (foundDefault) {
     const standardized = standardizeExamData(foundDefault, cleanCode);
@@ -956,15 +956,11 @@ export async function fetchExam(
     }
   }
 
-  // Tier 7: Safe Fallback Template so student is NEVER blocked
-  const fallbackDefault = DEFAULT_EXAMS[0];
-  if (fallbackDefault) {
-    const standardized = standardizeExamData(fallbackDefault, cleanCode);
-    examMemoryCache.set(cleanCode, standardized);
-    return { success: true, exam: standardized, source: 'default' };
-  }
-
-  return { success: false, error: 'No questions found and no fallback data available.' };
+  // Tier 7: If the exam code was not found anywhere (not in defaults, IDB, LocalStorage, or GAS)
+  return { 
+    success: false, 
+    error: `Không tìm thấy bộ đề thi với mã [${cleanCode}] trên hệ thống. Vui lòng kiểm tra lại mã đề hoặc liên hệ giám thị/giáo viên.` 
+  };
 }
 
 /**

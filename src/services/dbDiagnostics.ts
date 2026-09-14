@@ -84,19 +84,17 @@ export function extractQuestionsFromRawResponse(raw: any, targetCode?: string): 
     protocol = 'split_skill_arrays';
   }
 
-  // If targetCode specified and items have exam_code, filter or keep all if matching
+  // If targetCode specified and items have exam_code, strictly filter to matching items only
   if (targetCode && questions.length > 0) {
     const upperTarget = targetCode.trim().toUpperCase();
-    const hasExamCodeField = questions.some(q => (q as any).exam_code);
+    const hasExamCodeField = questions.some(q => (q as any).exam_code !== undefined && (q as any).exam_code !== null);
     if (hasExamCodeField) {
       const filtered = questions.filter(q => {
         const code = String((q as any).exam_code || '').trim().toUpperCase();
-        return code === upperTarget || code === '';
+        return code === upperTarget;
       });
-      // Only replace if matching items were found, otherwise keep questions
-      if (filtered.length > 0) {
-        questions = filtered;
-      }
+      // Strictly assign filtered questions (if 0 match, it accurately means 0 questions for this exam code)
+      questions = filtered;
     }
   }
 

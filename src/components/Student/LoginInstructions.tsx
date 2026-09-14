@@ -27,6 +27,8 @@ interface LoginInstructionsProps {
   onOpenDiagnostics?: () => void;
   isLoadingExam?: boolean;
   gasUrl?: string;
+  loginError?: string | null;
+  onClearLoginError?: () => void;
 }
 
 export const LoginInstructions: React.FC<LoginInstructionsProps> = ({ 
@@ -35,7 +37,9 @@ export const LoginInstructions: React.FC<LoginInstructionsProps> = ({
   onOpenPracticeHub,
   onOpenDiagnostics,
   isLoadingExam = false,
-  gasUrl = DEFAULT_API_URL
+  gasUrl = DEFAULT_API_URL,
+  loginError = null,
+  onClearLoginError
 }) => {
   const [sbd, setSbd] = useState('');
   const [examCode, setExamCode] = useState('IELTS01');
@@ -144,10 +148,10 @@ export const LoginInstructions: React.FC<LoginInstructionsProps> = ({
               </div>
             </div>
 
-            {errorMsg && (
+            {(errorMsg || loginError) && (
               <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-800 flex items-center space-x-2 animate-shake font-medium">
                 <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-                <span>{errorMsg}</span>
+                <span>{errorMsg || loginError}</span>
               </div>
             )}
 
@@ -176,19 +180,59 @@ export const LoginInstructions: React.FC<LoginInstructionsProps> = ({
 
               {/* Exam Code */}
               <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-[#3C2A63]">
-                  Test Code / Practice Set <span className="text-rose-500">*</span>
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-[#3C2A63]">
+                    Test Code / Practice Set <span className="text-rose-500">*</span>
+                  </label>
+                  <span className="text-[10px] text-[#7C68A5]">Khớp chính xác mã đề</span>
+                </div>
                 <div className="relative">
                   <input
                     type="text"
                     value={examCode}
-                    onChange={(e) => setExamCode(e.target.value)}
-                    placeholder="e.g., IELTS01, ON_TAP_01, VOCAB_B2..."
+                    onChange={(e) => {
+                      setExamCode(e.target.value);
+                      if (onClearLoginError) onClearLoginError();
+                    }}
+                    placeholder="e.g., IELTS01, TEST01, ON_TAP_01..."
                     className="w-full pl-10 pr-4 py-3 bg-[#F5F2F9] border border-purple-200 rounded-2xl text-sm text-[#3C2A63] placeholder-[#7C68A5] focus:outline-none focus:border-[#6B51A5] transition-all font-mono font-bold"
                     required
                   />
                   <SlidersHorizontal className="w-4 h-4 text-[#7C68A5] absolute left-3.5 top-3.5 pointer-events-none" />
+                </div>
+                <div className="flex items-center gap-1.5 pt-1 text-[11px] text-[#7C68A5] flex-wrap">
+                  <span className="font-semibold text-[#503A7A]">Đề mẫu có sẵn:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExamCode('IELTS01');
+                      if (onClearLoginError) onClearLoginError();
+                    }}
+                    className="px-2 py-0.5 rounded-lg bg-purple-50 text-[#6B51A5] border border-purple-200 hover:bg-purple-100 font-mono font-bold text-[11px] transition cursor-pointer"
+                  >
+                    IELTS01
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExamCode('TEST01');
+                      if (onClearLoginError) onClearLoginError();
+                    }}
+                    className="px-2 py-0.5 rounded-lg bg-purple-50 text-[#6B51A5] border border-purple-200 hover:bg-purple-100 font-mono font-bold text-[11px] transition cursor-pointer"
+                  >
+                    TEST01
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExamCode('ON_TAP_01');
+                      setSelectedMode('PRACTICE');
+                      if (onClearLoginError) onClearLoginError();
+                    }}
+                    className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 font-mono font-bold text-[11px] transition cursor-pointer"
+                  >
+                    ON_TAP_01
+                  </button>
                 </div>
               </div>
 

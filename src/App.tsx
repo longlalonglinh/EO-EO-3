@@ -205,6 +205,7 @@ export default function App() {
   };
 
   const [isLoadingExam, setIsLoadingExam] = useState(false);
+  const [loginErrorMessage, setLoginErrorMessage] = useState<string | null>(null);
 
   // User Responses State
   const [userAnswers, setUserAnswers] = useState<Record<string, string>>({});
@@ -394,8 +395,10 @@ export default function App() {
     setSubmissionId(subId);
 
     setIsLoadingExam(true);
+    setLoginErrorMessage(null);
 
     let finalExamData: ExamData | null = null;
+    let fetchErrorMessage = '';
 
     try {
       const fetchResult = await fetchExam(gasUrl, cleanCode);
@@ -410,18 +413,24 @@ export default function App() {
           setSkillNotice(`ℹ️ Tải bộ đề chuẩn [${cleanCode}] (${totalCount} câu hỏi).`);
         }
         setTimeout(() => setSkillNotice(null), 5000);
+      } else if (fetchResult.error) {
+        fetchErrorMessage = fetchResult.error;
       }
-    } catch (err) {
-      console.warn('Could not fetch exam from API, using standard template:', err);
+    } catch (err: any) {
+      console.warn('Could not fetch exam from API:', err);
+      fetchErrorMessage = err?.message || 'Lỗi khi tải đề thi từ hệ thống.';
     }
 
     if (!finalExamData) {
-      finalExamData = formatRawExamToExamData(DEFAULT_EXAMS[0] || SAMPLE_EXAM, cleanCode);
-      finalExamData.exam_code = cleanCode;
-      setSkillNotice(`ℹ️ Hiển thị câu hỏi chuẩn cho mã đề [${cleanCode}].`);
-      setTimeout(() => setSkillNotice(null), 5000);
+      setIsLoadingExam(false);
+      const notFoundMsg = fetchErrorMessage || `Không tìm thấy mã đề [${cleanCode}] trên hệ thống hoặc Google Sheets. Vui lòng kiểm tra lại mã đề chính xác (ví dụ: IELTS01, TEST01, ON_TAP_01).`;
+      setLoginErrorMessage(notFoundMsg);
+      setSkillNotice(`⚠️ ${notFoundMsg}`);
+      setTimeout(() => setSkillNotice(null), 7000);
+      return;
     }
 
+    setLoginErrorMessage(null);
     handleSetExamData(finalExamData);
     setIsLoadingExam(false);
     setIsLoggedIn(true);
@@ -1176,6 +1185,8 @@ function doPost(e) {
                   onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
                   isLoadingExam={isLoadingExam}
                   gasUrl={gasUrl}
+                  loginError={loginErrorMessage}
+                  onClearLoginError={() => setLoginErrorMessage(null)}
                 />
 
                 {/* Instant Entry Progress Modal (if downloading fresh exam on cache miss) */}
