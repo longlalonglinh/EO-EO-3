@@ -122,6 +122,24 @@ export async function getAllExamsFromIndexedDB(): Promise<ExamData[]> {
 }
 
 /**
+ * Delete Exam by exam_code from IndexedDB
+ */
+export async function deleteExamFromIndexedDB(examCode: string): Promise<void> {
+  try {
+    const db = await openIndexedDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('exams', 'readwrite');
+      const store = tx.objectStore('exams');
+      const req = store.delete(examCode);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  } catch (err) {
+    console.warn('deleteExamFromIndexedDB failed:', err);
+  }
+}
+
+/**
  * Save submission to IndexedDB
  */
 export async function saveSubmissionToIndexedDB(submission: SubmissionRecord): Promise<void> {

@@ -40,7 +40,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 
-import { DEFAULT_API_URL, fetchExam, prefetchExam, submitExamPayload } from './services/api';
+import { DEFAULT_API_URL, fetchExam, prefetchExam, submitExamPayload, clearExamCache } from './services/api';
 import { gradeExamAnswers } from './services/answerScoring';
 import { getCurrentAnswersFromIndexedDB, getWritingDraftFromIndexedDB } from './services/indexedDb';
 import { DEFAULT_EXAMS } from './data/defaultExams';
@@ -423,7 +423,8 @@ export default function App() {
 
     if (!finalExamData) {
       setIsLoadingExam(false);
-      const notFoundMsg = fetchErrorMessage || `Exam not found: No test paper found for code [${cleanCode}]. Please check your test code or contact your exam invigilator.`;
+      clearExamCache(cleanCode).catch(() => {});
+      const notFoundMsg = fetchErrorMessage || `Exam not found: No test paper found for code [${cleanCode}]. Please check your test code, switch to Practice Mode if this is a writing drill (e.g. WT codes), or tap Force Resync.`;
       setLoginErrorMessage(notFoundMsg);
       setSkillNotice(`⚠️ ${notFoundMsg}`);
       setTimeout(() => setSkillNotice(null), 7000);
@@ -451,14 +452,43 @@ export default function App() {
       }
     }
 
-    // Intelligently route to Listening or Reading depending on available questions
+    // Intelligently route to Listening, Reading, or Writing depending on available questions/tasks
     if (finalExamData.listening_questions && finalExamData.listening_questions.length > 0) {
       setCurrentModule('listening');
     } else if (finalExamData.reading_questions && finalExamData.reading_questions.length > 0) {
       setCurrentModule('reading');
       setCompletedSkills({ listening: true, reading: false, writing: false });
+    } else if (finalExamData.writing_task1_prompt || finalExamData.writing_task2_prompt) {
+      // Writing-only exam or practice task (e.g., WT1003)
+      setCurrentModule('writing');
+      setCompletedSkills({ listening: true, reading: true, writing: false });
     } else {
       setCurrentModule('reading');
+    }
+  };
+
+  // Force Resync test directly from remote server and bypass local caches
+  const handleForceResyncExam = async (codeToResync: string) => {
+    const cleanCode = (codeToResync || examCode || 'TEST01').trim().toUpperCase();
+    setIsLoadingExam(true);
+    setLoginErrorMessage(null);
+    setSkillNotice(`🔄 Force resyncing test [${cleanCode}] from server...`);
+    try {
+      await clearExamCache(cleanCode);
+      const res = await fetchExam(gasUrl, cleanCode, true);
+      if (res.success && res.exam) {
+        handleSetExamData(res.exam);
+        setSkillNotice(`✅ Successfully synchronized [${cleanCode}] fresh from Google Sheets!`);
+        setTimeout(() => setSkillNotice(null), 5000);
+      } else {
+        const msg = res.error || `Could not find test paper [${cleanCode}] on Google Sheets.`;
+        setLoginErrorMessage(msg);
+        setSkillNotice(`⚠️ ${msg}`);
+      }
+    } catch (e: any) {
+      setLoginErrorMessage(e?.message || 'Resynchronization failed.');
+    } finally {
+      setIsLoadingExam(false);
     }
   };
 
@@ -1183,6 +1213,8 @@ function doPost(e) {
                   onLogin={handleLogin} 
                   onSwitchToAdmin={() => setActiveView('admin')}
                   onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
+                  onOpenPracticeHub={() => handleLogin('HV01', 'ON_TAP_01', 'PRACTICE', false)}
+                  onForceResync={handleForceResyncExam}
                   isLoadingExam={isLoadingExam}
                   gasUrl={gasUrl}
                   loginError={loginErrorMessage}

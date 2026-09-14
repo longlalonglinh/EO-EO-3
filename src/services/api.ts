@@ -14,6 +14,7 @@ import {
   saveExamToIndexedDB, 
   getExamFromIndexedDB, 
   getAllExamsFromIndexedDB,
+  deleteExamFromIndexedDB,
   saveSubmissionToIndexedDB, 
   getAllSubmissionsFromIndexedDB, 
   saveCheatLogToIndexedDB, 
@@ -702,17 +703,24 @@ export function triggerBackgroundRevalidation(apiUrl: string, cleanCode: string)
       if (res.ok) {
         const raw = await res.json();
         const extracted = extractQuestionsFromRawResponse(raw, cleanCode);
-        if (extracted.questions && extracted.questions.length > 0) {
-          const meta = extracted.meta || {};
+        const meta = extracted.meta || {};
+        const hasQuestions = extracted.questions && extracted.questions.length > 0;
+        const hasWritingPrompts = Boolean(
+          meta.writing_task1_prompt || meta.writing_task2_prompt ||
+          raw.writing_task1_prompt || raw.writing_task2_prompt ||
+          raw.exam?.writing_task1_prompt || raw.exam?.writing_task2_prompt
+        );
+
+        if (hasQuestions || hasWritingPrompts) {
           const rawExamObj: ExamData = {
             exam_code: cleanCode,
-            title: meta.title || `IELTS Examination - ${cleanCode}`,
-            audio_url: meta.audio_url || '',
-            passages: meta.passages || [],
-            questions: extracted.questions,
-            writing_task1_prompt: meta.writing_task1_prompt || '',
-            writing_task1_image: meta.writing_task1_image || '',
-            writing_task2_prompt: meta.writing_task2_prompt || ''
+            title: meta.title || raw.title || raw.exam?.title || `IELTS Examination - ${cleanCode}`,
+            audio_url: meta.audio_url || raw.audio_url || raw.exam?.audio_url || '',
+            passages: meta.passages || raw.passages || raw.exam?.passages || [],
+            questions: extracted.questions || [],
+            writing_task1_prompt: meta.writing_task1_prompt || raw.writing_task1_prompt || raw.exam?.writing_task1_prompt || '',
+            writing_task1_image: meta.writing_task1_image || raw.writing_task1_image || raw.exam?.writing_task1_image || '',
+            writing_task2_prompt: meta.writing_task2_prompt || raw.writing_task2_prompt || raw.exam?.writing_task2_prompt || ''
           };
 
           const fresh = standardizeExamData(rawExamObj, cleanCode);
@@ -804,17 +812,24 @@ export function prefetchExam(
         if (res.ok) {
           const raw = await res.json();
           const extracted = extractQuestionsFromRawResponse(raw, cleanCode);
-          if (extracted.questions && extracted.questions.length > 0) {
-            const meta = extracted.meta || {};
+          const meta = extracted.meta || {};
+          const hasQuestions = extracted.questions && extracted.questions.length > 0;
+          const hasWritingPrompts = Boolean(
+            meta.writing_task1_prompt || meta.writing_task2_prompt ||
+            raw.writing_task1_prompt || raw.writing_task2_prompt ||
+            raw.exam?.writing_task1_prompt || raw.exam?.writing_task2_prompt
+          );
+
+          if (hasQuestions || hasWritingPrompts) {
             const rawExamObj: ExamData = {
               exam_code: cleanCode,
-              title: meta.title || `IELTS Examination - ${cleanCode}`,
-              audio_url: meta.audio_url || '',
-              passages: meta.passages || [],
-              questions: extracted.questions,
-              writing_task1_prompt: meta.writing_task1_prompt || '',
-              writing_task1_image: meta.writing_task1_image || '',
-              writing_task2_prompt: meta.writing_task2_prompt || ''
+              title: meta.title || raw.title || raw.exam?.title || `IELTS Examination - ${cleanCode}`,
+              audio_url: meta.audio_url || raw.audio_url || raw.exam?.audio_url || '',
+              passages: meta.passages || raw.passages || raw.exam?.passages || [],
+              questions: extracted.questions || [],
+              writing_task1_prompt: meta.writing_task1_prompt || raw.writing_task1_prompt || raw.exam?.writing_task1_prompt || '',
+              writing_task1_image: meta.writing_task1_image || raw.writing_task1_image || raw.exam?.writing_task1_image || '',
+              writing_task2_prompt: meta.writing_task2_prompt || raw.writing_task2_prompt || raw.exam?.writing_task2_prompt || ''
             };
             const standardized = standardizeExamData(rawExamObj, cleanCode);
             examMemoryCache.set(cleanCode, standardized);
@@ -841,21 +856,54 @@ export function prefetchExam(
  * Ultra-fast Exam Fetching with Cache-First & Stale-While-Revalidate architecture.
  * Loads in ~0ms if in-memory, ~2ms if in IndexedDB/LocalStorage, or resolves prefetch.
  */
+/**
+ * Purge cached exam entry from memory, IndexedDB, and LocalStorage to force clean re-synchronization
+ */
+export async function clearExamCache(examCode: string): Promise<void> {
+  const cleanCode = (examCode || '').trim().toUpperCase();
+  if (!cleanCode) return;
+  examMemoryCache.delete(cleanCode);
+  inFlightExamFetches.delete(cleanCode);
+  try {
+    await deleteExamFromIndexedDB(cleanCode);
+  } catch (e) {}
+  try {
+    const localRaw = localStorage.getItem('ielts_saved_exams');
+    if (localRaw) {
+      const arr = JSON.parse(localRaw);
+      if (Array.isArray(arr)) {
+        const filtered = arr.filter((ex: any) => (ex?.exam_code || '').toUpperCase() !== cleanCode);
+        localStorage.setItem('ielts_saved_exams', JSON.stringify(filtered));
+      }
+    }
+  } catch (e) {}
+}
+
+/**
+ * Ultra-fast Exam Fetching with Cache-First & Stale-While-Revalidate architecture.
+ * Loads in ~0ms if in-memory, ~2ms if in IndexedDB/LocalStorage, or resolves prefetch.
+ * Supports forceFresh to bypass local cache and query live Google Apps Script endpoint.
+ */
 export async function fetchExam(
   apiUrl: string, 
-  examCode: string
+  examCode: string,
+  forceFresh: boolean = false
 ): Promise<{ success: boolean; exam?: ExamData; error?: string; source?: 'gas' | 'idb' | 'local' | 'default' | 'memory' }> {
   const cleanCode = (examCode || 'TEST01').trim().toUpperCase();
 
+  if (forceFresh) {
+    await clearExamCache(cleanCode);
+  }
+
   // Tier 1: In-Memory Cache (Instant ~0ms)
-  if (examMemoryCache.has(cleanCode)) {
+  if (!forceFresh && examMemoryCache.has(cleanCode)) {
     const cached = examMemoryCache.get(cleanCode)!;
     triggerBackgroundRevalidation(apiUrl, cleanCode);
     return { success: true, exam: cached, source: 'memory' };
   }
 
   // Tier 2: Check ongoing prefetch with quick 600ms grace period
-  if (inFlightExamFetches.has(cleanCode)) {
+  if (!forceFresh && inFlightExamFetches.has(cleanCode)) {
     try {
       const fastResult = await Promise.race([
         inFlightExamFetches.get(cleanCode)!,
@@ -868,36 +916,40 @@ export async function fetchExam(
   }
 
   // Tier 3: IndexedDB Cache (~2-5ms)
-  try {
-    const idbExam = await getExamFromIndexedDB(cleanCode);
-    if (idbExam) {
-      const standardized = standardizeExamData(idbExam, cleanCode);
-      examMemoryCache.set(cleanCode, standardized);
-      triggerBackgroundRevalidation(apiUrl, cleanCode);
-      return { success: true, exam: standardized, source: 'idb' };
+  if (!forceFresh) {
+    try {
+      const idbExam = await getExamFromIndexedDB(cleanCode);
+      if (idbExam) {
+        const standardized = standardizeExamData(idbExam, cleanCode);
+        examMemoryCache.set(cleanCode, standardized);
+        triggerBackgroundRevalidation(apiUrl, cleanCode);
+        return { success: true, exam: standardized, source: 'idb' };
+      }
+    } catch (e) {
+      console.warn('Error reading from IndexedDB:', e);
     }
-  } catch (e) {
-    console.warn('Error reading from IndexedDB:', e);
   }
 
   // Tier 4: Saved LocalStorage Exams (~1-2ms)
-  try {
-    const localExamsRaw = localStorage.getItem('ielts_saved_exams');
-    if (localExamsRaw) {
-      const localList = JSON.parse(localExamsRaw);
-      if (Array.isArray(localList)) {
-        const foundLocal = localList.find((ex: any) => ex.exam_code?.toUpperCase() === cleanCode);
-        if (foundLocal) {
-          const standardized = standardizeExamData(foundLocal, cleanCode);
-          examMemoryCache.set(cleanCode, standardized);
-          saveExamToIndexedDB(standardized).catch(() => {});
-          triggerBackgroundRevalidation(apiUrl, cleanCode);
-          return { success: true, exam: standardized, source: 'local' };
+  if (!forceFresh) {
+    try {
+      const localExamsRaw = localStorage.getItem('ielts_saved_exams');
+      if (localExamsRaw) {
+        const localList = JSON.parse(localExamsRaw);
+        if (Array.isArray(localList)) {
+          const foundLocal = localList.find((ex: any) => ex.exam_code?.toUpperCase() === cleanCode);
+          if (foundLocal) {
+            const standardized = standardizeExamData(foundLocal, cleanCode);
+            examMemoryCache.set(cleanCode, standardized);
+            saveExamToIndexedDB(standardized).catch(() => {});
+            triggerBackgroundRevalidation(apiUrl, cleanCode);
+            return { success: true, exam: standardized, source: 'local' };
+          }
         }
       }
+    } catch (e) {
+      console.warn('Error reading from localStorage:', e);
     }
-  } catch (e) {
-    console.warn('Error reading from localStorage:', e);
   }
 
   // Tier 5: Built-In Default Exams Repository (~0.1ms) - STRICT EXACT MATCH ONLY
@@ -912,43 +964,56 @@ export async function fetchExam(
     return { success: true, exam: standardized, source: 'default' };
   }
 
-  // Tier 6: Cache Miss - Direct targeted GAS Fetch (Single request, 3.8s timeout)
+  // Tier 6: Cache Miss or forceFresh - Direct targeted GAS Fetch (Single request, 4.5s timeout)
   if (apiUrl && !apiUrl.includes('mock_ielts_exam_system_gas_url') && !apiUrl.includes('AKfycbx_mock')) {
     try {
-      const fetchUrl = `${apiUrl}?action=get_exam&exam_code=${encodeURIComponent(cleanCode)}`;
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3800);
-      const res = await fetch(fetchUrl, {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' },
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
+      const endpoints = [
+        `${apiUrl}?action=get_exam&exam_code=${encodeURIComponent(cleanCode)}&_t=${Date.now()}`,
+        `${apiUrl}?action=getExam&exam_code=${encodeURIComponent(cleanCode)}&_t=${Date.now()}`
+      ];
 
-      if (res.ok) {
-        const raw = await res.json();
-        const extracted = extractQuestionsFromRawResponse(raw, cleanCode);
-        if (extracted.questions && extracted.questions.length > 0) {
+      for (const fetchUrl of endpoints) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4500);
+        const res = await fetch(fetchUrl, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          const raw = await res.json();
+          const extracted = extractQuestionsFromRawResponse(raw, cleanCode);
           const meta = extracted.meta || {};
-          const rawExamObj: ExamData = {
-            exam_code: cleanCode,
-            title: meta.title || `IELTS Examination - ${cleanCode}`,
-            audio_url: meta.audio_url || '',
-            passages: meta.passages || [],
-            questions: extracted.questions,
-            writing_task1_prompt: meta.writing_task1_prompt || '',
-            writing_task1_image: meta.writing_task1_image || '',
-            writing_task2_prompt: meta.writing_task2_prompt || ''
-          };
+          const hasQuestions = extracted.questions && extracted.questions.length > 0;
+          const hasWritingPrompts = Boolean(
+            meta.writing_task1_prompt || meta.writing_task2_prompt ||
+            raw.writing_task1_prompt || raw.writing_task2_prompt ||
+            raw.exam?.writing_task1_prompt || raw.exam?.writing_task2_prompt
+          );
 
-          const standardized = standardizeExamData(rawExamObj, cleanCode);
-          examMemoryCache.set(cleanCode, standardized);
-          await saveExamToIndexedDB(standardized);
-          try {
-            localStorage.setItem('ielts_current_exam', JSON.stringify(standardized));
-          } catch (e) {}
+          if (hasQuestions || hasWritingPrompts) {
+            const rawExamObj: ExamData = {
+              exam_code: cleanCode,
+              title: meta.title || raw.title || raw.exam?.title || `IELTS Examination - ${cleanCode}`,
+              audio_url: meta.audio_url || raw.audio_url || raw.exam?.audio_url || '',
+              passages: meta.passages || raw.passages || raw.exam?.passages || [],
+              questions: extracted.questions || [],
+              writing_task1_prompt: meta.writing_task1_prompt || raw.writing_task1_prompt || raw.exam?.writing_task1_prompt || '',
+              writing_task1_image: meta.writing_task1_image || raw.writing_task1_image || raw.exam?.writing_task1_image || '',
+              writing_task2_prompt: meta.writing_task2_prompt || raw.writing_task2_prompt || raw.exam?.writing_task2_prompt || ''
+            };
 
-          return { success: true, exam: standardized, source: 'gas' };
+            const standardized = standardizeExamData(rawExamObj, cleanCode);
+            examMemoryCache.set(cleanCode, standardized);
+            await saveExamToIndexedDB(standardized);
+            try {
+              localStorage.setItem('ielts_current_exam', JSON.stringify(standardized));
+            } catch (e) {}
+
+            return { success: true, exam: standardized, source: 'gas' };
+          }
         }
       }
     } catch (err) {
@@ -956,10 +1021,13 @@ export async function fetchExam(
     }
   }
 
-  // Tier 7: If the exam code was not found anywhere (not in defaults, IDB, LocalStorage, or GAS)
+  // Tier 7: Invalidate cache for this code so failed state doesn't block later attempts
+  examMemoryCache.delete(cleanCode);
+
+  // Return clean, informative error message in English
   return { 
     success: false, 
-    error: `Exam not found: No test paper found for code [${cleanCode}]. Please verify your test code or contact your supervisor.` 
+    error: `Exam not found: No test paper found for code [${cleanCode}]. Please check your test code, switch to Practice Mode if this is a writing drill (e.g. WT codes), or tap Force Resync.` 
   };
 }
 

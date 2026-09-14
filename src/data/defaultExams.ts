@@ -1225,6 +1225,34 @@ Designing transparent explainable AI (XAI) frameworks is therefore not merely a 
         max_score: 1
       }
     ]
+  },
+  {
+    exam_code: 'WT1003',
+    title: 'IELTS Writing Task 1 & 2 Practice Paper (Set WT1003)',
+    test_type: 'PRACTICE',
+    duration_mins: 60,
+    listening_duration_mins: 0,
+    reading_duration_mins: 0,
+    writing_duration_mins: 60,
+    passages: [],
+    writing_task1_prompt: 'The charts below show the comparison of water usage for domestic, industrial, and agricultural purposes across different world regions. Summarise the information by selecting and reporting the main features, and make comparisons where relevant. Write at least 150 words.',
+    writing_task1_image: 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=800&auto=format&fit=crop&q=60',
+    writing_task2_prompt: 'In many countries, an increasing number of students choose to take a gap year before entering university, either to work or travel. Do you think the advantages of taking a gap year outweigh the disadvantages? Give reasons for your answer and include relevant examples. Write at least 250 words.',
+    questions: []
+  },
+  {
+    exam_code: 'WT1001',
+    title: 'IELTS Writing Task 1 & 2 Practice Paper (Set WT1001)',
+    test_type: 'PRACTICE',
+    duration_mins: 60,
+    listening_duration_mins: 0,
+    reading_duration_mins: 0,
+    writing_duration_mins: 60,
+    passages: [],
+    writing_task1_prompt: 'The graph below shows the proportion of energy generated from renewable sources in four European nations between 2000 and 2020. Summarise the information by selecting and reporting the main features, and make comparisons where relevant. Write at least 150 words.',
+    writing_task1_image: 'https://images.unsplash.com/photo-1497435334941-8c899ee9e8e9?w=800&auto=format&fit=crop&q=60',
+    writing_task2_prompt: 'Some people think that universities should provide graduates with the knowledge and skills needed in the workplace. Others think that the true function of a university should be to give access to knowledge for its own sake, regardless of whether the course is useful to an employer. What, in your opinion, should be the main function of a university? Write at least 250 words.',
+    questions: []
   }
 ];
 
