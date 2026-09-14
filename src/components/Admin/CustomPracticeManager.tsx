@@ -476,11 +476,11 @@ export const CustomPracticeManager: React.FC<CustomPracticeManagerProps> = ({ ga
           </div>
 
           <div className="space-y-2.5 max-h-[700px] overflow-y-auto pr-1">
-            {decks.map(deck => {
+            {decks.map((deck, idx) => {
               const isSelected = selectedDeck?.deck_id === deck.deck_id;
               return (
                 <div
-                  key={deck.deck_id}
+                  key={`${deck.deck_id || 'deck'}-${idx}`}
                   onClick={() => handleSelectDeck(deck)}
                   className={`p-3.5 rounded-2xl border transition cursor-pointer flex flex-col justify-between space-y-2 ${
                     isSelected
@@ -681,7 +681,7 @@ export const CustomPracticeManager: React.FC<CustomPracticeManagerProps> = ({ ga
             <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
               {cards.map((card, idx) => (
                 <div
-                  key={card.id || idx}
+                  key={`${card.id || 'card'}-${idx}`}
                   className="p-4 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-3 relative group"
                 >
                   <div className="flex items-center justify-between">

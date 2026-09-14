@@ -391,7 +391,7 @@ export default function App() {
       if (existingSubs) {
         try {
           const subsArr: SubmissionResponse[] = JSON.parse(existingSubs);
-          const found = subsArr.find(s => s.sbd === cleanSbd && s.exam_code === cleanCode);
+          const found = subsArr.find(s => String(s?.sbd ?? '') === cleanSbd && String(s?.exam_code ?? '').toUpperCase() === cleanCode.toUpperCase());
           if (found) {
             setSubmitResult(found);
             setCurrentModule('results');
@@ -454,7 +454,7 @@ export default function App() {
     // Retrieve cheat logs from LocalStorage
     const rawCheatLogs = localStorage.getItem('ielts_cheat_logs');
     const cheatLogs: CheatLog[] = rawCheatLogs ? JSON.parse(rawCheatLogs) : [];
-    const currentLogs = cheatLogs.filter(log => log.sbd === sbd && log.exam_code === examCode);
+    const currentLogs = cheatLogs.filter(log => String(log?.sbd ?? '') === String(sbd ?? '') && String(log?.exam_code ?? '').toUpperCase() === String(examCode ?? '').toUpperCase());
 
     const payload: SubmissionPayload = {
       submission_id: submissionId,
@@ -480,8 +480,17 @@ export default function App() {
     // Save submission locally
     const subsRaw = localStorage.getItem('ielts_student_submissions');
     const subsArr: SubmissionResponse[] = subsRaw ? JSON.parse(subsRaw) : [];
-    subsArr.unshift(serverResponse);
-    localStorage.setItem('ielts_student_submissions', JSON.stringify(subsArr));
+    if (!subsArr.some(s => s.submission_id === serverResponse.submission_id)) {
+      subsArr.unshift(serverResponse);
+    }
+    const seen = new Set<string>();
+    const cleanSubs = subsArr.filter(s => {
+      const id = String(s?.submission_id ?? '').trim();
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+    localStorage.setItem('ielts_student_submissions', JSON.stringify(cleanSubs));
 
     setSubmitResult(serverResponse);
     setIsSubmitting(false);

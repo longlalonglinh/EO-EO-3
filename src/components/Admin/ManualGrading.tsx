@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FileEdit, Copy, Check, Save, UserCheck, Send, Sparkles, Clock, ArrowLeft, ChevronRight, ListFilter } from 'lucide-react';
 import { SubmissionRecord, GradingForm } from '../../types';
-import { fetchSubmissions, saveWritingScore, DEFAULT_API_URL } from '../../services/api';
+import { fetchSubmissions, saveWritingScore, deduplicateSubmissions, DEFAULT_API_URL } from '../../services/api';
 import { formatSubmissionTime } from '../../utils/dateFormatter';
 
 interface ManualGradingProps {
@@ -31,13 +31,14 @@ export const ManualGrading: React.FC<ManualGradingProps> = ({ apiUrl, gasUrl }) 
     try {
       const res = await fetchSubmissions(effectiveApiUrl);
       if (res.success && res.data) {
-        setSubmissions(res.data);
+        const clean = deduplicateSubmissions(res.data);
+        setSubmissions(clean);
         // Default select first pending teacher record
-        const pending = res.data.find((s) => s.writing_status === 'PENDING_TEACHER');
+        const pending = clean.find((s) => s.writing_status === 'PENDING_TEACHER');
         if (pending) {
           setSelectedSub(pending);
-        } else if (res.data.length > 0) {
-          setSelectedSub(res.data[0]);
+        } else if (clean.length > 0) {
+          setSelectedSub(clean[0]);
         }
       }
     } catch (err) {
@@ -218,13 +219,13 @@ ${gradingForm.feedback || 'The essay meets task requirements. Focus on incorpora
                 No submissions found.
               </div>
             ) : (
-              filteredSubmissions.map((sub) => {
+              filteredSubmissions.map((sub, idx) => {
                 const isSelected = selectedSub?.submission_id === sub.submission_id;
                 const isPending = sub.writing_status === 'PENDING_TEACHER';
 
                 return (
                   <div
-                    key={sub.submission_id}
+                    key={`${sub.submission_id || 'sub'}-${idx}`}
                     onClick={() => handleSelectCandidate(sub)}
                     className={`p-3.5 sm:p-4 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
                       isSelected

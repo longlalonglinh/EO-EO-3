@@ -127,6 +127,54 @@ export async function fetchWithRetry(
 }
 
 /**
+ * Deduplicate and sanitize student submissions
+ */
+export function deduplicateSubmissions(list: SubmissionRecord[]): SubmissionRecord[] {
+  const seen = new Set<string>();
+  const result: SubmissionRecord[] = [];
+  list.forEach((sub, idx) => {
+    if (!sub) return;
+    const rawId = String(sub.submission_id ?? '').trim();
+    const id = (!rawId || rawId === '#ERROR!')
+      ? `sub_fallback_${String(sub.sbd || 'cand')}_${String(sub.exam_code || 'code')}_${idx}`
+      : rawId;
+
+    if (!seen.has(id)) {
+      seen.add(id);
+      result.push({
+        ...sub,
+        submission_id: id
+      });
+    }
+  });
+  return result;
+}
+
+/**
+ * Deduplicate and sanitize cheat logs
+ */
+export function deduplicateCheatLogs(list: CheatLog[]): CheatLog[] {
+  const seen = new Set<string>();
+  const result: CheatLog[] = [];
+  list.forEach((log, idx) => {
+    if (!log) return;
+    const rawId = String(log.log_id ?? '').trim();
+    const id = (!rawId || rawId === '#ERROR!')
+      ? `log_fallback_${String(log.sbd || 'cand')}_${String(log.exam_code || 'code')}_${idx}`
+      : rawId;
+
+    if (!seen.has(id)) {
+      seen.add(id);
+      result.push({
+        ...log,
+        log_id: id
+      });
+    }
+  });
+  return result;
+}
+
+/**
  * Fetch all student submissions with automatic retry and IndexedDB backup sync
  */
 export async function fetchSubmissions(
@@ -138,12 +186,7 @@ export async function fetchSubmissions(
   const idbData = await getAllSubmissionsFromIndexedDB();
 
   // Combine unique local & idb submissions
-  const cachedSubmissions: SubmissionRecord[] = [...localData];
-  idbData.forEach(idbSub => {
-    if (!cachedSubmissions.some(s => s.submission_id === idbSub.submission_id)) {
-      cachedSubmissions.push(idbSub);
-    }
-  });
+  const cachedSubmissions = deduplicateSubmissions([...localData, ...idbData]);
 
   if (!apiUrl || apiUrl.includes('mock_ielts_exam_system_gas_url') || apiUrl.includes('AKfycbx_mock')) {
     return { success: true, data: cachedSubmissions, source: 'idb' };
@@ -160,12 +203,7 @@ export async function fetchSubmissions(
       const rows = Array.isArray(result) ? result : (Array.isArray(result?.data) ? result.data : null);
       if (rows) {
         // Merge with local submissions to avoid losing offline attempts
-        const combined = [...rows];
-        cachedSubmissions.forEach(loc => {
-          if (!combined.some(rem => rem.submission_id === loc.submission_id)) {
-            combined.unshift(loc);
-          }
-        });
+        const combined = deduplicateSubmissions([...rows, ...cachedSubmissions]);
 
         // Backup newly synced submissions into IndexedDB & localStorage
         combined.forEach(sub => {
@@ -193,12 +231,7 @@ export async function fetchCheatLogs(
   const logsArr: CheatLog[] = localLogs ? JSON.parse(localLogs) : [];
   const idbLogs = await getAllCheatLogsFromIndexedDB();
 
-  const cachedLogs: CheatLog[] = [...logsArr];
-  idbLogs.forEach(log => {
-    if (!cachedLogs.some(l => l.log_id === log.log_id)) {
-      cachedLogs.push(log);
-    }
-  });
+  const cachedLogs = deduplicateCheatLogs([...logsArr, ...idbLogs]);
 
   if (!apiUrl || apiUrl.includes('mock_ielts_exam_system_gas_url') || apiUrl.includes('AKfycbx_mock')) {
     return { success: true, data: cachedLogs, source: 'idb' };
@@ -214,12 +247,7 @@ export async function fetchCheatLogs(
       const result = await response.json();
       const rows = Array.isArray(result) ? result : (Array.isArray(result?.data) ? result.data : null);
       if (rows) {
-        const combined = [...rows];
-        cachedLogs.forEach(loc => {
-          if (!combined.some(rem => rem.log_id === loc.log_id)) {
-            combined.unshift(loc);
-          }
-        });
+        const combined = deduplicateCheatLogs([...rows, ...cachedLogs]);
 
         // Backup to IndexedDB
         combined.forEach(log => {
@@ -463,8 +491,10 @@ export async function submitExamPayload(
   try {
     const existing = localStorage.getItem('ielts_student_submissions');
     const subsArr: SubmissionRecord[] = existing ? JSON.parse(existing) : [];
-    subsArr.unshift(record);
-    localStorage.setItem('ielts_student_submissions', JSON.stringify(subsArr));
+    if (!subsArr.some(s => s.submission_id === record.submission_id)) {
+      subsArr.unshift(record);
+    }
+    localStorage.setItem('ielts_student_submissions', JSON.stringify(deduplicateSubmissions(subsArr)));
   } catch (e) {
     console.warn('LocalStorage save failed, IndexedDB preserved:', e);
   }

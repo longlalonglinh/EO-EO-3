@@ -173,7 +173,7 @@ export const LoginSection: React.FC<LoginSectionProps> = ({
               <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                 {savedSubmissions.map((sub, idx) => (
                   <div
-                    key={sub.submission_id || idx}
+                    key={`${sub.submission_id || 'sub'}-${idx}`}
                     className="p-3 bg-slate-900/80 border border-slate-700/60 rounded-xl flex items-center justify-between text-xs hover:border-indigo-500/50 transition"
                   >
                     <div>

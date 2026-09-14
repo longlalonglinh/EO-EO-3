@@ -13,7 +13,7 @@ import {
   Table as TableIcon
 } from 'lucide-react';
 import { CheatLog, SubmissionRecord } from '../../types';
-import { fetchSubmissions, fetchCheatLogs, DEFAULT_API_URL } from '../../services/api';
+import { fetchSubmissions, fetchCheatLogs, deduplicateSubmissions, deduplicateCheatLogs, DEFAULT_API_URL } from '../../services/api';
 import { formatSubmissionTime } from '../../utils/dateFormatter';
 
 interface MonitoringDashboardProps {
@@ -41,13 +41,13 @@ export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({
       // Fetch submissions
       const subRes = await fetchSubmissions(effectiveApiUrl);
       if (subRes.success && subRes.data) {
-        setSubmissions(subRes.data);
+        setSubmissions(deduplicateSubmissions(subRes.data));
       }
 
       // Fetch cheat logs
       const logRes = await fetchCheatLogs(effectiveApiUrl);
       if (logRes.success && logRes.data) {
-        setCheatLogs(logRes.data);
+        setCheatLogs(deduplicateCheatLogs(logRes.data));
       }
     } catch (err) {
       console.error('Error fetching admin monitoring data:', err);
@@ -60,19 +60,23 @@ export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({
     loadData();
   }, [effectiveApiUrl]);
 
-  const filteredSubmissions = submissions.filter(
-    (s) =>
-      s.sbd.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.exam_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.submission_id.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const term = String(searchTerm || '').toLowerCase().trim();
 
-  const filteredLogs = cheatLogs.filter(
-    (l) =>
-      l.sbd.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      l.exam_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      l.violation_type.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredSubmissions = submissions.filter((s) => {
+    if (!term) return true;
+    const sbd = String(s?.sbd ?? '').toLowerCase();
+    const examCode = String(s?.exam_code ?? '').toLowerCase();
+    const subId = String(s?.submission_id ?? '').toLowerCase();
+    return sbd.includes(term) || examCode.includes(term) || subId.includes(term);
+  });
+
+  const filteredLogs = cheatLogs.filter((l) => {
+    if (!term) return true;
+    const sbd = String(l?.sbd ?? '').toLowerCase();
+    const examCode = String(l?.exam_code ?? '').toLowerCase();
+    const violation = String(l?.violation_type ?? '').toLowerCase();
+    return sbd.includes(term) || examCode.includes(term) || violation.includes(term);
+  });
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -184,9 +188,9 @@ export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({
                 No candidate submissions found matching your search.
               </div>
             ) : (
-              filteredSubmissions.map((sub) => (
+              filteredSubmissions.map((sub, idx) => (
                 <div 
-                  key={sub.submission_id}
+                  key={`${sub.submission_id || 'sub'}-${idx}`}
                   className="bg-white border border-purple-100/80 rounded-2xl p-4 shadow-sm hover:shadow-md transition space-y-3"
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -258,8 +262,8 @@ export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({
                       </td>
                     </tr>
                   ) : (
-                    filteredSubmissions.map((sub) => (
-                      <tr key={sub.submission_id} className="hover:bg-[#F8F6FC] transition-colors">
+                    filteredSubmissions.map((sub, idx) => (
+                      <tr key={`${sub.submission_id || 'sub'}-row-${idx}`} className="hover:bg-[#F8F6FC] transition-colors">
                         <td className="py-3 px-4 font-mono font-bold text-[#6B51A5]">
                           {sub.submission_id}
                         </td>
@@ -306,9 +310,9 @@ export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({
                 No proctoring violations recorded.
               </div>
             ) : (
-              filteredLogs.map((log) => (
+              filteredLogs.map((log, idx) => (
                 <div 
-                  key={log.log_id}
+                  key={`${log.log_id || 'log'}-${idx}`}
                   className="bg-white border border-rose-100 rounded-2xl p-4 shadow-sm space-y-2"
                 >
                   <div className="flex items-start justify-between">
@@ -355,8 +359,8 @@ export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({
                       </td>
                     </tr>
                   ) : (
-                    filteredLogs.map((log) => (
-                      <tr key={log.log_id} className="hover:bg-[#F8F6FC] transition-colors">
+                    filteredLogs.map((log, idx) => (
+                      <tr key={`${log.log_id || 'log'}-row-${idx}`} className="hover:bg-[#F8F6FC] transition-colors">
                         <td className="py-3 px-4 font-mono text-[#7C68A5]">{log.log_id}</td>
                         <td className="py-3 px-4 font-bold text-[#3C2A63]">{log.sbd}</td>
                         <td className="py-3 px-4 font-medium">{log.exam_code}</td>

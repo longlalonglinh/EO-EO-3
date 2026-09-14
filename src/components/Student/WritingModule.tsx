@@ -56,6 +56,7 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
   
   // Image zoom modal
   const [isZoomOpen, setIsZoomOpen] = useState(false);
+  const cleanTask1Image = (task1Image && typeof task1Image === 'string' && task1Image.trim().length > 0) ? task1Image.trim() : null;
 
   // Split-view and small screen responsive states
   const [splitRatio, setSplitRatio] = useState<number>(45); // 45% left (prompt), 55% right (editor)
@@ -396,11 +397,11 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
               </div>
 
               {/* Task 1 Graphic / Chart Image Display */}
-              {task1Image && (
+              {cleanTask1Image && (
                 <div className="space-y-2">
                   <div className="relative group rounded-2xl overflow-hidden border border-purple-200/80 bg-white shadow-sm">
                     <img
-                      src={task1Image}
+                      src={cleanTask1Image}
                       alt="IELTS Writing Task 1 Diagram / Chart"
                       className="w-full max-h-80 object-contain bg-white cursor-pointer transition duration-200 group-hover:scale-[1.01]"
                       onClick={() => setIsZoomOpen(true)}
@@ -507,7 +508,7 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
       )}
 
       {/* Task 1 Image Zoom Modal (Student view only) */}
-      {isZoomOpen && task1Image && (
+      {isZoomOpen && cleanTask1Image && (
         <div 
           className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
           onClick={() => setIsZoomOpen(false)}
@@ -530,7 +531,7 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
               </button>
             </div>
             <img
-              src={task1Image}
+              src={cleanTask1Image}
               alt="Full Task 1 Diagram"
               className="max-w-full max-h-[75vh] object-contain rounded-xl"
               referrerPolicy="no-referrer"

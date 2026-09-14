@@ -350,12 +350,14 @@ export const Task1ImageUploader: React.FC<Task1ImageUploaderProps> = ({
 
           {/* Visual Image Preview */}
           <div className="relative group rounded-xl overflow-hidden border border-purple-100 bg-white max-h-72 flex items-center justify-center p-2">
-            <img
-              src={value}
-              alt="Task 1 Diagram Preview"
-              className="max-h-64 w-auto object-contain rounded-lg"
-              referrerPolicy="no-referrer"
-            />
+            {value && value.trim() ? (
+              <img
+                src={value.trim()}
+                alt="Task 1 Diagram Preview"
+                className="max-h-64 w-auto object-contain rounded-lg"
+                referrerPolicy="no-referrer"
+              />
+            ) : null}
             <button
               type="button"
               onClick={() => setIsPreviewOpen(true)}
@@ -474,12 +476,14 @@ export const Task1ImageUploader: React.FC<Task1ImageUploaderProps> = ({
               </button>
             </div>
             <div className="overflow-auto flex items-center justify-center max-h-[75vh]">
-              <img
-                src={value}
-                alt="Full Diagram Preview"
-                className="max-w-full h-auto object-contain rounded-xl"
-                referrerPolicy="no-referrer"
-              />
+              {value && value.trim() ? (
+                <img
+                  src={value.trim()}
+                  alt="Full Diagram Preview"
+                  className="max-w-full h-auto object-contain rounded-xl"
+                  referrerPolicy="no-referrer"
+                />
+              ) : null}
             </div>
           </div>
         </div>

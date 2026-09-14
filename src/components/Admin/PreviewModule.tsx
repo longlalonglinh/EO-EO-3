@@ -250,13 +250,13 @@ export const PreviewModule: React.FC<PreviewModuleProps> = ({
           </div>
 
           {/* Audio Stream Player */}
-          {exam.audio_url && (
+          {Boolean(exam.audio_url && exam.audio_url.trim()) && (
             <div className="bg-white border border-purple-100/80 rounded-3xl p-6 shadow-xl shadow-purple-950/5 space-y-3">
               <h3 className="text-xs font-extrabold text-[#6B51A5] uppercase tracking-wider flex items-center gap-2">
                 <Music className="w-4 h-4" />
                 <span>Audio Stream Player: {exam.audio_title || 'IELTS Listening Audio'}</span>
               </h3>
-              <audio controls className="w-full rounded-xl" src={exam.audio_url}>
+              <audio controls className="w-full rounded-xl" src={exam.audio_url.trim()}>
                 Your browser does not support audio.
               </audio>
             </div>
@@ -272,10 +272,10 @@ export const PreviewModule: React.FC<PreviewModuleProps> = ({
               <p className="text-xs text-[#3C2A63] leading-relaxed">
                 {exam.writing_task1_prompt || 'No Task 1 prompt defined.'}
               </p>
-              {exam.writing_task1_image && (
+              {Boolean(exam.writing_task1_image && exam.writing_task1_image.trim()) && (
                 <div className="mt-2 rounded-xl overflow-hidden border border-purple-100 max-h-40">
                   <img
-                    src={exam.writing_task1_image}
+                    src={exam.writing_task1_image.trim()}
                     alt="Task 1 Graph"
                     className="w-full h-full object-contain"
                     referrerPolicy="no-referrer"

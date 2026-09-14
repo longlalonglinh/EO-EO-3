@@ -666,11 +666,11 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
 
             {/* Jump buttons within current filtered view */}
             <div className="flex flex-wrap gap-1">
-              {displayedQuestions.map((q) => {
+              {displayedQuestions.map((q, idx) => {
                 const isAns = !!userAnswers[q.question_id] && userAnswers[q.question_id].trim() !== '';
                 return (
                   <button
-                    key={q.question_id}
+                    key={`${q.question_id || 'rq_nav'}-${idx}`}
                     type="button"
                     onClick={() => handleJumpToQuestion(q)}
                     className={`w-6 h-6 rounded-lg text-[10px] font-black transition cursor-pointer flex items-center justify-center ${
@@ -698,9 +698,9 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
                 </p>
               </div>
             ) : (
-              displayedQuestions.map((q) => (
+              displayedQuestions.map((q, idx) => (
                 <div
-                  key={q.question_id}
+                  key={`${q.question_id || 'rq'}-${idx}`}
                   id={`rq_box_${q.question_id}`}
                   className={`transition-all duration-300 rounded-3xl ${
                     highlightedQuestionId === q.question_id ? 'ring-4 ring-[#6B51A5] shadow-xl' : ''
@@ -739,13 +739,13 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
           {/* Center 40 Questions Grid */}
           <div className="flex-1 overflow-x-auto max-w-full pb-1">
             <div className="flex items-center gap-1 min-w-max justify-center">
-              {all40Questions.map((q) => {
+              {all40Questions.map((q, idx) => {
                 const isAnswered = !!userAnswers[q.question_id] && userAnswers[q.question_id].trim() !== '';
                 const isCurrentPassage = activePassageIndex === q.assignedPassage;
 
                 return (
                   <button
-                    key={q.question_id}
+                    key={`${q.question_id || 'all40'}-${idx}`}
                     type="button"
                     onClick={() => handleJumpToQuestion(q)}
                     className={`w-7 h-7 rounded-lg text-[11px] font-black transition-all cursor-pointer flex items-center justify-center ${

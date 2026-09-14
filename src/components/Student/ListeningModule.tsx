@@ -51,6 +51,8 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
   const [activePart, setActivePart] = useState<1 | 2 | 3 | 4>(1);
   const [resumeNotice, setResumeNotice] = useState<string | null>(null);
 
+  const cleanAudioUrl = (audioUrl && typeof audioUrl === 'string' && audioUrl.trim().length > 0) ? audioUrl.trim() : null;
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const maxAllowedTimeRef = useRef<number>(0);
   const lastSavedTimeRef = useRef<number>(0);
@@ -179,11 +181,11 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
       audio.removeEventListener('ended', onEnded);
       audio.removeEventListener('seeking', onSeeking);
     };
-  }, [testMode, examCode, candidateId]);
+  }, [testMode, examCode, candidateId, cleanAudioUrl]);
 
   // Requirement 4: Single Playthrough Audio Lock
   const handleStartAudio = () => {
-    if (!audioRef.current || hasEnded) return;
+    if (!audioRef.current || hasEnded || !cleanAudioUrl) return;
 
     if (testMode === 'TEST') {
       // Once started in TEST mode, audio plays continuously without pausing
@@ -260,13 +262,15 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
       {/* AUDIO PLAYER & ENFORCEMENT BANNER */}
       <div className="bg-white border border-purple-100/80 rounded-3xl p-5 shadow-xl shadow-purple-950/5 flex flex-col md:flex-row items-center justify-between gap-4">
         
-        {/* Hidden Audio Tag: controls={false} as mandated */}
-        <audio 
-          ref={audioRef} 
-          src={audioUrl} 
-          preload="auto" 
-          controls={false} 
-        />
+        {/* Hidden Audio Tag: controls={false} as mandated - rendered only when cleanAudioUrl exists */}
+        {cleanAudioUrl && (
+          <audio 
+            ref={audioRef} 
+            src={cleanAudioUrl} 
+            preload="auto" 
+            controls={false} 
+          />
+        )}
 
         {/* Playback Controls & Non-Seekable Progress */}
         <div className="flex items-center space-x-4 w-full md:w-auto flex-1 max-w-2xl">
@@ -276,16 +280,23 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
             <button
               type="button"
               onClick={handleStartAudio}
-              disabled={isPlaying || hasEnded}
+              disabled={!cleanAudioUrl || isPlaying || hasEnded}
               className={`px-5 py-3 rounded-2xl flex items-center gap-2 font-extrabold text-xs shadow-md transition ${
-                hasEnded
+                !cleanAudioUrl
+                  ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                  : hasEnded
                   ? 'bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300'
                   : isPlaying
                   ? 'bg-emerald-600 text-white cursor-default shadow-emerald-900/10'
                   : 'bg-[#6B51A5] hover:bg-[#503A7A] text-white cursor-pointer active:scale-95 shadow-purple-950/15'
               }`}
             >
-              {hasEnded ? (
+              {!cleanAudioUrl ? (
+                <>
+                  <Lock className="w-4 h-4 text-slate-400" />
+                  <span>No Audio File (Exam without Audio)</span>
+                </>
+              ) : hasEnded ? (
                 <>
                   <Lock className="w-4 h-4 text-slate-500" />
                   <span>Audio Finished (Single Playthrough Completed)</span>
@@ -306,10 +317,21 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
             <button
               type="button"
               onClick={handleStartAudio}
-              className="w-12 h-12 rounded-2xl bg-[#6B51A5] hover:bg-[#503A7A] text-white flex items-center justify-center shadow-lg shadow-purple-950/10 transition shrink-0 active:scale-95 cursor-pointer"
-              title={isPlaying ? 'Pause Audio' : 'Play Audio'}
+              disabled={!cleanAudioUrl}
+              className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg shadow-purple-950/10 transition shrink-0 ${
+                !cleanAudioUrl
+                  ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                  : 'bg-[#6B51A5] hover:bg-[#503A7A] text-white active:scale-95 cursor-pointer'
+              }`}
+              title={!cleanAudioUrl ? 'No audio track' : isPlaying ? 'Pause Audio' : 'Play Audio'}
             >
-              {isPlaying ? <Volume2 className="w-5 h-5 animate-pulse" /> : <Play className="w-5 h-5 ml-0.5 fill-current" />}
+              {!cleanAudioUrl ? (
+                <Lock className="w-5 h-5 text-slate-400" />
+              ) : isPlaying ? (
+                <Volume2 className="w-5 h-5 animate-pulse" />
+              ) : (
+                <Play className="w-5 h-5 ml-0.5 fill-current" />
+              )}
             </button>
           )}
 
@@ -424,7 +446,7 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
             const isFilled = Boolean(userAnswers[q.question_id]?.trim());
             return (
               <button
-                key={q.question_id}
+                key={`${q.question_id || 'lq_nav'}-${idx}`}
                 type="button"
                 onClick={() => {
                   const el = document.getElementById(`lq_box_${q.question_id}`);
@@ -475,7 +497,7 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
           <div className="space-y-5">
             {filteredQuestions.map((q, idx) => (
               <IELTSQuestionCard
-                key={q.question_id}
+                key={`${q.question_id || 'lq'}-${idx}`}
                 question={q}
                 questionNumber={idx + 1}
                 userAnswer={userAnswers[q.question_id] || ''}
