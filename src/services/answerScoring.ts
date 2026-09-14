@@ -96,18 +96,24 @@ export function isAnswerCorrect(
       return true;
     }
 
-    // Handle True / False / Not Given shortcuts
-    if (questionType === 'true_false_not_given' || normOption === 'true' || normOption === 'false' || normOption === 'not given') {
-      if (normOption === 'true' && (normUser === 't' || normUser === 'true')) return true;
-      if (normOption === 'false' && (normUser === 'f' || normUser === 'false')) return true;
-      if (normOption === 'not given' && (normUser === 'ng' || normUser === 'not given')) return true;
+    // Handle True / False / Not Given shortcuts (bidirectional T/F/NG vs TRUE/FALSE/NOT GIVEN)
+    if (
+      questionType === 'true_false_not_given' || 
+      ['true', 'false', 'not given', 't', 'f', 'ng'].includes(normOption)
+    ) {
+      if ((normOption === 'true' || normOption === 't') && (normUser === 't' || normUser === 'true')) return true;
+      if ((normOption === 'false' || normOption === 'f') && (normUser === 'f' || normUser === 'false')) return true;
+      if ((normOption === 'not given' || normOption === 'ng') && (normUser === 'ng' || normUser === 'not given')) return true;
     }
 
-    // Handle Yes / No / Not Given shortcuts
-    if (questionType === 'yes_no_not_given' || normOption === 'yes' || normOption === 'no') {
-      if (normOption === 'yes' && (normUser === 'y' || normUser === 'yes')) return true;
-      if (normOption === 'no' && (normUser === 'n' || normUser === 'no')) return true;
-      if (normOption === 'not given' && (normUser === 'ng' || normUser === 'not given')) return true;
+    // Handle Yes / No / Not Given shortcuts (bidirectional Y/N/NG vs YES/NO/NOT GIVEN)
+    if (
+      questionType === 'yes_no_not_given' || 
+      ['yes', 'no', 'not given', 'y', 'n', 'ng'].includes(normOption)
+    ) {
+      if ((normOption === 'yes' || normOption === 'y') && (normUser === 'y' || normUser === 'yes')) return true;
+      if ((normOption === 'no' || normOption === 'n') && (normUser === 'n' || normUser === 'no')) return true;
+      if ((normOption === 'not given' || normOption === 'ng') && (normUser === 'ng' || normUser === 'not given')) return true;
     }
 
     // Number with units handling (e.g. 1400km vs 1400 km)

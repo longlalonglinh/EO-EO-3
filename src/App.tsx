@@ -40,7 +40,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 
-import { DEFAULT_API_URL, fetchExam, submitExamPayload } from './services/api';
+import { DEFAULT_API_URL, fetchExam, prefetchExam, submitExamPayload } from './services/api';
 import { gradeExamAnswers } from './services/answerScoring';
 import { getCurrentAnswersFromIndexedDB, getWritingDraftFromIndexedDB } from './services/indexedDb';
 import { DEFAULT_EXAMS } from './data/defaultExams';
@@ -303,8 +303,49 @@ export default function App() {
     };
   };
 
-  // Handle Login & Load Exam
-  const handleLogin = async (sbdInput: string, codeInput: string, reviewPrevious: boolean) => {
+  // Prefetch default exams on mount for 0-second instant transition
+  useEffect(() => {
+    prefetchExam(gasUrl, 'IELTS01').catch(() => {});
+    prefetchExam(gasUrl, 'TEST01').catch(() => {});
+  }, [gasUrl]);
+
+  // Background exam updates from Google Sheets without disrupting active test taking
+  useEffect(() => {
+    const handleRevalidated = (e: any) => {
+      const freshExam = e.detail as ExamData;
+      if (!freshExam || !freshExam.exam_code) return;
+      if (isLoggedIn && examCode.toUpperCase() === freshExam.exam_code.toUpperCase()) {
+        const answersCount = Object.keys(userAnswers).filter(k => userAnswers[k]?.trim()).length;
+        if (answersCount === 0 && !writingTask1.trim() && !writingTask2.trim()) {
+          handleSetExamData(freshExam);
+          setSkillNotice(`⚡ Đã đồng bộ bộ câu hỏi mới nhất [${freshExam.exam_code}] từ Google Sheets.`);
+          setTimeout(() => setSkillNotice(null), 5000);
+        }
+      }
+    };
+
+    window.addEventListener('ielts:exam-revalidated', handleRevalidated);
+    return () => {
+      window.removeEventListener('ielts:exam-revalidated', handleRevalidated);
+    };
+  }, [isLoggedIn, examCode, userAnswers, writingTask1, writingTask2]);
+
+  // Handle Login & Load Exam with Ultra-Fast Instant Entry
+  const handleLogin = async (
+    sbdInput: string, 
+    codeInput: string, 
+    modeOrReview?: 'TEST' | 'PRACTICE' | boolean, 
+    reviewPreviousParam?: boolean
+  ) => {
+    let chosenMode: 'TEST' | 'PRACTICE' | undefined;
+    let reviewPrevious = false;
+    if (typeof modeOrReview === 'string') {
+      chosenMode = modeOrReview;
+      reviewPrevious = !!reviewPreviousParam;
+    } else if (typeof modeOrReview === 'boolean') {
+      reviewPrevious = modeOrReview;
+    }
+
     const cleanSbd = sbdInput.trim();
     const cleanCode = codeInput.trim().toUpperCase();
     setSbd(cleanSbd);
@@ -346,7 +387,7 @@ export default function App() {
 
     setIsCustomPracticeSession(false);
 
-    const mode = determineTestMode(cleanCode);
+    const mode = chosenMode || determineTestMode(cleanCode);
     setTestMode(mode);
 
     const subId = `${cleanSbd}_${cleanCode}_${Date.now()}`;
@@ -362,13 +403,13 @@ export default function App() {
         finalExamData = fetchResult.exam;
         const totalCount = (finalExamData.listening_questions?.length || 0) + (finalExamData.reading_questions?.length || 0);
         if (fetchResult.source === 'gas') {
-          setSkillNotice(`✅ Successfully loaded exam [${cleanCode}] from Google Sheets (${totalCount} questions).`);
-        } else if (fetchResult.source === 'local') {
-          setSkillNotice(`✅ Loaded exam [${cleanCode}] from device cache (${totalCount} questions).`);
+          setSkillNotice(`✅ Tải thành công đề thi [${cleanCode}] từ Google Sheets (${totalCount} câu hỏi).`);
+        } else if (fetchResult.source === 'local' || fetchResult.source === 'idb' || fetchResult.source === 'memory') {
+          setSkillNotice(`⚡ Đã vào phòng thi ngay tức thì [${cleanCode}] (${totalCount} câu hỏi).`);
         } else {
-          setSkillNotice(`ℹ️ Loaded standard exam [${cleanCode}] (${totalCount} questions). Check "DB Diagnostics" for connection details.`);
+          setSkillNotice(`ℹ️ Tải bộ đề chuẩn [${cleanCode}] (${totalCount} câu hỏi).`);
         }
-        setTimeout(() => setSkillNotice(null), 7000);
+        setTimeout(() => setSkillNotice(null), 5000);
       }
     } catch (err) {
       console.warn('Could not fetch exam from API, using standard template:', err);
@@ -377,8 +418,8 @@ export default function App() {
     if (!finalExamData) {
       finalExamData = formatRawExamToExamData(DEFAULT_EXAMS[0] || SAMPLE_EXAM, cleanCode);
       finalExamData.exam_code = cleanCode;
-      setSkillNotice(`ℹ️ Displaying standard questions for test code [${cleanCode}].`);
-      setTimeout(() => setSkillNotice(null), 6000);
+      setSkillNotice(`ℹ️ Hiển thị câu hỏi chuẩn cho mã đề [${cleanCode}].`);
+      setTimeout(() => setSkillNotice(null), 5000);
     }
 
     handleSetExamData(finalExamData);
@@ -1128,11 +1169,33 @@ function doPost(e) {
         {activeView === 'student' && (
           <div>
             {!isLoggedIn ? (
-              <LoginInstructions 
-                onLogin={handleLogin} 
-                onSwitchToAdmin={() => setActiveView('admin')}
-                onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
-              />
+              <>
+                <LoginInstructions 
+                  onLogin={handleLogin} 
+                  onSwitchToAdmin={() => setActiveView('admin')}
+                  onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
+                  isLoadingExam={isLoadingExam}
+                  gasUrl={gasUrl}
+                />
+
+                {/* Instant Entry Progress Modal (if downloading fresh exam on cache miss) */}
+                {isLoadingExam && (
+                  <div className="fixed inset-0 bg-[#1E1035]/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-white border border-purple-100 rounded-3xl p-6 shadow-2xl max-w-sm w-full text-center space-y-4">
+                      <div className="w-14 h-14 bg-purple-100 text-[#6B51A5] rounded-2xl flex items-center justify-center mx-auto">
+                        <RefreshCw className="w-7 h-7 animate-spin text-[#6B51A5]" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-black text-[#3C2A63]">Đang chuẩn bị phòng thi</h3>
+                        <p className="text-xs text-[#7C68A5] mt-1">Đang thiết lập bộ đề [{examCode}] và mở giao diện bài thi...</p>
+                      </div>
+                      <div className="w-full bg-purple-100 h-1.5 rounded-full overflow-hidden">
+                        <div className="bg-[#6B51A5] h-full rounded-full w-4/5 animate-pulse" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
             ) : isCustomPracticeSession ? (
               <PracticeDashboard
                 initialDeckId={customPracticeDeckId}

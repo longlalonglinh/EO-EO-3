@@ -630,29 +630,176 @@ export function standardizeExamData(rawExam: any, cleanCode: string): ExamData {
 }
 
 /**
- * Fetch exam questions from GAS API with retry, multi-protocol support,
- * and robust backup to IndexedDB and LocalStorage
+ * Fast In-Memory Exam Cache & Pre-fetching Engine
  */
-export async function fetchExam(
-  apiUrl: string, 
+export const examMemoryCache = new Map<string, ExamData>();
+const inFlightExamFetches = new Map<string, Promise<{ success: boolean; exam?: ExamData }>>();
+
+// Seed memory cache immediately with built-in default exams
+try {
+  DEFAULT_EXAMS.forEach((ex) => {
+    if (ex && ex.exam_code) {
+      const code = ex.exam_code.trim().toUpperCase();
+      examMemoryCache.set(code, standardizeExamData(ex, code));
+    }
+  });
+} catch (e) {}
+
+// Populate memory cache asynchronously from IndexedDB and LocalStorage in the background
+if (typeof window !== 'undefined') {
+  setTimeout(async () => {
+    try {
+      const idbExams = await getAllExamsFromIndexedDB();
+      idbExams.forEach((ex) => {
+        if (ex && ex.exam_code) {
+          const code = ex.exam_code.trim().toUpperCase();
+          if (!examMemoryCache.has(code)) {
+            examMemoryCache.set(code, standardizeExamData(ex, code));
+          }
+        }
+      });
+    } catch (e) {}
+
+    try {
+      const localRaw = localStorage.getItem('ielts_saved_exams');
+      if (localRaw) {
+        const parsed = JSON.parse(localRaw);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((ex: any) => {
+            if (ex && ex.exam_code) {
+              const code = String(ex.exam_code).trim().toUpperCase();
+              if (!examMemoryCache.has(code)) {
+                examMemoryCache.set(code, standardizeExamData(ex, code));
+              }
+            }
+          });
+        }
+      }
+    } catch (e) {}
+  }, 0);
+}
+
+/**
+ * Asynchronously revalidate exam data from Google Sheets in the background without blocking UI
+ */
+export function triggerBackgroundRevalidation(apiUrl: string, cleanCode: string): void {
+  if (!apiUrl || apiUrl.includes('mock_ielts_exam_system_gas_url') || apiUrl.includes('AKfycbx_mock')) {
+    return;
+  }
+
+  setTimeout(async () => {
+    try {
+      const fetchUrl = `${apiUrl}?action=get_exam&exam_code=${encodeURIComponent(cleanCode)}`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const res = await fetch(fetchUrl, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const raw = await res.json();
+        const extracted = extractQuestionsFromRawResponse(raw, cleanCode);
+        if (extracted.questions && extracted.questions.length > 0) {
+          const meta = extracted.meta || {};
+          const rawExamObj: ExamData = {
+            exam_code: cleanCode,
+            title: meta.title || `IELTS Examination - ${cleanCode}`,
+            audio_url: meta.audio_url || '',
+            passages: meta.passages || [],
+            questions: extracted.questions,
+            writing_task1_prompt: meta.writing_task1_prompt || '',
+            writing_task1_image: meta.writing_task1_image || '',
+            writing_task2_prompt: meta.writing_task2_prompt || ''
+          };
+
+          const fresh = standardizeExamData(rawExamObj, cleanCode);
+          examMemoryCache.set(cleanCode, fresh);
+          saveExamToIndexedDB(fresh).catch(() => {});
+          try {
+            localStorage.setItem('ielts_current_exam', JSON.stringify(fresh));
+          } catch (e) {}
+
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('ielts:exam-revalidated', { detail: fresh }));
+          }
+        }
+      }
+    } catch (e) {}
+  }, 60);
+}
+
+/**
+ * Background pre-fetching engine to warm up cache while candidate is typing or reviewing instructions
+ */
+export function prefetchExam(
+  apiUrl: string,
   examCode: string
-): Promise<{ success: boolean; exam?: ExamData; error?: string; source?: 'gas' | 'idb' | 'local' | 'default' }> {
+): Promise<{ success: boolean; exam?: ExamData }> {
   const cleanCode = (examCode || 'TEST01').trim().toUpperCase();
+  if (!cleanCode) return Promise.resolve({ success: false });
 
-  // Try fetching from Google Apps Script with retry
-  if (apiUrl && !apiUrl.includes('mock_ielts_exam_system_gas_url') && !apiUrl.includes('AKfycbx_mock')) {
-    const urlsToTry = [
-      `${apiUrl}?action=get_exam&exam_code=${encodeURIComponent(cleanCode)}`,
-      `${apiUrl}?action=getExam&exam_code=${encodeURIComponent(cleanCode)}`,
-      `${apiUrl}?exam_code=${encodeURIComponent(cleanCode)}`
-    ];
+  if (examMemoryCache.has(cleanCode)) {
+    return Promise.resolve({ success: true, exam: examMemoryCache.get(cleanCode) });
+  }
 
-    for (const fetchUrl of urlsToTry) {
+  if (inFlightExamFetches.has(cleanCode)) {
+    return inFlightExamFetches.get(cleanCode)!;
+  }
+
+  const prefetchPromise = (async () => {
+    // 1. Check IndexedDB
+    try {
+      const idbExam = await getExamFromIndexedDB(cleanCode);
+      if (idbExam) {
+        const standardized = standardizeExamData(idbExam, cleanCode);
+        examMemoryCache.set(cleanCode, standardized);
+        return { success: true, exam: standardized };
+      }
+    } catch (e) {}
+
+    // 2. Check LocalStorage
+    try {
+      const localExamsRaw = localStorage.getItem('ielts_saved_exams');
+      if (localExamsRaw) {
+        const localList = JSON.parse(localExamsRaw);
+        if (Array.isArray(localList)) {
+          const foundLocal = localList.find((ex: any) => ex.exam_code?.toUpperCase() === cleanCode);
+          if (foundLocal) {
+            const standardized = standardizeExamData(foundLocal, cleanCode);
+            examMemoryCache.set(cleanCode, standardized);
+            saveExamToIndexedDB(standardized).catch(() => {});
+            return { success: true, exam: standardized };
+          }
+        }
+      }
+    } catch (e) {}
+
+    // 3. Check built-in default
+    const foundDefault = DEFAULT_EXAMS.find(
+      (ex) => ex.exam_code.toUpperCase() === cleanCode || cleanCode.includes(ex.exam_code.toUpperCase())
+    );
+    if (foundDefault) {
+      const standardized = standardizeExamData(foundDefault, cleanCode);
+      examMemoryCache.set(cleanCode, standardized);
+      saveExamToIndexedDB(standardized).catch(() => {});
+      return { success: true, exam: standardized };
+    }
+
+    // 4. Background fetch from GAS
+    if (apiUrl && !apiUrl.includes('mock_ielts_exam_system_gas_url') && !apiUrl.includes('AKfycbx_mock')) {
       try {
-        const res = await fetchWithRetry(fetchUrl, {
+        const fetchUrl = `${apiUrl}?action=get_exam&exam_code=${encodeURIComponent(cleanCode)}`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
+        const res = await fetch(fetchUrl, {
           method: 'GET',
-          headers: { 'Accept': 'application/json' }
-        }, 2, 700);
+          headers: { 'Accept': 'application/json' },
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
 
         if (res.ok) {
           const raw = await res.json();
@@ -669,36 +816,71 @@ export async function fetchExam(
               writing_task1_image: meta.writing_task1_image || '',
               writing_task2_prompt: meta.writing_task2_prompt || ''
             };
-
             const standardized = standardizeExamData(rawExamObj, cleanCode);
-
-            // Dual persistence backup: IndexedDB + localStorage
-            await saveExamToIndexedDB(standardized);
+            examMemoryCache.set(cleanCode, standardized);
+            saveExamToIndexedDB(standardized).catch(() => {});
             try {
               localStorage.setItem('ielts_current_exam', JSON.stringify(standardized));
             } catch (e) {}
-
-            return { success: true, exam: standardized, source: 'gas' };
+            return { success: true, exam: standardized };
           }
         }
-      } catch (err) {
-        console.warn(`Query attempt failed on ${fetchUrl} after retry:`, err);
-      }
+      } catch (err) {}
     }
+
+    return { success: false };
+  })().finally(() => {
+    inFlightExamFetches.delete(cleanCode);
+  });
+
+  inFlightExamFetches.set(cleanCode, prefetchPromise);
+  return prefetchPromise;
+}
+
+/**
+ * Ultra-fast Exam Fetching with Cache-First & Stale-While-Revalidate architecture.
+ * Loads in ~0ms if in-memory, ~2ms if in IndexedDB/LocalStorage, or resolves prefetch.
+ */
+export async function fetchExam(
+  apiUrl: string, 
+  examCode: string
+): Promise<{ success: boolean; exam?: ExamData; error?: string; source?: 'gas' | 'idb' | 'local' | 'default' | 'memory' }> {
+  const cleanCode = (examCode || 'TEST01').trim().toUpperCase();
+
+  // Tier 1: In-Memory Cache (Instant ~0ms)
+  if (examMemoryCache.has(cleanCode)) {
+    const cached = examMemoryCache.get(cleanCode)!;
+    triggerBackgroundRevalidation(apiUrl, cleanCode);
+    return { success: true, exam: cached, source: 'memory' };
   }
 
-  // Fallback 1: Check IndexedDB
+  // Tier 2: Check ongoing prefetch with quick 600ms grace period
+  if (inFlightExamFetches.has(cleanCode)) {
+    try {
+      const fastResult = await Promise.race([
+        inFlightExamFetches.get(cleanCode)!,
+        new Promise<null>((res) => setTimeout(() => res(null), 600))
+      ]);
+      if (fastResult && fastResult.success && fastResult.exam) {
+        return { success: true, exam: fastResult.exam, source: 'gas' };
+      }
+    } catch (e) {}
+  }
+
+  // Tier 3: IndexedDB Cache (~2-5ms)
   try {
     const idbExam = await getExamFromIndexedDB(cleanCode);
     if (idbExam) {
       const standardized = standardizeExamData(idbExam, cleanCode);
+      examMemoryCache.set(cleanCode, standardized);
+      triggerBackgroundRevalidation(apiUrl, cleanCode);
       return { success: true, exam: standardized, source: 'idb' };
     }
   } catch (e) {
     console.warn('Error reading from IndexedDB:', e);
   }
 
-  // Fallback 2: Check LocalStorage saved exams
+  // Tier 4: Saved LocalStorage Exams (~1-2ms)
   try {
     const localExamsRaw = localStorage.getItem('ielts_saved_exams');
     if (localExamsRaw) {
@@ -707,8 +889,9 @@ export async function fetchExam(
         const foundLocal = localList.find((ex: any) => ex.exam_code?.toUpperCase() === cleanCode);
         if (foundLocal) {
           const standardized = standardizeExamData(foundLocal, cleanCode);
-          // Sync to IndexedDB
+          examMemoryCache.set(cleanCode, standardized);
           saveExamToIndexedDB(standardized).catch(() => {});
+          triggerBackgroundRevalidation(apiUrl, cleanCode);
           return { success: true, exam: standardized, source: 'local' };
         }
       }
@@ -717,15 +900,67 @@ export async function fetchExam(
     console.warn('Error reading from localStorage:', e);
   }
 
-  // Fallback 3: Default repository
+  // Tier 5: Built-In Default Exams Repository (~0.1ms)
   const foundDefault = DEFAULT_EXAMS.find(
     (ex) => ex.exam_code.toUpperCase() === cleanCode || cleanCode.includes(ex.exam_code.toUpperCase())
-  ) || DEFAULT_EXAMS[0];
-
+  );
   if (foundDefault) {
     const standardized = standardizeExamData(foundDefault, cleanCode);
-    // Cache to IndexedDB
+    examMemoryCache.set(cleanCode, standardized);
     saveExamToIndexedDB(standardized).catch(() => {});
+    triggerBackgroundRevalidation(apiUrl, cleanCode);
+    return { success: true, exam: standardized, source: 'default' };
+  }
+
+  // Tier 6: Cache Miss - Direct targeted GAS Fetch (Single request, 3.8s timeout)
+  if (apiUrl && !apiUrl.includes('mock_ielts_exam_system_gas_url') && !apiUrl.includes('AKfycbx_mock')) {
+    try {
+      const fetchUrl = `${apiUrl}?action=get_exam&exam_code=${encodeURIComponent(cleanCode)}`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3800);
+      const res = await fetch(fetchUrl, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const raw = await res.json();
+        const extracted = extractQuestionsFromRawResponse(raw, cleanCode);
+        if (extracted.questions && extracted.questions.length > 0) {
+          const meta = extracted.meta || {};
+          const rawExamObj: ExamData = {
+            exam_code: cleanCode,
+            title: meta.title || `IELTS Examination - ${cleanCode}`,
+            audio_url: meta.audio_url || '',
+            passages: meta.passages || [],
+            questions: extracted.questions,
+            writing_task1_prompt: meta.writing_task1_prompt || '',
+            writing_task1_image: meta.writing_task1_image || '',
+            writing_task2_prompt: meta.writing_task2_prompt || ''
+          };
+
+          const standardized = standardizeExamData(rawExamObj, cleanCode);
+          examMemoryCache.set(cleanCode, standardized);
+          await saveExamToIndexedDB(standardized);
+          try {
+            localStorage.setItem('ielts_current_exam', JSON.stringify(standardized));
+          } catch (e) {}
+
+          return { success: true, exam: standardized, source: 'gas' };
+        }
+      }
+    } catch (err) {
+      console.warn(`Direct fetch failed for exam ${cleanCode}:`, err);
+    }
+  }
+
+  // Tier 7: Safe Fallback Template so student is NEVER blocked
+  const fallbackDefault = DEFAULT_EXAMS[0];
+  if (fallbackDefault) {
+    const standardized = standardizeExamData(fallbackDefault, cleanCode);
+    examMemoryCache.set(cleanCode, standardized);
     return { success: true, exam: standardized, source: 'default' };
   }
 

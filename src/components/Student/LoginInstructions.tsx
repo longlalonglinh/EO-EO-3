@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ShieldCheck, 
   BookOpen, 
@@ -15,29 +15,60 @@ import {
   Building2,
   SlidersHorizontal,
   Settings,
-  Activity
+  Activity,
+  RefreshCw
 } from 'lucide-react';
+import { prefetchExam, DEFAULT_API_URL } from '../../services/api';
 
 interface LoginInstructionsProps {
   onLogin: (sbd: string, code: string, mode: 'TEST' | 'PRACTICE', reviewPrevious: boolean) => void;
   onSwitchToAdmin?: () => void;
   onOpenPracticeHub?: () => void;
   onOpenDiagnostics?: () => void;
+  isLoadingExam?: boolean;
+  gasUrl?: string;
 }
 
 export const LoginInstructions: React.FC<LoginInstructionsProps> = ({ 
   onLogin, 
   onSwitchToAdmin,
   onOpenPracticeHub,
-  onOpenDiagnostics
+  onOpenDiagnostics,
+  isLoadingExam = false,
+  gasUrl = DEFAULT_API_URL
 }) => {
   const [sbd, setSbd] = useState('');
   const [examCode, setExamCode] = useState('IELTS01');
   const [selectedMode, setSelectedMode] = useState<'TEST' | 'PRACTICE'>('TEST');
   const [reviewPrevious, setReviewPrevious] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [isSubmittingLogin, setIsSubmittingLogin] = useState(false);
 
   const activeCode = examCode.trim().toUpperCase();
+
+  // Prefetch exam when component mounts so data is ready in memory
+  useEffect(() => {
+    if (activeCode) {
+      prefetchExam(gasUrl, activeCode).catch(() => {});
+    }
+  }, [gasUrl]);
+
+  // Debounced prefetch whenever student types or updates the exam code
+  useEffect(() => {
+    if (!activeCode) return;
+    const timer = setTimeout(() => {
+      prefetchExam(gasUrl, activeCode).catch(() => {});
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [activeCode, gasUrl]);
+
+  // Sync internal submitting state when external loading finishes
+  useEffect(() => {
+    if (!isLoadingExam && isSubmittingLogin) {
+      const resetTimer = setTimeout(() => setIsSubmittingLogin(false), 800);
+      return () => clearTimeout(resetTimer);
+    }
+  }, [isLoadingExam, isSubmittingLogin]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,11 +76,11 @@ export const LoginInstructions: React.FC<LoginInstructionsProps> = ({
     const cleanCode = activeCode.trim();
 
     if (!cleanSbd) {
-      setErrorMsg('Please enter your full name or candidate ID (SBD).');
+      setErrorMsg('Vui lòng nhập họ tên hoặc Số báo danh (SBD) của thí sinh.');
       return;
     }
     if (!cleanCode) {
-      setErrorMsg('Please enter the test code.');
+      setErrorMsg('Vui lòng nhập mã đề thi.');
       return;
     }
 
@@ -67,6 +98,7 @@ export const LoginInstructions: React.FC<LoginInstructionsProps> = ({
     }
 
     setErrorMsg('');
+    setIsSubmittingLogin(true);
     onLogin(cleanSbd, cleanCode, selectedMode, reviewPrevious);
   };
 
@@ -212,13 +244,29 @@ export const LoginInstructions: React.FC<LoginInstructionsProps> = ({
                 </div>
               )}
 
-              {/* Primary Submit Button */}
+              {/* Primary Submit Button with Instant Visual Feedback */}
               <button
                 type="submit"
-                className="w-full h-12 bg-[#6B51A5] hover:bg-[#503A7A] text-white font-bold rounded-2xl text-sm transition-all shadow-md shadow-[#6B51A5]/20 flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.98]"
+                disabled={isSubmittingLogin || isLoadingExam}
+                className={`w-full h-12 bg-[#6B51A5] hover:bg-[#503A7A] text-white font-bold rounded-2xl text-sm transition-all shadow-md shadow-[#6B51A5]/20 flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.98] ${
+                  (isSubmittingLogin || isLoadingExam) ? 'opacity-90 cursor-wait' : ''
+                }`}
               >
-                <span>{selectedMode === 'TEST' ? 'Start Official Test' : 'Start Practice Session'}</span>
-                <ArrowRight className="w-4 h-4" />
+                {isSubmittingLogin || isLoadingExam ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin text-white shrink-0" />
+                    <span>Đang vào phòng thi... (Loading exam)</span>
+                  </>
+                ) : (
+                  <>
+                    <span>
+                      {selectedMode === 'TEST' 
+                        ? 'VÀO THI CHÍNH THỨC • START TEST' 
+                        : 'VÀO ÔN TẬP • START PRACTICE'}
+                    </span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
 
               {/* Shortcut to Practice Exercises Hub */}
