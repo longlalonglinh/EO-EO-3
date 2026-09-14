@@ -319,7 +319,7 @@ export default function App() {
         const answersCount = Object.keys(userAnswers).filter(k => userAnswers[k]?.trim()).length;
         if (answersCount === 0 && !writingTask1.trim() && !writingTask2.trim()) {
           handleSetExamData(freshExam);
-          setSkillNotice(`⚡ Đã đồng bộ bộ câu hỏi mới nhất [${freshExam.exam_code}] từ Google Sheets.`);
+          setSkillNotice(`⚡ Synchronized latest questions for [${freshExam.exam_code}] from Google Sheets.`);
           setTimeout(() => setSkillNotice(null), 5000);
         }
       }
@@ -406,11 +406,11 @@ export default function App() {
         finalExamData = fetchResult.exam;
         const totalCount = (finalExamData.listening_questions?.length || 0) + (finalExamData.reading_questions?.length || 0);
         if (fetchResult.source === 'gas') {
-          setSkillNotice(`✅ Tải thành công đề thi [${cleanCode}] từ Google Sheets (${totalCount} câu hỏi).`);
+          setSkillNotice(`✅ Successfully loaded test [${cleanCode}] from Google Sheets (${totalCount} questions).`);
         } else if (fetchResult.source === 'local' || fetchResult.source === 'idb' || fetchResult.source === 'memory') {
-          setSkillNotice(`⚡ Đã vào phòng thi ngay tức thì [${cleanCode}] (${totalCount} câu hỏi).`);
+          setSkillNotice(`⚡ Entered exam room immediately [${cleanCode}] (${totalCount} questions).`);
         } else {
-          setSkillNotice(`ℹ️ Tải bộ đề chuẩn [${cleanCode}] (${totalCount} câu hỏi).`);
+          setSkillNotice(`ℹ️ Loaded standard test package [${cleanCode}] (${totalCount} questions).`);
         }
         setTimeout(() => setSkillNotice(null), 5000);
       } else if (fetchResult.error) {
@@ -418,12 +418,12 @@ export default function App() {
       }
     } catch (err: any) {
       console.warn('Could not fetch exam from API:', err);
-      fetchErrorMessage = err?.message || 'Lỗi khi tải đề thi từ hệ thống.';
+      fetchErrorMessage = err?.message || 'Error loading exam from server.';
     }
 
     if (!finalExamData) {
       setIsLoadingExam(false);
-      const notFoundMsg = fetchErrorMessage || `Không tìm thấy mã đề [${cleanCode}] trên hệ thống hoặc Google Sheets. Vui lòng kiểm tra lại mã đề chính xác (ví dụ: IELTS01, TEST01, ON_TAP_01).`;
+      const notFoundMsg = fetchErrorMessage || `Exam not found: No test paper found for code [${cleanCode}]. Please check your test code or contact your exam invigilator.`;
       setLoginErrorMessage(notFoundMsg);
       setSkillNotice(`⚠️ ${notFoundMsg}`);
       setTimeout(() => setSkillNotice(null), 7000);
@@ -1197,8 +1197,8 @@ function doPost(e) {
                         <RefreshCw className="w-7 h-7 animate-spin text-[#6B51A5]" />
                       </div>
                       <div>
-                        <h3 className="text-base font-black text-[#3C2A63]">Đang chuẩn bị phòng thi</h3>
-                        <p className="text-xs text-[#7C68A5] mt-1">Đang thiết lập bộ đề [{examCode}] và mở giao diện bài thi...</p>
+                        <h3 className="text-base font-black text-[#3C2A63]">Preparing Exam Room</h3>
+                        <p className="text-xs text-[#7C68A5] mt-1">Configuring exam package [{examCode}] and loading test session...</p>
                       </div>
                       <div className="w-full bg-purple-100 h-1.5 rounded-full overflow-hidden">
                         <div className="bg-[#6B51A5] h-full rounded-full w-4/5 animate-pulse" />

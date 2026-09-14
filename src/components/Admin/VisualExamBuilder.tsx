@@ -43,10 +43,10 @@ export const passageZodSchema = z.object({
 });
 
 export const examZodSchema = z.object({
-  exam_code: z.string().min(1, 'Vui lòng nhập mã đề thi (VD: READ01, TEST01)').max(30),
-  title: z.string().min(2, 'Tiêu đề bài thi phải có ít nhất 2 ký tự'),
+  exam_code: z.string().min(1, 'Please enter exam code (e.g. READ01, TEST01)').max(30),
+  title: z.string().min(2, 'Test title must have at least 2 characters'),
   test_type: z.enum(['TEST', 'PRACTICE']),
-  duration_mins: z.number().min(1, 'Thời lượng tối thiểu 1 phút').max(360),
+  duration_mins: z.number().min(1, 'Minimum duration is 1 minute').max(360),
   listening_duration_mins: z.number().min(0).max(120).optional().default(35),
   reading_duration_mins: z.number().min(0).max(120).optional().default(60),
   writing_duration_mins: z.number().min(0).max(120).optional().default(60),
@@ -210,7 +210,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
     const hasWriting = Boolean(formData.writing_task1_prompt?.trim() || formData.writing_task2_prompt?.trim() || formData.writing_task1_image?.trim());
 
     if (!hasReading && !hasListening && !hasWriting) {
-      alert('Vui lòng thêm nội dung cho ít nhất một kỹ năng (Reading, Listening, hoặc Writing) để lưu đề thi!');
+      alert('Please add content for at least one skill (Reading, Listening, or Writing) to save this exam!');
       return;
     }
 
@@ -262,7 +262,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
     // 3. Callback to parent
     onSaveExam(completeExam);
 
-    setSaveSuccessMessage(`Đã lưu thành công đề thi ${completeExam.exam_code} [${includedSkills.join(' + ')}]!`);
+    setSaveSuccessMessage(`Successfully saved exam ${completeExam.exam_code} [${includedSkills.join(' + ')}]!`);
     setTimeout(() => setSaveSuccessMessage(null), 4500);
   };
 
@@ -342,7 +342,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
     reset(createBlankExamData(currentCode));
     setSelectedPassageIdx(0);
     setShowResetModal(false);
-    setSaveSuccessMessage('✅ Đã xoá toàn bộ câu hỏi và nội dung! Đề thi đã trở về Blank Sheet.');
+    setSaveSuccessMessage('✅ Cleared all questions and content! Reset to Blank Sheet.');
     setTimeout(() => setSaveSuccessMessage(null), 5000);
   };
 
@@ -358,13 +358,13 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
                 <RotateCcw className="w-6 h-6 text-rose-600" />
               </div>
               <div>
-                <h3 className="text-base font-black text-[#3C2A63]">Xác nhận Reset Blank Sheet</h3>
-                <p className="text-xs text-[#7C68A5]">Hành động này sẽ xoá sạch mọi câu hỏi</p>
+                <h3 className="text-base font-black text-[#3C2A63]">Confirm Reset to Blank Sheet</h3>
+                <p className="text-xs text-[#7C68A5]">This action will clear all questions</p>
               </div>
             </div>
 
             <p className="text-xs text-[#503A7A] leading-relaxed bg-[#F8F6FC] p-3.5 rounded-2xl border border-purple-100">
-              Toàn bộ bài đọc, danh sách câu hỏi Reading, Listening và nội dung Writing Task 1, Task 2 của đề thi này sẽ được làm trống hoàn toàn để bạn bắt đầu tạo mới từ đầu.
+              All reading passages, Reading/Listening question lists, and Writing Task 1 &amp; 2 content will be completely cleared to start fresh from a blank sheet.
             </p>
 
             <div className="flex items-center justify-end gap-2.5 pt-2">
@@ -373,7 +373,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
                 onClick={() => setShowResetModal(false)}
                 className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-[#3C2A63] text-xs font-bold rounded-xl transition cursor-pointer"
               >
-                Huỷ bỏ
+                Cancel
               </button>
               <button
                 type="button"
@@ -381,7 +381,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
                 className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span>Xoá hết &amp; Về Blank Sheet</span>
+                <span>Clear All &amp; Reset to Blank Sheet</span>
               </button>
             </div>
           </div>
@@ -408,7 +408,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
           <button
             type="button"
             onClick={() => setShowResetModal(true)}
-            title="Xoá hết câu hỏi, trở về blank sheet"
+            title="Clear all questions, reset to blank sheet"
             className="px-3.5 py-2 bg-[#F5F2F9] hover:bg-[#E2DDEC] text-[#3C2A63] rounded-2xl text-xs font-black transition flex items-center gap-1.5 cursor-pointer border border-purple-100"
           >
             <RotateCcw className="w-3.5 h-3.5" />
@@ -442,7 +442,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
               <Sparkles className="w-3.5 h-3.5" />
             </span>
             <span className="text-xs font-black text-[#3C2A63]">
-              Chế độ tạo đề linh hoạt: Tạo trọn bộ hoặc lẻ từng kỹ năng
+              Flexible Exam Creation: Full test or individual skills
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
@@ -454,7 +454,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
               }}
               className="px-2.5 py-1 text-[11px] font-bold bg-white text-[#503A7A] hover:bg-purple-100 rounded-lg border border-purple-200 transition cursor-pointer shadow-2xs"
             >
-              📖 Chỉ Reading (60p)
+              📖 Reading Only (60m)
             </button>
             <button
               type="button"
@@ -464,7 +464,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
               }}
               className="px-2.5 py-1 text-[11px] font-bold bg-white text-[#503A7A] hover:bg-purple-100 rounded-lg border border-purple-200 transition cursor-pointer shadow-2xs"
             >
-              🎧 Chỉ Listening (35p)
+              🎧 Listening Only (35m)
             </button>
             <button
               type="button"
@@ -474,7 +474,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
               }}
               className="px-2.5 py-1 text-[11px] font-bold bg-white text-[#503A7A] hover:bg-purple-100 rounded-lg border border-purple-200 transition cursor-pointer shadow-2xs"
             >
-              ✍️ Chỉ Writing (60p)
+              ✍️ Writing Only (60m)
             </button>
             <button
               type="button"
@@ -483,12 +483,12 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
               }}
               className="px-2.5 py-1 text-[11px] font-bold bg-purple-100 text-[#3C2A63] hover:bg-purple-200 rounded-lg border border-purple-300 transition cursor-pointer shadow-2xs"
             >
-              ✨ Full 3 kỹ năng
+              ✨ Full 3 Skills
             </button>
           </div>
         </div>
         <p className="text-[11px] text-[#6E5B8E] font-medium leading-relaxed">
-          💡 Giáo viên có thể tạo đề thi riêng biệt cho từng kỹ năng hoặc kết hợp tuỳ ý. Bạn có thể để trống hoàn toàn 1 hoặc 2 kỹ năng, hoặc không cần nhập đủ 40 câu hỏi mà hệ thống vẫn lưu và học viên vẫn làm bài bình thường.
+          💡 Teachers can create tests for individual skills or combine them freely. You can leave 1 or 2 skills blank, or create shorter tests with fewer questions.
         </p>
       </div>
 
@@ -896,7 +896,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
 
             <div>
               <label className="block text-xs font-black text-[#3C2A63] mb-1.5">
-                Task 1 Diagram / Chart Material (Hình ảnh biểu đồ Task 1):
+                Task 1 Diagram / Chart Material:
               </label>
               <Task1ImageUploader
                 value={watchedTask1Image}

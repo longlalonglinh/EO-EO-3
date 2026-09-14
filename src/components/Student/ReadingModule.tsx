@@ -512,7 +512,7 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
                   className={`px-1.5 py-0.5 text-[10px] font-bold rounded transition cursor-pointer ${
                     fontScale === 'sm' ? 'bg-[#3C2A63] text-white shadow-xs' : 'bg-purple-50 text-[#503A7A] hover:bg-purple-100'
                   }`}
-                  title="Cỡ chữ nhỏ (tiết kiệm không gian cho màn hình 13 inch)"
+                  title="Small font size (compact)"
                 >
                   A-
                 </button>
@@ -522,7 +522,7 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
                   className={`px-1.5 py-0.5 text-[10px] font-bold rounded transition cursor-pointer ${
                     fontScale === 'base' ? 'bg-[#3C2A63] text-white shadow-xs' : 'bg-purple-50 text-[#503A7A] hover:bg-purple-100'
                   }`}
-                  title="Cỡ chữ tiêu chuẩn"
+                  title="Standard font size"
                 >
                   A
                 </button>
@@ -532,7 +532,7 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
                   className={`px-1.5 py-0.5 text-[10px] font-bold rounded transition cursor-pointer ${
                     fontScale === 'lg' ? 'bg-[#3C2A63] text-white shadow-xs' : 'bg-purple-50 text-[#503A7A] hover:bg-purple-100'
                   }`}
-                  title="Cỡ chữ lớn"
+                  title="Large font size"
                 >
                   A+
                 </button>
@@ -546,7 +546,7 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
                   className={`px-2 py-0.5 text-[10px] font-bold rounded-lg transition cursor-pointer ${
                     leftWidth === 50 ? 'bg-[#6B51A5] text-white shadow-xs' : 'bg-purple-50 text-[#503A7A] hover:bg-purple-100'
                   }`}
-                  title="Cân bằng 50/50"
+                  title="Balanced 50/50"
                 >
                   50:50
                 </button>
@@ -556,9 +556,9 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
                   className={`px-2 py-0.5 text-[10px] font-bold rounded-lg transition cursor-pointer ${
                     leftWidth === 60 ? 'bg-[#6B51A5] text-white shadow-xs' : 'bg-purple-50 text-[#503A7A] hover:bg-purple-100'
                   }`}
-                  title="Mở rộng bài đọc 60%"
+                  title="Expand passage 60%"
                 >
-                  Đọc 60%
+                  Passage 60%
                 </button>
                 <button
                   type="button"
@@ -566,9 +566,9 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
                   className={`px-2 py-0.5 text-[10px] font-bold rounded-lg transition cursor-pointer ${
                     leftWidth === 40 ? 'bg-[#6B51A5] text-white shadow-xs' : 'bg-purple-50 text-[#503A7A] hover:bg-purple-100'
                   }`}
-                  title="Mở rộng câu hỏi 60%"
+                  title="Expand questions 60%"
                 >
-                  Hỏi 60%
+                  Questions 60%
                 </button>
               </div>
             </div>

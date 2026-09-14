@@ -1,7 +1,7 @@
 import { ExamData, Question } from '../types';
 
 /**
- * 1. ANSWER NORMALIZATION ENGINE (Chuẩn hóa câu trả lời tự động)
+ * 1. ANSWER NORMALIZATION ENGINE (Automated answer normalization)
  *
  * Normalizes input strings by:
  * - Converting all characters to lowercase

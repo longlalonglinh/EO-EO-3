@@ -44,7 +44,7 @@ const optimizeAndConvertImage = (file: File): Promise<OptimizationResult> => {
           compressedBytes: Math.round(result.length * 0.75)
         });
       };
-      reader.onerror = () => reject(new Error('Lỗi khi đọc file SVG'));
+      reader.onerror = () => reject(new Error('Error reading SVG file'));
       reader.readAsDataURL(file);
       return;
     }
@@ -74,7 +74,7 @@ const optimizeAndConvertImage = (file: File): Promise<OptimizationResult> => {
         canvas.height = height;
         const ctx = canvas.getContext('2d', { alpha: false });
         if (!ctx) {
-          reject(new Error('Canvas 2D context không khả dụng'));
+          reject(new Error('Canvas 2D context not available'));
           return;
         }
 
@@ -130,7 +130,7 @@ const optimizeAndConvertImage = (file: File): Promise<OptimizationResult> => {
 
     img.onerror = () => {
       URL.revokeObjectURL(objectUrl);
-      reject(new Error('Không thể tải dữ liệu ảnh vào bộ nhớ'));
+      reject(new Error('Unable to load image data into memory'));
     };
 
     img.src = objectUrl;
@@ -163,7 +163,7 @@ export const Task1ImageUploader: React.FC<Task1ImageUploaderProps> = ({
 
   const handleProcessFile = useCallback(async (file: File) => {
     if (!file.type.startsWith('image/')) {
-      setErrorMsg('Vui lòng chọn tệp hình ảnh hợp lệ (PNG, JPG, JPEG, WEBP, SVG).');
+      setErrorMsg('Please select a valid image file (PNG, JPG, JPEG, WEBP, SVG).');
       return;
     }
 
@@ -188,8 +188,8 @@ export const Task1ImageUploader: React.FC<Task1ImageUploaderProps> = ({
 
         onChange(result.dataUrl);
       } catch (err: any) {
-        console.error('Lỗi khi nén ảnh:', err);
-        setErrorMsg(err.message || 'Không thể xử lý tệp ảnh này. Vui lòng thử lại với ảnh khác.');
+        console.error('Error compressing image:', err);
+        setErrorMsg(err.message || 'Could not process this image file. Please try another image.');
       } finally {
         setIsProcessing(false);
       }
@@ -297,29 +297,29 @@ export const Task1ImageUploader: React.FC<Task1ImageUploaderProps> = ({
               </div>
               <div>
                 <p className="text-xs font-black text-[#3C2A63]">
-                  {fileName || (isDataUrl ? 'Ảnh biểu đồ đã tải lên từ thiết bị' : 'Ảnh biểu đồ IELTS Task 1')}
+                  {fileName || (isDataUrl ? 'Uploaded diagram image' : 'IELTS Task 1 diagram')}
                 </p>
                 <div className="flex flex-wrap items-center gap-2 mt-0.5">
                   <p className="text-[11px] text-[#7C68A5] font-medium">
                     {isDataUrl ? (
                       <span>
-                        Dung lượng nén: <strong className="text-[#3C2A63]">{compressedSizeStr || `${Math.round((value.length * 0.75) / 1024)} KB`}</strong>
+                        Compressed size: <strong className="text-[#3C2A63]">{compressedSizeStr || `${Math.round((value.length * 0.75) / 1024)} KB`}</strong>
                         {originalSizeStr && (
                           <span className="ml-1 text-slate-500 line-through">({originalSizeStr})</span>
                         )}
                       </span>
                     ) : (
-                      'Đường dẫn ảnh trực tuyến'
+                      'Online image URL'
                     )}
                   </p>
                   {savedPercent !== null && (
                     <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded-full border border-emerald-200">
-                      ⚡ Giảm {savedPercent}% (Siêu nhẹ, an toàn payload)
+                      ⚡ Reduced by {savedPercent}% (Optimized payload)
                     </span>
                   )}
                   {isDataUrl && !savedPercent && (
                     <span className="text-[10px] bg-purple-100 text-[#503A7A] font-extrabold px-2 py-0.5 rounded-full border border-purple-200">
-                      ✓ Đã chuẩn hoá
+                      ✓ Normalized
                     </span>
                   )}
                 </div>
@@ -334,7 +334,7 @@ export const Task1ImageUploader: React.FC<Task1ImageUploaderProps> = ({
                 className="px-3 py-1.5 bg-white hover:bg-purple-50 text-[#6B51A5] border border-purple-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isProcessing ? 'animate-spin' : ''}`} />
-                <span>Thay ảnh khác</span>
+                <span>Replace image</span>
               </button>
 
               <button
@@ -343,7 +343,7 @@ export const Task1ImageUploader: React.FC<Task1ImageUploaderProps> = ({
                 className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span>Xoá ảnh</span>
+                <span>Remove image</span>
               </button>
             </div>
           </div>
@@ -364,7 +364,7 @@ export const Task1ImageUploader: React.FC<Task1ImageUploaderProps> = ({
               className="absolute bottom-3 right-3 bg-[#3C2A63]/80 hover:bg-[#3C2A63] text-white px-2.5 py-1.5 rounded-xl text-xs font-bold backdrop-blur flex items-center gap-1 opacity-90 group-hover:opacity-100 transition shadow cursor-pointer"
             >
               <ZoomIn className="w-3.5 h-3.5" />
-              <span>Xem kích thước gốc</span>
+              <span>View full size</span>
             </button>
           </div>
         </div>
@@ -391,13 +391,13 @@ export const Task1ImageUploader: React.FC<Task1ImageUploaderProps> = ({
 
           <div>
             <p className="text-sm font-black text-[#3C2A63]">
-              {isProcessing ? 'Đang tối ưu & tải ảnh lên...' : 'Tải ảnh biểu đồ trực tiếp từ thiết bị'}
+              {isProcessing ? 'Optimizing & uploading diagram...' : 'Upload diagram image directly from device'}
             </p>
             <p className="text-xs text-[#7C68A5] font-medium mt-0.5">
-              Kéo &amp; thả ảnh vào đây, hoặc <span className="text-[#6B51A5] font-bold underline">nhấn để chọn tệp</span> từ máy tính / điện thoại
+              Drag &amp; drop image here, or <span className="text-[#6B51A5] font-bold underline">click to select file</span> from computer / mobile
             </p>
             <p className="text-[11px] text-[#A093BA] mt-1 font-medium">
-              Hỗ trợ PNG, JPG, JPEG, WEBP, SVG (tự động tối ưu độ nét biểu đồ)
+              Supports PNG, JPG, JPEG, WEBP, SVG (automatically optimizes diagram clarity)
             </p>
           </div>
 
@@ -411,7 +411,7 @@ export const Task1ImageUploader: React.FC<Task1ImageUploaderProps> = ({
             className="mt-1 px-4 py-2 bg-[#6B51A5] hover:bg-[#503A7A] text-white text-xs font-bold rounded-xl transition flex items-center gap-2 shadow-sm cursor-pointer"
           >
             <FileImage className="w-4 h-4" />
-            <span>Chọn ảnh từ thiết bị</span>
+            <span>Select file from device</span>
           </button>
         </div>
       )}
@@ -425,12 +425,12 @@ export const Task1ImageUploader: React.FC<Task1ImageUploaderProps> = ({
             className="text-xs text-[#7C68A5] hover:text-[#503A7A] font-bold flex items-center gap-1.5 cursor-pointer"
           >
             <Link className="w-3.5 h-3.5" />
-            <span>{showUrlInput ? 'Ẩn nhập liên kết URL' : 'Hoặc nhập đường dẫn liên kết URL ảnh trực tuyến'}</span>
+            <span>{showUrlInput ? 'Hide URL link input' : 'Or enter an online image URL link'}</span>
           </button>
           
           {hasImage && isDataUrl && (
             <span className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full font-bold">
-              ✓ Lưu trực tiếp trong đề thi
+              ✓ Saved directly in exam payload
             </span>
           )}
         </div>
@@ -441,7 +441,7 @@ export const Task1ImageUploader: React.FC<Task1ImageUploaderProps> = ({
               type="text"
               value={urlDraft}
               onChange={(e) => setUrlDraft(e.target.value)}
-              placeholder="https://images.unsplash.com/... hoặc link ảnh online"
+              placeholder="https://images.unsplash.com/... or online image link"
               className="flex-1 px-3 py-2 bg-[#F8F6FC] rounded-xl border border-purple-100 text-xs font-mono text-[#3C2A63] focus:outline-none focus:ring-2 focus:ring-[#6B51A5]"
             />
             <button
@@ -449,7 +449,7 @@ export const Task1ImageUploader: React.FC<Task1ImageUploaderProps> = ({
               onClick={handleApplyUrl}
               className="px-3.5 py-2 bg-[#6B51A5] hover:bg-[#503A7A] text-white text-xs font-bold rounded-xl transition cursor-pointer"
             >
-              Áp dụng
+              Apply
             </button>
           </div>
         )}
@@ -466,13 +466,13 @@ export const Task1ImageUploader: React.FC<Task1ImageUploaderProps> = ({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between pb-2 border-b border-purple-100">
-              <span className="text-xs font-black text-[#3C2A63]">Xem ảnh Task 1 kích thước lớn</span>
+              <span className="text-xs font-black text-[#3C2A63]">View Task 1 Diagram Full Size</span>
               <button
                 type="button"
                 onClick={() => setIsPreviewOpen(false)}
                 className="text-xs bg-purple-50 hover:bg-purple-100 text-[#503A7A] font-bold px-2.5 py-1 rounded-xl cursor-pointer"
               >
-                Đóng ✕
+                Close ✕
               </button>
             </div>
             <div className="overflow-auto flex items-center justify-center max-h-[75vh]">

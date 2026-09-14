@@ -311,14 +311,14 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
 
         {/* Quick Split Ratio Presets for Desktop & 13" laptops */}
         <div className="hidden md:flex items-center gap-1.5 bg-[#F5F2F9] px-3 py-1.5 rounded-2xl border border-purple-100 text-xs">
-          <span className="text-[11px] font-bold text-[#7C68A5] mr-1">Khung nhìn:</span>
+          <span className="text-[11px] font-bold text-[#7C68A5] mr-1">Layout:</span>
           <button
             type="button"
             onClick={() => setSplitRatio(45)}
             className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${
               splitRatio === 45 ? 'bg-[#6B51A5] text-white shadow-xs' : 'bg-white text-[#503A7A] hover:bg-purple-100'
             }`}
-            title="Cân đối (Đề 45% - Bài 55%)"
+            title="Balanced (Prompt 45% - Response 55%)"
           >
             45:55
           </button>
@@ -328,9 +328,9 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
             className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${
               splitRatio === 58 ? 'bg-[#6B51A5] text-white shadow-xs' : 'bg-white text-[#503A7A] hover:bg-purple-100'
             }`}
-            title="Mở rộng đề bài & biểu đồ 58%"
+            title="Expand prompt & diagram 58%"
           >
-            Đề 58%
+            Prompt 58%
           </button>
           <button
             type="button"
@@ -338,9 +338,9 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
             className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${
               splitRatio === 35 ? 'bg-[#6B51A5] text-white shadow-xs' : 'bg-white text-[#503A7A] hover:bg-purple-100'
             }`}
-            title="Mở rộng vùng gõ bài 65%"
+            title="Expand response editor 65%"
           >
-            Bài 65%
+            Editor 65%
           </button>
         </div>
       </div>
@@ -356,7 +356,7 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
             }`}
           >
             <FileText className="w-3.5 h-3.5" />
-            <span>Vùng làm bài ({activeTab === 'task1' ? task1WordCount : task2WordCount} từ)</span>
+            <span>Response Area ({activeTab === 'task1' ? task1WordCount : task2WordCount} words)</span>
           </button>
           <button
             type="button"
@@ -366,7 +366,7 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
             }`}
           >
             <ImageIcon className="w-3.5 h-3.5" />
-            <span>Đề bài &amp; Dữ liệu</span>
+            <span>Prompt &amp; Material</span>
           </button>
         </div>
       </div>

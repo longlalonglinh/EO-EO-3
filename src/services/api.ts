@@ -959,7 +959,7 @@ export async function fetchExam(
   // Tier 7: If the exam code was not found anywhere (not in defaults, IDB, LocalStorage, or GAS)
   return { 
     success: false, 
-    error: `Không tìm thấy bộ đề thi với mã [${cleanCode}] trên hệ thống. Vui lòng kiểm tra lại mã đề hoặc liên hệ giám thị/giáo viên.` 
+    error: `Exam not found: No test paper found for code [${cleanCode}]. Please verify your test code or contact your supervisor.` 
   };
 }
 

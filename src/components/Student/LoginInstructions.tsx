@@ -80,11 +80,11 @@ export const LoginInstructions: React.FC<LoginInstructionsProps> = ({
     const cleanCode = activeCode.trim();
 
     if (!cleanSbd) {
-      setErrorMsg('Vui lòng nhập họ tên hoặc Số báo danh (SBD) của thí sinh.');
+      setErrorMsg('Please enter candidate name or candidate ID (SBD).');
       return;
     }
     if (!cleanCode) {
-      setErrorMsg('Vui lòng nhập mã đề thi.');
+      setErrorMsg('Please enter the exam code.');
       return;
     }
 
@@ -184,7 +184,7 @@ export const LoginInstructions: React.FC<LoginInstructionsProps> = ({
                   <label className="block text-xs font-bold text-[#3C2A63]">
                     Test Code / Practice Set <span className="text-rose-500">*</span>
                   </label>
-                  <span className="text-[10px] text-[#7C68A5]">Khớp chính xác mã đề</span>
+                  <span className="text-[10px] text-[#7C68A5]">Exact test code</span>
                 </div>
                 <div className="relative">
                   <input
@@ -199,40 +199,6 @@ export const LoginInstructions: React.FC<LoginInstructionsProps> = ({
                     required
                   />
                   <SlidersHorizontal className="w-4 h-4 text-[#7C68A5] absolute left-3.5 top-3.5 pointer-events-none" />
-                </div>
-                <div className="flex items-center gap-1.5 pt-1 text-[11px] text-[#7C68A5] flex-wrap">
-                  <span className="font-semibold text-[#503A7A]">Đề mẫu có sẵn:</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setExamCode('IELTS01');
-                      if (onClearLoginError) onClearLoginError();
-                    }}
-                    className="px-2 py-0.5 rounded-lg bg-purple-50 text-[#6B51A5] border border-purple-200 hover:bg-purple-100 font-mono font-bold text-[11px] transition cursor-pointer"
-                  >
-                    IELTS01
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setExamCode('TEST01');
-                      if (onClearLoginError) onClearLoginError();
-                    }}
-                    className="px-2 py-0.5 rounded-lg bg-purple-50 text-[#6B51A5] border border-purple-200 hover:bg-purple-100 font-mono font-bold text-[11px] transition cursor-pointer"
-                  >
-                    TEST01
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setExamCode('ON_TAP_01');
-                      setSelectedMode('PRACTICE');
-                      if (onClearLoginError) onClearLoginError();
-                    }}
-                    className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 font-mono font-bold text-[11px] transition cursor-pointer"
-                  >
-                    ON_TAP_01
-                  </button>
                 </div>
               </div>
 
@@ -299,14 +265,14 @@ export const LoginInstructions: React.FC<LoginInstructionsProps> = ({
                 {isSubmittingLogin || isLoadingExam ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin text-white shrink-0" />
-                    <span>Đang vào phòng thi... (Loading exam)</span>
+                    <span>Entering exam room... (Loading exam)</span>
                   </>
                 ) : (
                   <>
                     <span>
                       {selectedMode === 'TEST' 
-                        ? 'VÀO THI CHÍNH THỨC • START TEST' 
-                        : 'VÀO ÔN TẬP • START PRACTICE'}
+                        ? 'START OFFICIAL TEST' 
+                        : 'START PRACTICE SESSION'}
                     </span>
                     <ArrowRight className="w-4 h-4" />
                   </>
