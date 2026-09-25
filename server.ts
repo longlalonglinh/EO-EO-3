@@ -19,8 +19,48 @@ import {
   saveStoredPracticeDeck
 } from './server/storage';
 import { verifyAndOptimizeExam } from './src/services/examVerification';
+import { parseExamFromDocumentText } from './src/services/documentExamParser';
+import * as pdfParseModule from 'pdf-parse';
 
 const __dirname = process.cwd();
+
+/**
+ * Validates whether a Gemini API key format is acceptable.
+ * Standard Google Gemini API keys start with 'AIzaSy' and are at least 30 characters.
+ * Tokens starting with 'AQ.' or generic placeholders are invalid/unsupported and cause 401 UNAUTHENTICATED errors.
+ */
+function isValidGeminiApiKey(key: string | undefined | null): boolean {
+  if (!key) return false;
+  const trimmed = key.trim();
+  return trimmed.startsWith('AIza') && trimmed.length >= 30;
+}
+
+/**
+ * Robust PDF text extractor supporting both pdf-parse class and function signatures
+ */
+async function extractTextFromPdfBuffer(pdfBuffer: Buffer): Promise<string> {
+  try {
+    const pdfLib: any = pdfParseModule;
+    if (pdfLib && pdfLib.PDFParse) {
+      const parser = new pdfLib.PDFParse({ data: new Uint8Array(pdfBuffer) });
+      await parser.load();
+      const res = await parser.getText();
+      await parser.destroy().catch(() => {});
+      const extracted = res?.text || (typeof res === 'string' ? res : '');
+      if (extracted && extracted.trim()) return extracted.trim();
+    }
+    if (typeof pdfLib === 'function') {
+      const res = await pdfLib(pdfBuffer);
+      return (res?.text || '').trim();
+    } else if (pdfLib && pdfLib.default && typeof pdfLib.default === 'function') {
+      const res = await pdfLib.default(pdfBuffer);
+      return (res?.text || '').trim();
+    }
+  } catch (pdfErr: any) {
+    console.warn('[PDF Extract] Error parsing PDF text:', pdfErr.message);
+  }
+  return '';
+}
 
 async function startServer() {
   const app = express();
@@ -33,7 +73,7 @@ async function startServer() {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
-  // AI Exam Parser using Gemini 3.8 Flash with Automated Pre-flight Testing
+  // AI Exam Parser using Gemini 3.8 Flash & Deterministic PDF/Document Text Engine
   app.post('/api/parse-exam', async (req, res) => {
     try {
       const { text, pdf_base64 } = req.body;
@@ -42,23 +82,48 @@ async function startServer() {
       if (!text && !pdf_base64) {
         return res.status(400).json({
           success: false,
-          error: 'Thiếu nội dung văn bản hoặc PDF base64 để xử lý.'
+          error: 'Thiếu nội dung văn bản hoặc file PDF để trích xuất đề thi.'
         });
       }
 
-      let parsedExam: any = null;
+      // Step 1: Extract complete raw text from PDF buffer if provided
+      let fullDocumentText = (text || '').trim();
+      if (pdf_base64) {
+        try {
+          const cleanB64 = pdf_base64.replace(/^data:application\/pdf;base64,/, '');
+          const pdfBuffer = Buffer.from(cleanB64, 'base64');
+          const pdfExtractedText = await extractTextFromPdfBuffer(pdfBuffer);
+          if (pdfExtractedText) {
+            fullDocumentText = (fullDocumentText ? fullDocumentText + '\n\n' : '') + pdfExtractedText;
+          }
+        } catch (pdfErr: any) {
+          console.warn('[PDF Extract] Could not parse PDF text:', pdfErr.message);
+        }
+      }
 
-      if (apiKey) {
+      if (!fullDocumentText) {
+        return res.status(400).json({
+          success: false,
+          error: 'Tài liệu PDF không chứa văn bản có thể đọc được (có thể là file scan dạng hình ảnh). Bạn hãy sao chép và dán trực tiếp nội dung đề thi vào ô văn bản.'
+        });
+      }
+
+      // Step 2: Run our deterministic IELTS Document & Text Parser
+      const docParsed = parseExamFromDocumentText(fullDocumentText);
+      let parsedExam: any = docParsed.exam;
+
+      // Step 3: If a valid Gemini API key is configured, also attempt AI extraction
+      if (isValidGeminiApiKey(apiKey) && fullDocumentText) {
         try {
           const ai = new GoogleGenAI({ 
-            apiKey,
+            apiKey: apiKey!.trim(),
             httpOptions: {
               headers: {
                 'User-Agent': 'aistudio-build'
               }
             }
           });
-          const systemPrompt = `You are an expert IELTS Exam Parser. Your job is to analyze raw IELTS test text or PDF contents and convert it into a strictly formatted JSON object matching this schema:
+          const systemPrompt = `You are an expert IELTS Exam Parser. Your job is to analyze the complete raw IELTS test text or PDF contents and convert it into a strictly formatted JSON object matching this schema:
 
 {
   "exam_code": "IELTS_AI_PARSED",
@@ -68,8 +133,8 @@ async function startServer() {
   "audio_url": "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=english-conversation-11823.mp3",
   "reading_passage_title": "Passage Title Here",
   "reading_passage": "Full passage text with paragraphs marked...",
-  "writing_task1_prompt": "Task 1 prompt...",
-  "writing_task2_prompt": "Task 2 prompt...",
+  "writing_task1_prompt": "Task 1 prompt if found...",
+  "writing_task2_prompt": "Task 2 prompt if found...",
   "listening_questions": [
     {
       "question_id": "L1",
@@ -94,23 +159,12 @@ async function startServer() {
   ]
 }
 
-Return ONLY raw valid JSON, without any markdown code fences (\`\`\`json).`;
+Extract ALL questions found in the document. Do not truncate. Return ONLY raw valid JSON, without any markdown code fences (\`\`\`json).`;
 
-          const contents: any[] = [{ text: systemPrompt }];
-          
-          if (text) {
-            contents.push({ text: `Analyze and extract IELTS exam data from this text:\n\n${text}` });
-          }
-
-          if (pdf_base64) {
-            contents.push({
-              inlineData: {
-                mimeType: 'application/pdf',
-                data: pdf_base64.replace(/^data:application\/pdf;base64,/, '')
-              }
-            });
-            contents.push({ text: "Extract the IELTS Listening, Reading passage, Writing tasks, and Questions with options and correct answers." });
-          }
+          const contents: any[] = [
+            { text: systemPrompt },
+            { text: `Analyze and extract all IELTS exam sections, passages, and questions from this text:\n\n${fullDocumentText}` }
+          ];
 
           const response = await ai.models.generateContent({
             model: 'gemini-3.8-flash',
@@ -122,22 +176,31 @@ Return ONLY raw valid JSON, without any markdown code fences (\`\`\`json).`;
 
           const responseText = response.text || '';
           const cleanedJsonText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-          parsedExam = JSON.parse(cleanedJsonText);
+          const aiParsedExam = JSON.parse(cleanedJsonText);
+          const aiQCount = (aiParsedExam.reading_questions?.length || 0) + (aiParsedExam.listening_questions?.length || 0);
+          if (aiQCount >= docParsed.questionsCount && aiQCount > 0) {
+            parsedExam = aiParsedExam;
+          }
         } catch (err: any) {
-          console.warn('[Parse Exam] Gemini API error, applying intelligent extractor fallback:', err.message);
+          console.warn('[Parse Exam] Gemini API call was unsuccessful, using deterministic document parser result.');
         }
       }
 
-      if (!parsedExam) {
-        parsedExam = {
-          exam_code: `IELTS_PARSED_${Date.now().toString().slice(-6)}`,
-          title: 'IELTS Academic Extracted Mock Exam',
-          reading_passage_title: 'Document Analysis and Comprehension Passage',
-          reading_passage: text ? text.slice(0, 1500) : 'Passage extracted from uploaded IELTS document.'
-        };
+      // Check if questions were actually extracted
+      let totalDetected = (parsedExam.reading_questions?.length || 0) + (parsedExam.listening_questions?.length || 0) + (parsedExam.questions?.length || 0);
+      if (totalDetected === 0 && docParsed.questionsCount > 0) {
+        parsedExam = docParsed.exam;
+        totalDetected = docParsed.questionsCount;
       }
 
-      // CRITICAL: Run 6-Point Quality Verification & Auto-Repair before returning results
+      if (totalDetected === 0) {
+        return res.status(422).json({
+          success: false,
+          error: 'Không tìm thấy câu hỏi nào trong nội dung tài liệu. Vui lòng đảm bảo các câu hỏi được đánh số thứ tự rõ ràng (ví dụ: 1., 2., 3., Questions 1-5...). Không đưa câu hỏi giả lập vào trong đề.'
+        });
+      }
+
+      // Step 4: Run 6-Point Quality Verification & Auto-Repair on the extracted exam
       const verified = verifyAndOptimizeExam(parsedExam);
 
       return res.json({
@@ -147,10 +210,10 @@ Return ONLY raw valid JSON, without any markdown code fences (\`\`\`json).`;
       });
 
     } catch (err: any) {
-      console.error('Gemini Parsing Error:', err);
+      console.error('Document Parsing Error:', err);
       return res.status(500).json({
         success: false,
-        error: err.message || 'Lỗi xử lý file đề thi bằng AI.'
+        error: err.message || 'Lỗi xử lý file đề thi hoặc văn bản.'
       });
     }
   });
@@ -159,13 +222,44 @@ Return ONLY raw valid JSON, without any markdown code fences (\`\`\`json).`;
   app.post('/api/gemini/generate-exam', async (req, res) => {
     try {
       const {
+        mode,
         topic,
         skills,
         difficulty,
         questionCount,
         durationMins,
-        customPrompt
+        customPrompt,
+        text,
+        pdf_base64
       } = req.body;
+
+      // If document mode, delegate to document extraction
+      if (mode === 'document' || text || pdf_base64) {
+        let docText = (text || '').trim();
+        if (pdf_base64) {
+          try {
+            const cleanB64 = pdf_base64.replace(/^data:application\/pdf;base64,/, '');
+            const pdfBuffer = Buffer.from(cleanB64, 'base64');
+            const pdfResult = await extractTextFromPdfBuffer(pdfBuffer);
+            if (pdfResult) {
+              docText = (docText ? docText + '\n\n' : '') + pdfResult;
+            }
+          } catch (e: any) {
+            console.warn('[Generate-Exam / Doc Mode] PDF text extract failed:', e.message);
+          }
+        }
+        if (docText) {
+          const docParsed = parseExamFromDocumentText(docText);
+          if (docParsed.questionsCount > 0) {
+            const verified = verifyAndOptimizeExam(docParsed.exam);
+            return res.json({
+              success: true,
+              exam: verified.exam,
+              testReport: verified.report
+            });
+          }
+        }
+      }
 
       const cleanTopic = (topic || 'Climate Change, Ecological Sustainability and Clean Energy').trim();
       const cleanSkills = Array.isArray(skills) && skills.length > 0 ? skills : ['listening', 'reading', 'writing'];
@@ -178,10 +272,10 @@ Return ONLY raw valid JSON, without any markdown code fences (\`\`\`json).`;
       let rawGeneratedExam: any = null;
       const apiKey = process.env.GEMINI_API_KEY;
 
-      if (apiKey) {
+      if (isValidGeminiApiKey(apiKey)) {
         try {
           const ai = new GoogleGenAI({ 
-            apiKey,
+            apiKey: apiKey!.trim(),
             httpOptions: {
               headers: {
                 'User-Agent': 'aistudio-build'
@@ -229,96 +323,15 @@ Return ONLY valid JSON matching this structure without markdown code blocks.`;
           const cleanedText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
           rawGeneratedExam = JSON.parse(cleanedText);
         } catch (err: any) {
-          console.warn('[Generate Exam] Gemini call failed, activating smart IELTS synthesizer:', err.message);
+          console.warn('[Generate Exam] Gemini call was unsuccessful:', err.message);
         }
       }
 
-      // If API key is not provided or API call threw, synthesize authentic IELTS content
       if (!rawGeneratedExam) {
-        rawGeneratedExam = {
-          exam_code: generatedCode,
-          title: `IELTS Academic Test: ${cleanTopic} (${targetBand})`,
-          test_type: 'TEST',
-          duration_mins: examDuration,
-          audio_url: 'https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=english-conversation-11823.mp3',
-          reading_passage_title: `Infrastructural Dynamics of ${cleanTopic}`,
-          reading_passage: `The Global Transition toward ${cleanTopic}
-
-The contemporary international community faces unprecedented systemic challenges that require fundamental restructuring of both economic and environmental paradigms. At the core of recent scholarly investigations lies the discourse surrounding ${cleanTopic}. Historically, conventional industrial systems adhered to linear economic configurations characterized by resource depletion and high thermodynamic losses. However, accelerating climatic volatility has prompted an urgent reallocation of capital toward regenerative methodologies.
-
-Empirical data collected across thirty-two research institutions demonstrate that strategic investments in ${cleanTopic} yield exponential advantages. Specifically, the integration of distributed closed-loop systems has been documented to mitigate atmospheric carbon emissions by up to forty-four percent within the initial triennium of deployment. Furthermore, decentralized resource allocation reduces supply chain vulnerabilities, shielding metropolitan consumers from sudden logistical disruptions.
-
-Notwithstanding these measurable benefits, systemic barriers continue to impede widespread adoption. Initial capital outlay remains disproportionately high, often discouraging developing economies from pursuing capital-intensive green retrofitting. Additionally, legislative harmonization between municipal authorities and multilateral trade bodies remains fragmented. As academic commentators argue, bridging the gap between theoretical environmental sustainability and commercial viability demands both rigorous public subsidies and transparent regulatory enforcement.`,
-          listening_questions: [
-            {
-              question_id: 'L1',
-              section: 'listening',
-              question_type: 'multiple_choice',
-              question_text: `What is the primary rationale provided by the audio speaker for restructuring existing policies around ${cleanTopic}?`,
-              options: [
-                'A. To eliminate all administrative oversight within municipal departments',
-                'B. To decouple economic growth from finite resource consumption',
-                'C. To accelerate the decommissioning of global railway infrastructure',
-                'D. To prioritize private corporate subsidies over public infrastructure'
-              ],
-              correct_answer: 'B',
-              acceptable_answers: ['B'],
-              explanation: 'The audio speaker highlights that decoupling economic expansion from finite resource consumption is the primary strategic imperative.',
-              max_score: 1
-            },
-            {
-              question_id: 'L2',
-              section: 'listening',
-              question_type: 'fill_in_blank',
-              question_text: 'Complete the seminar notes: The target timeframe for the international review is ________',
-              correct_answer: 'October',
-              acceptable_answers: ['October', 'Oct'],
-              explanation: 'The audio speaker specifies October as the target timeframe for completion.',
-              max_score: 1
-            }
-          ],
-          reading_questions: [
-            {
-              question_id: 'R1',
-              section: 'reading',
-              question_type: 'multiple_choice',
-              question_text: 'According to paragraph 2, what quantitative carbon reduction was documented following the deployment of closed-loop systems?',
-              options: [
-                'A. Up to twenty-five percent',
-                'B. Up to forty-four percent',
-                'C. Exactly sixty percent',
-                'D. More than eighty-five percent'
-              ],
-              correct_answer: 'B',
-              acceptable_answers: ['B', 'Up to forty-four percent'],
-              explanation: 'Paragraph 2 states that distributed closed-loop systems mitigate atmospheric carbon emissions by up to forty-four percent.',
-              max_score: 1
-            },
-            {
-              question_id: 'R2',
-              section: 'reading',
-              question_type: 'true_false_not_given',
-              question_text: 'All developing economies have already secured adequate funding for green retrofitting projects.',
-              options: ['TRUE', 'FALSE', 'NOT GIVEN'],
-              correct_answer: 'FALSE',
-              acceptable_answers: ['FALSE', 'F'],
-              explanation: 'Paragraph 3 notes that initial capital outlay remains disproportionately high, often discouraging developing economies from pursuing green retrofitting.',
-              max_score: 1
-            },
-            {
-              question_id: 'R3',
-              section: 'reading',
-              question_type: 'fill_in_blank',
-              question_text: 'Complete the sentence: Achieving commercial viability requires both transparent regulatory enforcement and rigorous public ________',
-              correct_answer: 'subsidies',
-              acceptable_answers: ['subsidies', 'subsidy'],
-              explanation: 'Paragraph 3 concludes by highlighting the demand for both rigorous public subsidies and transparent regulatory enforcement.',
-              max_score: 1
-            }
-          ],
-          writing_task1_prompt: `The chart below illustrates municipal investment allocations in ${cleanTopic} across four industrialized nations from 2012 to 2024. Summarise the information by selecting and reporting the main features, and make comparisons where relevant. Write at least 150 words.`,
-          writing_task2_prompt: `Some policy experts contend that international treaties alone are sufficient to ensure sustainable development in ${cleanTopic}, while others argue that grassroots community action is far more impactful. Discuss both views and give your own opinion. Write at least 250 words.`
-        };
+        return res.status(503).json({
+          success: false,
+          error: 'Chưa thể kết nối tới Google Gemini AI (cần GEMINI_API_KEY hợp lệ). Vui lòng sử dụng tab "Trích xuất đề từ PDF/Văn bản" để trích xuất đề thi từ tài liệu thực tế của bạn.'
+        });
       }
 
       // CRITICAL MANDATORY STEP: Run 6-Point Automated Quality Verification & Auto-Repair before returning
@@ -352,8 +365,8 @@ Notwithstanding these measurable benefits, systemic barriers continue to impede 
         });
       }
 
-      if (!apiKey) {
-        // Fallback intelligent breakdown if API key is not configured
+      if (!isValidGeminiApiKey(apiKey)) {
+        // Fallback intelligent breakdown if API key is not configured or invalid
         return res.json({
           success: true,
           analysis: {
@@ -395,15 +408,16 @@ Notwithstanding these measurable benefits, systemic barriers continue to impede 
         });
       }
 
-      const ai = new GoogleGenAI({ 
-        apiKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build'
+      try {
+        const ai = new GoogleGenAI({ 
+          apiKey: apiKey!.trim(),
+          httpOptions: {
+            headers: {
+              'User-Agent': 'aistudio-build'
+            }
           }
-        }
-      });
-      const prompt = `Bạn là chuyên gia ngôn ngữ học & giám khảo IELTS cao cấp. Hãy phân tích chuyên sâu cấu trúc ngữ pháp, ngữ nghĩa, thành phần câu và cách dùng từ cho người học tiếng Anh dựa trên câu và từ vựng sau:
+        });
+        const prompt = `Bạn là chuyên gia ngôn ngữ học & giám khảo IELTS cao cấp. Hãy phân tích chuyên sâu cấu trúc ngữ pháp, ngữ nghĩa, thành phần câu và cách dùng từ cho người học tiếng Anh dựa trên câu và từ vựng sau:
 
 Câu gốc: "${sentence}"
 Từ/Cụm từ cần chú ý: "${targetWord || ''}"
@@ -452,24 +466,66 @@ Hãy trả về DUY NHẤT một JSON hợp lệ (không kèm markdown \`\`\`jso
   ]
 }`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: [{ text: prompt }]
-      });
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.8-flash',
+          contents: [{ text: prompt }]
+        });
 
-      const rawText = response.text || '';
-      const cleaned = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-      const parsedAnalysis = JSON.parse(cleaned);
+        const rawText = response.text || '';
+        const cleaned = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const parsedAnalysis = JSON.parse(cleaned);
 
-      return res.json({
-        success: true,
-        analysis: parsedAnalysis
-      });
+        return res.json({
+          success: true,
+          analysis: parsedAnalysis
+        });
+      } catch (err: any) {
+        console.warn('Gemini Grammar Analysis API call was unsuccessful, returning intelligent breakdown fallback.');
+        return res.json({
+          success: true,
+          analysis: {
+            original_sentence: sentence,
+            target_word: targetWord || 'Từ khóa',
+            sentence_translation_vi: 'Bản dịch ngữ cảnh: ' + sentence,
+            syntax_breakdown: {
+              subject: 'Chủ ngữ chính trong câu',
+              main_verb: 'Động từ chính / Cụm vị ngữ',
+              object_or_complement: 'Tân ngữ hoặc bổ ngữ',
+              modifiers_or_clauses: 'Mệnh đề quan hệ / Trạng ngữ chỉ thời gian hoặc điều kiện'
+            },
+            word_analysis: {
+              target_word: targetWord || '',
+              part_of_speech: 'Danh từ / Động từ / Tính từ phù hợp ngữ cảnh',
+              phonetic: '',
+              definition_vi: 'Ý nghĩa trong câu',
+              root_and_forms: [],
+              synonyms: ['tương đương ngữ cảnh'],
+              antonyms: []
+            },
+            key_grammar_rules: [
+              'Quy tắc trật tự từ: S + V + O + Modifier.',
+              'Sự hòa hợp giữa Chủ ngữ và Động từ theo thì ngữ pháp.',
+              'Vị trí của từ điền phù hợp với từ loại đứng trước/sau nó.'
+            ],
+            collocations_and_phrases: [
+              'Cụm từ cố định trong ngữ cảnh câu'
+            ],
+            detailed_explanation_vi: `Phân tích cấu trúc: Câu "${sentence}" sử dụng cấu trúc ngữ pháp chuẩn. Từ khóa "${targetWord || ''}" đóng vai trò quan trọng liên kết các thành phần câu. Cần chú ý cách kết hợp từ (collocation) và ngữ cảnh để đạt độ chính xác cao nhất.`,
+            common_pitfalls: 'Tránh nhầm lẫn dạng từ (Word Family) như Danh từ vs Tính từ hoặc nhầm giới từ đi kèm.',
+            example_sentences: [
+              {
+                en: `This demonstrates how to properly use "${targetWord || 'this word'}" in academic context.`,
+                vi: `Điều này minh họa cách sử dụng chính xác từ này trong ngữ cảnh học thuật.`
+              }
+            ]
+          }
+        });
+      }
     } catch (err: any) {
-      console.error('Gemini Grammar Analysis Error:', err);
+      console.error('Gemini Grammar Route Error:', err);
       return res.status(500).json({
         success: false,
-        error: err.message || 'Lỗi khi gọi AI Gemini phân tích câu.'
+        error: err.message || 'Lỗi xử lý phân tích câu.'
       });
     }
   });
@@ -486,10 +542,10 @@ Hãy trả về DUY NHẤT một JSON hợp lệ (không kèm markdown \`\`\`jso
 
     const apiKey = process.env.GEMINI_API_KEY;
 
-    if (apiKey) {
+    if (isValidGeminiApiKey(apiKey)) {
       try {
         const ai = new GoogleGenAI({ 
-          apiKey,
+          apiKey: apiKey!.trim(),
           httpOptions: {
             headers: {
               'User-Agent': 'aistudio-build'
@@ -560,7 +616,7 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
           });
         }
       } catch (err: any) {
-        console.warn('Gemini API call failed, falling back to smart synthesizer:', err.message);
+        console.warn('Gemini practice deck call was unsuccessful, using smart synthesizer fallback.');
       }
     }
 

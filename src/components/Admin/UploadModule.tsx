@@ -211,12 +211,12 @@ export const UploadModule: React.FC<UploadModuleProps> = ({
     setLoading(true);
     setErrorMsg(null);
     setSaveSuccessMsg(null);
-    setCurrentStep('Parsing document structure via Gemini 3.8 Flash...');
+    setCurrentStep('Đang đọc và phân tích cấu trúc bài đọc, câu hỏi và đáp án từ tài liệu...');
 
     try {
       const res = await parsePdfWithServerGemini(base64Data || '', rawTextSyllabus.trim() || undefined);
       
-      setCurrentStep('Running 6-Point Pre-Flight Verification on extracted document...');
+      setCurrentStep('Chạy kiểm tra tự động 6 điểm định dạng & mô phỏng chấm điểm...');
       await new Promise(r => setTimeout(r, 300));
 
       setGeneratedExam(res.exam);
@@ -227,10 +227,11 @@ export const UploadModule: React.FC<UploadModuleProps> = ({
       saveExamToIndexedDB(res.exam).catch(() => {});
       saveExamToServerDb(res.exam).catch(() => {});
 
-      setSaveSuccessMsg(`Extracted exam ${res.exam.exam_code} passed verification and saved to Central DB.`);
+      const totalQs = (res.exam.reading_questions?.length || 0) + (res.exam.listening_questions?.length || 0) + (res.exam.questions?.length || 0);
+      setSaveSuccessMsg(`Trích xuất thành công ${totalQs} câu hỏi từ tài liệu "${res.exam.title}". Đã kiểm tra cấu trúc và lưu vào Central DB.`);
     } catch (err: any) {
       console.error('Error parsing document with Gemini:', err);
-      setErrorMsg(err.message || 'Error extracting exam structure. Please verify file format.');
+      setErrorMsg(err.message || 'Không thể trích xuất đề thi. Vui lòng kiểm tra lại file PDF hoặc copy/paste trực tiếp văn bản.');
     } finally {
       setLoading(false);
       setCurrentStep('');
@@ -739,7 +740,7 @@ export const UploadModule: React.FC<UploadModuleProps> = ({
                 {previewTab === 'questions' && (
                   <div className="space-y-3">
                     {(generatedExam.questions || []).map((q, idx) => (
-                      <div key={q.question_id || idx} className="p-3 bg-white rounded-xl border border-purple-100 space-y-2">
+                      <div key={`${q.question_id || 'q'}-${idx}`} className="p-3 bg-white rounded-xl border border-purple-100 space-y-2">
                         <div className="flex items-center justify-between text-xs">
                           <span className="font-extrabold text-[#6B51A5]">
                             {q.question_id}: [{q.section.toUpperCase()}] ({q.question_type})

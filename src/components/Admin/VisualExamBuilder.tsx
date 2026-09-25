@@ -16,10 +16,11 @@ import {
   RotateCcw,
   Sparkles
 } from 'lucide-react';
-import { ExamData, Question, ReadingPassageItem, QuestionType } from '../../types';
+import { ExamData, Question, ReadingPassageItem, QuestionType, IELTSQuestionType, canonicalizeQuestionType } from '../../types';
 import { DEFAULT_EXAMS } from '../../data/defaultExams';
 import { saveExamToIndexedDB } from '../../services/indexedDb';
 import { Task1ImageUploader } from './Task1ImageUploader';
+import { QuestionEditorItem } from './QuestionEditorItem';
 
 // 1. Zod Validation Schema - Highly flexible to allow single-skill exams & partial question sets
 export const questionZodSchema = z.object({
@@ -29,10 +30,18 @@ export const questionZodSchema = z.object({
   part: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).optional(),
   question_text: z.string().optional().default(''),
   question_type: z.string().optional().default('multiple_choice'),
+  instruction: z.string().optional().default(''),
+  word_limit: z.string().optional().default(''),
   options: z.array(z.string()).optional().default([]),
   correct_answer: z.string().optional().default(''),
   explanation: z.string().optional().default(''),
-  max_score: z.number().optional().default(1)
+  max_score: z.number().optional().default(1),
+  table_data: z.any().optional(),
+  flowchart_steps: z.any().optional(),
+  word_bank: z.any().optional(),
+  matching_options: z.any().optional(),
+  nb_condition: z.union([z.boolean(), z.string()]).optional(),
+  multi_select_count: z.number().optional().default(2)
 });
 
 export const passageZodSchema = z.object({
@@ -101,7 +110,15 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
           options: q.options || [],
           correct_answer: Array.isArray(q.correct_answer) ? q.correct_answer.join('|') : (q.correct_answer || ''),
           explanation: q.explanation || '',
-          max_score: q.max_score || 1
+          max_score: q.max_score || 1,
+          instruction: q.instruction || '',
+          word_limit: q.word_limit || '',
+          table_data: q.table_data,
+          flowchart_steps: q.flowchart_steps,
+          word_bank: q.word_bank,
+          matching_options: q.matching_options,
+          nb_condition: q.nb_condition,
+          multi_select_count: q.multi_select_count || 2
         }))
       };
     });
@@ -126,7 +143,15 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
         options: q.options || [],
         correct_answer: Array.isArray(q.correct_answer) ? q.correct_answer.join('|') : (q.correct_answer || ''),
         explanation: q.explanation || '',
-        max_score: q.max_score || 1
+        max_score: q.max_score || 1,
+        instruction: q.instruction || '',
+        word_limit: q.word_limit || '',
+        table_data: q.table_data,
+        flowchart_steps: q.flowchart_steps,
+        word_bank: q.word_bank,
+        matching_options: q.matching_options,
+        nb_condition: q.nb_condition,
+        multi_select_count: q.multi_select_count || 2
       })),
       writing_task1_prompt: data.writing_task1_prompt || '',
       writing_task1_image: data.writing_task1_image || '',
@@ -276,11 +301,19 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
       section: 'reading',
       passage_index: pNumber,
       question_text: `${nextQNum}. Enter question prompt or sentence`,
-      question_type: 'multiple_choice',
-      options: ['A', 'B', 'C', 'D'],
+      question_type: IELTSQuestionType.MULTIPLE_CHOICE,
+      options: ['A. Option 1', 'B. Option 2', 'C. Option 3', 'D. Option 4'],
       correct_answer: 'A',
       max_score: 1,
-      explanation: ''
+      explanation: '',
+      instruction: '',
+      word_limit: '',
+      table_data: undefined,
+      flowchart_steps: undefined,
+      word_bank: undefined,
+      matching_options: undefined,
+      nb_condition: false,
+      multi_select_count: 2
     });
   };
 
@@ -291,11 +324,19 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
       section: 'listening',
       part: 1,
       question_text: `${nextQNum}. Enter listening question prompt`,
-      question_type: 'fill_in_the_blank',
+      question_type: IELTSQuestionType.FILL_IN_THE_BLANK,
       options: [],
       correct_answer: 'ANSWER',
       max_score: 1,
-      explanation: ''
+      explanation: '',
+      instruction: '',
+      word_limit: '',
+      table_data: undefined,
+      flowchart_steps: undefined,
+      word_bank: undefined,
+      matching_options: undefined,
+      nb_condition: false,
+      multi_select_count: 2
     });
   };
 
@@ -664,84 +705,16 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
                 </div>
               ) : (
                 currentPassageQuestionsArray.fields.map((field, qIdx) => (
-                  <div
+                  <QuestionEditorItem
                     key={field.id}
-                    className="p-4 bg-[#F8F6FC] rounded-2xl border border-purple-100/80 space-y-3 relative transition hover:border-purple-200"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-lg bg-[#3C2A63] text-white font-black text-[11px] flex items-center justify-center">
-                          {qIdx + 1}
-                        </span>
-                        <input
-                          type="text"
-                          {...register(`passages.${selectedPassageIdx}.questions.${qIdx}.question_id`)}
-                          placeholder="Question ID (e.g. R1)"
-                          className="px-2.5 py-1 bg-white rounded-xl border border-purple-200 text-xs font-mono font-bold text-[#3C2A63] w-28"
-                        />
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <select
-                          {...register(`passages.${selectedPassageIdx}.questions.${qIdx}.question_type`)}
-                          className="px-3 py-1 bg-white rounded-xl border border-purple-200 text-xs font-bold text-[#3C2A63] focus:outline-none"
-                        >
-                          <option value="multiple_choice">Multiple Choice</option>
-                          <option value="true_false_not_given">True / False / Not Given</option>
-                          <option value="yes_no_not_given">Yes / No / Not Given</option>
-                          <option value="fill_in_the_blank">Fill in the Blank</option>
-                          <option value="matching_headings">Matching Headings</option>
-                          <option value="short_answer">Short Answer</option>
-                        </select>
-
-                        <button
-                          type="button"
-                          onClick={() => currentPassageQuestionsArray.remove(qIdx)}
-                          className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition cursor-pointer"
-                          title="Delete question"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Question Prompt */}
-                    <div>
-                      <input
-                        type="text"
-                        {...register(`passages.${selectedPassageIdx}.questions.${qIdx}.question_text`)}
-                        placeholder="Question prompt or sentence..."
-                        className="w-full px-3.5 py-2 bg-white rounded-xl border border-purple-200 text-xs font-medium text-[#3C2A63] focus:outline-none focus:ring-1 focus:ring-[#6B51A5]"
-                      />
-                    </div>
-
-                    {/* Correct Answer & Score */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[11px] font-black text-[#503A7A] mb-1">
-                          Correct Answer (Exact match or option letter):
-                        </label>
-                        <input
-                          type="text"
-                          {...register(`passages.${selectedPassageIdx}.questions.${qIdx}.correct_answer`)}
-                          placeholder="e.g. TRUE or A or SOLAR ENERGY"
-                          className="w-full px-3 py-1.5 bg-white rounded-xl border border-purple-200 text-xs font-mono font-bold text-[#3C2A63] focus:outline-none"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-black text-[#503A7A] mb-1">
-                          Score Weight:
-                        </label>
-                        <input
-                          type="number"
-                          {...register(`passages.${selectedPassageIdx}.questions.${qIdx}.max_score`, { valueAsNumber: true })}
-                          defaultValue={1}
-                          className="w-full px-3 py-1.5 bg-white rounded-xl border border-purple-200 text-xs font-mono font-bold text-[#3C2A63] focus:outline-none"
-                        />
-                      </div>
-                    </div>
-                  </div>
+                    prefix={`passages.${selectedPassageIdx}.questions.${qIdx}`}
+                    index={qIdx}
+                    register={register}
+                    watch={watch}
+                    setValue={setValue}
+                    onRemove={() => currentPassageQuestionsArray.remove(qIdx)}
+                    section="reading"
+                  />
                 ))
               )}
             </div>
@@ -811,61 +784,16 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
                 </div>
               ) : (
                 listeningQuestionsArray.fields.map((field, qIdx) => (
-                  <div
+                  <QuestionEditorItem
                     key={field.id}
-                    className="p-4 bg-[#F8F6FC] rounded-2xl border border-purple-100/80 space-y-3 relative"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-lg bg-[#503A7A] text-white font-black text-[11px] flex items-center justify-center">
-                          L{qIdx + 1}
-                        </span>
-                        <input
-                          type="text"
-                          {...register(`listening_questions.${qIdx}.question_id`)}
-                          placeholder="ID"
-                          className="px-2.5 py-1 bg-white rounded-xl border border-purple-200 text-xs font-mono font-bold text-[#3C2A63] w-28"
-                        />
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <select
-                          {...register(`listening_questions.${qIdx}.question_type`)}
-                          className="px-3 py-1 bg-white rounded-xl border border-purple-200 text-xs font-bold text-[#3C2A63] focus:outline-none"
-                        >
-                          <option value="fill_in_the_blank">Fill in the Blank</option>
-                          <option value="multiple_choice">Multiple Choice</option>
-                          <option value="matching">Matching</option>
-                        </select>
-
-                        <button
-                          type="button"
-                          onClick={() => listeningQuestionsArray.remove(qIdx)}
-                          className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div>
-                      <input
-                        type="text"
-                        {...register(`listening_questions.${qIdx}.question_text`)}
-                        placeholder="Listening question text or prompt..."
-                        className="w-full px-3.5 py-2 bg-white rounded-xl border border-purple-200 text-xs font-medium text-[#3C2A63]"
-                      />
-                    </div>
-
-                    <div>
-                      <input
-                        type="text"
-                        {...register(`listening_questions.${qIdx}.correct_answer`)}
-                        placeholder="Correct Answer"
-                        className="w-full px-3 py-1.5 bg-white rounded-xl border border-purple-200 text-xs font-mono font-bold text-[#3C2A63]"
-                      />
-                    </div>
-                  </div>
+                    prefix={`listening_questions.${qIdx}`}
+                    index={qIdx}
+                    register={register}
+                    watch={watch}
+                    setValue={setValue}
+                    onRemove={() => listeningQuestionsArray.remove(qIdx)}
+                    section="listening"
+                  />
                 ))
               )}
             </div>

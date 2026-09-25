@@ -1,4 +1,4 @@
-import { ExamData, Question, QuestionType, ReadingPassageItem } from '../types';
+import { ExamData, Question, QuestionType, ReadingPassageItem, IELTSQuestionType, canonicalizeQuestionType } from '../types';
 import { isAnswerCorrect, normalizeAnswer } from './answerScoring';
 
 export interface ExamTestCheck {
@@ -34,29 +34,7 @@ export interface ExamTestReport {
  * Normalizes question types to the standard supported set
  */
 function normalizeQuestionType(rawType: string | undefined): QuestionType {
-  if (!rawType) return 'multiple_choice';
-  const clean = rawType.toLowerCase().replace(/[-\s]+/g, '_');
-  if (clean.includes('true_false') || clean === 'tfng' || clean.includes('true_or_false')) {
-    return 'true_false_not_given';
-  }
-  if (clean.includes('yes_no') || clean === 'ynng') {
-    return 'yes_no_not_given';
-  }
-  if (clean.includes('fill') || clean.includes('blank') || clean.includes('completion') || clean.includes('cloze')) {
-    if (clean.includes('sentence')) return 'sentence_completion';
-    if (clean.includes('summary')) return 'summary_completion';
-    return 'fill_in_blank';
-  }
-  if (clean.includes('heading')) {
-    return 'matching_headings';
-  }
-  if (clean.includes('matching')) {
-    return 'matching';
-  }
-  if (clean.includes('multi_choice') || clean.includes('multiple_choice') || clean === 'mcq') {
-    return 'multiple_choice';
-  }
-  return 'multiple_choice';
+  return canonicalizeQuestionType(rawType).toLowerCase() as QuestionType;
 }
 
 /**
@@ -210,27 +188,18 @@ export function verifyAndOptimizeExam(raw: Partial<ExamData>): { exam: ExamData;
   const rawPassageText = String(raw.reading_passage || raw.passage_text || '').trim();
   const rawPassageTitle = String(raw.reading_passage_title || raw.passage_title || 'Academic Reading Passage').trim();
 
-  let finalPassageText = rawPassageText;
-  if (!finalPassageText || finalPassageText.length < 100) {
-    finalPassageText = `Urban Agriculture and the Evolution of Modern Vertical Farming
-
-In recent years, the paradigm of municipal food production has undergone a fundamental transformation. As global populations concentrate increasingly within mega-cities, traditional agricultural supply chains encounter unprecedented vulnerabilities regarding logistics, climate volatility, and arable land depletion. Vertical agriculture—the cultivation of crops within controlled-environment skyscrapers utilizing aeroponic and hydroponic systems—has emerged as a viable solution.
-
-Controlled indoor environments eliminate the reliance on seasonal weather patterns while minimizing freshwater consumption by up to ninety-five percent relative to conventional furrow irrigation. Automated LED spectra replicate optimal photosynthetic wavelengths, accelerating maturation cycles and yielding multiple harvests annually. Furthermore, positioning food synthesis immediately adjacent to urban consumer centers drastically truncates transport emissions and cold-chain losses.
-
-Nevertheless, significant operational barriers persist. The capital expenditure demanded for high-efficiency climate regulation and artificial illumination remains considerable. Skeptics argue that until renewable microgrids achieve complete grid parity, the embodied energy of vertical facilities compromises their overall ecological dividends. Current research endeavors focus on integrating building-integrated photovoltaics and bio-waste nutrient recycling to optimize thermodynamic efficiency.`;
-    repairsApplied.push('Synthesised comprehensive academic reading passage with rich context');
-  }
-
-  const wordCount = finalPassageText.split(/\s+/).filter(Boolean).length;
-  const isReadingWordCountGood = wordCount >= 140;
+  const finalPassageText = rawPassageText;
+  const wordCount = finalPassageText ? finalPassageText.split(/\s+/).filter(Boolean).length : 0;
+  const isReadingWordCountGood = wordCount >= 100;
 
   checks.push({
     id: 'TEST_READING_PASSAGE',
     name: 'Reading Passage Academic Rigor',
     description: 'Ensures passage text has academic depth, structured paragraphs, and adequate word count.',
-    status: isReadingWordCountGood ? 'passed' : 'warning',
-    details: `Passage title: "${rawPassageTitle}" | Word count: ${wordCount} words (${wordCount >= 400 ? 'Academic standard' : 'Compact passage'})`
+    status: isReadingWordCountGood ? 'passed' : finalPassageText ? 'warning' : 'passed',
+    details: finalPassageText 
+      ? `Passage title: "${rawPassageTitle}" | Word count: ${wordCount} words`
+      : 'No reading passage included in this document.'
   });
 
   // ==========================================
@@ -245,7 +214,7 @@ Nevertheless, significant operational barriers persist. The capital expenditure 
     : (raw.questions?.filter(q => q.section === 'reading') || []);
 
   // Normalization helper for each question
-  let qCounter = 1;
+  const seenIds = new Set<string>();
   const processQuestionList = (
     list: Question[], 
     section: 'listening' | 'reading', 
@@ -253,9 +222,22 @@ Nevertheless, significant operational barriers persist. The capital expenditure 
   ): Question[] => {
     return list.map((q, idx) => {
       const qIndex = idx + 1;
-      const questionId = q.question_id && !q.question_id.includes('undefined')
+      let questionId = q.question_id && !q.question_id.includes('undefined')
         ? q.question_id
         : `${prefix}${qIndex}`;
+
+      // Enforce global uniqueness across all questions
+      if (seenIds.has(questionId)) {
+        let suffix = 2;
+        let newId = `${questionId}_${suffix}`;
+        while (seenIds.has(newId)) {
+          suffix++;
+          newId = `${questionId}_${suffix}`;
+        }
+        repairsApplied.push(`Disambiguated duplicate question_id "${questionId}" to "${newId}"`);
+        questionId = newId;
+      }
+      seenIds.add(questionId);
 
       const qType = normalizeQuestionType(q.question_type);
       if (qType !== q.question_type) {
@@ -308,92 +290,19 @@ Nevertheless, significant operational barriers persist. The capital expenditure 
     });
   };
 
-  let cleanListeningQuestions = processQuestionList(rawListeningQuestions, 'listening', 'L');
-  let cleanReadingQuestions = processQuestionList(rawReadingQuestions, 'reading', 'R');
+  const cleanListeningQuestions = processQuestionList(rawListeningQuestions, 'listening', 'L');
+  const cleanReadingQuestions = processQuestionList(rawReadingQuestions, 'reading', 'R');
 
-  // Fallback defaults if reading questions list is completely empty
-  if (cleanReadingQuestions.length === 0) {
-    cleanReadingQuestions = [
-      {
-        question_id: 'R1',
-        section: 'reading',
-        question_type: 'multiple_choice',
-        question_text: 'According to paragraph 2, what is the primary benefit of closed vertical farming systems?',
-        options: [
-          'A. They eliminate municipal logistics overhead',
-          'B. They conserve up to 95 percent of freshwater resources',
-          'C. They operate independently of electrical power grids',
-          'D. They eliminate the requirement for artificial lighting'
-        ],
-        correct_answer: 'B',
-        acceptable_answers: ['B', 'They conserve up to 95 percent of freshwater resources'],
-        explanation: 'Paragraph 2 explicitly states that controlled indoor environments minimize freshwater consumption by up to ninety-five percent relative to traditional farming.',
-        max_score: 1
-      },
-      {
-        question_id: 'R2',
-        section: 'reading',
-        question_type: 'true_false_not_given',
-        question_text: 'Vertical farms have already achieved lower operating costs than all traditional outdoor farms.',
-        options: ['TRUE', 'FALSE', 'NOT GIVEN'],
-        correct_answer: 'FALSE',
-        acceptable_answers: ['FALSE', 'F'],
-        explanation: 'Paragraph 3 notes that the capital expenditure demanded for climate regulation remains considerable and challenges remain before achieving complete grid parity.',
-        max_score: 1
-      },
-      {
-        question_id: 'R3',
-        section: 'reading',
-        question_type: 'fill_in_blank',
-        question_text: 'Complete the sentence: Automated LED spectra replicate optimal ________ wavelengths.',
-        correct_answer: 'photosynthetic',
-        acceptable_answers: ['photosynthetic', 'photosynthesis'],
-        explanation: 'In paragraph 2, the text mentions "Automated LED spectra replicate optimal photosynthetic wavelengths".',
-        max_score: 1
-      }
-    ];
-    repairsApplied.push('Generated 3 foundational reading questions aligned with reading passage');
-  }
-
-  // Fallback defaults if listening questions list is empty
-  if (cleanListeningQuestions.length === 0) {
-    cleanListeningQuestions = [
-      {
-        question_id: 'L1',
-        section: 'listening',
-        question_type: 'multiple_choice',
-        question_text: 'What type of insurance coverage is the caller inquiring about?',
-        options: [
-          'A. Comprehensive Household Contents Policy',
-          'B. Commercial Fleet Vehicle Protection',
-          'C. Third-party Property and Marine Insurance',
-          'D. Overseas Student Health Cover'
-        ],
-        correct_answer: 'A',
-        acceptable_answers: ['A'],
-        explanation: 'The conversation audio confirms the applicant requested comprehensive household contents policy coverage.',
-        max_score: 1
-      },
-      {
-        question_id: 'L2',
-        section: 'listening',
-        question_type: 'fill_in_blank',
-        question_text: 'Complete the notes: Customer contact telephone number is ________',
-        correct_answer: '0412889234',
-        acceptable_answers: ['0412889234', '0412 889 234'],
-        explanation: 'The recorded telephone number given by the client is 0412889234.',
-        max_score: 1
-      }
-    ];
-    repairsApplied.push('Supplied standard listening audio questions with answers');
-  }
+  const totalDetectedQuestions = cleanListeningQuestions.length + cleanReadingQuestions.length;
 
   checks.push({
     id: 'TEST_QUESTIONS_STRUCTURE',
     name: 'Question Structure & Prefix Uniformity',
     description: 'Checks unique IDs, valid question types, option letters (A, B, C, D), and instructions.',
-    status: 'passed',
-    details: `${cleanListeningQuestions.length} Listening + ${cleanReadingQuestions.length} Reading questions verified with uniform format.`
+    status: totalDetectedQuestions > 0 ? 'passed' : 'warning',
+    details: totalDetectedQuestions > 0 
+      ? `${cleanListeningQuestions.length} Listening + ${cleanReadingQuestions.length} Reading questions verified with uniform format.`
+      : 'No questions detected in this material. Questions can be added in Visual Builder.'
   });
 
   checks.push({
@@ -401,31 +310,28 @@ Nevertheless, significant operational barriers persist. The capital expenditure 
     name: 'Answer Key Integrity & Casing Consistency',
     description: 'Ensures 100% of questions possess unambiguous, non-empty answer keys with standard casing.',
     status: 'passed',
-    details: 'All answer keys validated against multiple-choice sets and standard TRUE/FALSE tokens.'
+    details: totalDetectedQuestions > 0 
+      ? 'All answer keys validated against multiple-choice sets and standard TRUE/FALSE tokens.'
+      : 'Ready for question input.'
   });
 
   // ==========================================
   // PHASE 5: Audio Resources & Writing Tasks Check
   // ==========================================
   const fallbackAudio = 'https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=english-conversation-11823.mp3';
-  const audioUrl = (raw.audio_url && raw.audio_url.startsWith('http')) 
+  const audioUrl = raw.audio_url 
     ? raw.audio_url 
-    : fallbackAudio;
-  if (!raw.audio_url) repairsApplied.push('Attached reliable high-fidelity IELTS conversation audio track');
+    : cleanListeningQuestions.length > 0 ? fallbackAudio : undefined;
 
-  const task1Prompt = String(raw.writing_task1_prompt || '').trim() || (
-    'The chart below illustrates the proportion of urban agricultural production across four global metropolitan regions from 2015 to 2025. Summarise the information by selecting and reporting the main features, and make comparisons where relevant. Write at least 150 words.'
-  );
-  const task2Prompt = String(raw.writing_task2_prompt || '').trim() || (
-    'Some people believe that municipal governments should mandate vertical farming facilities within all new high-rise architectural developments. Others argue that urban food production should be left entirely to private market enterprise. Discuss both views and give your own opinion. Write at least 250 words.'
-  );
+  const task1Prompt = raw.writing_task1_prompt ? String(raw.writing_task1_prompt).trim() : undefined;
+  const task2Prompt = raw.writing_task2_prompt ? String(raw.writing_task2_prompt).trim() : undefined;
 
   checks.push({
     id: 'TEST_MULTIMODAL_RESOURCES',
     name: 'Audio Assets & Writing Tasks Standard',
     description: 'Verifies audio streaming URL for listening and IELTS Band Descriptors compliance for Writing Tasks 1 & 2.',
     status: 'passed',
-    details: `Audio Stream: Ready | Writing Task 1: 150w min | Writing Task 2: 250w min`
+    details: `Audio Stream: ${audioUrl ? 'Ready' : 'N/A'} | Writing Tasks: ${[task1Prompt ? 'Task 1' : '', task2Prompt ? 'Task 2' : ''].filter(Boolean).join(' & ') || 'None'}`
   });
 
   // ==========================================

@@ -20,6 +20,7 @@
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "pdf-parse": "^2.4.5",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "react-hook-form": "^7.87.0",
@@ -29,6 +30,7 @@
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
+    "@types/pdf-parse": "^1.1.5",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
     "fake-indexeddb": "^6.2.5",

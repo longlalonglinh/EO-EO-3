@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Question } from '../../types';
+import { Question, IELTSQuestionType, canonicalizeQuestionType } from '../../types';
 import { 
   CheckCircle2, 
   AlertTriangle, 
@@ -8,8 +8,15 @@ import {
   X,
   FileText,
   HelpCircle,
-  Sparkles
+  Sparkles,
+  Users,
+  Layers,
+  ArrowRight,
+  Info
 } from 'lucide-react';
+import { IELTSTableCompletion } from '../Common/IELTSTableCompletion';
+import { IELTSFlowChartCompletion } from '../Common/IELTSFlowChartCompletion';
+import { IELTSSummaryBoxCompletion } from '../Common/IELTSSummaryBoxCompletion';
 
 interface IELTSQuestionCardProps {
   question: Question;
@@ -28,13 +35,22 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
 }) => {
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
 
+  // Canonicalize question type to standard IELTS enum
+  const qType = canonicalizeQuestionType(question.question_type);
+
   // Check if answer is filled
   const isFilled = Boolean(userAnswer && userAnswer.trim().length > 0);
 
   // Determine if question is multi-choice (Pick 2 or Pick 3)
-  const isMultiSelect = question.question_type === 'multiple_choice_multi' || 
+  const isMultiSelect = qType === IELTSQuestionType.MULTIPLE_CHOICE_MULTIPLE_ANSWERS || 
     (question.instruction && /choose (two|three|2|3)/i.test(question.instruction)) ||
     (question.word_limit && /choose (two|three|2|3)/i.test(question.word_limit));
+
+  // Extract expected count if multi-select
+  let targetMultiCount = 2;
+  const insText = (question.instruction || question.word_limit || '').toLowerCase();
+  if (insText.includes('three') || insText.includes('3')) targetMultiCount = 3;
+  if (question.multi_select_count) targetMultiCount = question.multi_select_count;
 
   // Helper for multi-select answer toggling (stored as comma-separated, e.g. "A, B")
   const handleMultiSelectToggle = (letter: string) => {
@@ -64,14 +80,10 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
     : headingsList;
 
   const isGapFill = [
-    'sentence_completion',
-    'summary_completion',
-    'diagram_label_completion',
-    'plan_map_diagram_labelling',
-    'short_answer_questions',
-    'form_note_table_flowchart_completion',
-    'fill_in_blank'
-  ].includes(question.question_type);
+    IELTSQuestionType.FILL_IN_THE_BLANK,
+    IELTSQuestionType.SUMMARY_COMPLETION_TEXT,
+    IELTSQuestionType.SHORT_ANSWER
+  ].includes(qType);
 
   let maxWords: number | null = null;
   if (isGapFill && question.word_limit) {
@@ -83,6 +95,11 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
   }
   const currentWordCount = userAnswer ? userAnswer.trim().split(/\s+/).filter(Boolean).length : 0;
   const isOverLimit = maxWords !== null && currentWordCount > maxWords;
+
+  // Has NB Condition for Matching Information
+  const hasNbCondition = question.nb_condition || 
+    (question.instruction && /NB\s*:?\s*you may use any letter more than once/i.test(question.instruction)) ||
+    (question.question_text && /NB\s*:?\s*you may use any letter more than once/i.test(question.question_text));
 
   const wordBankItems: string[] = [];
   if (isGapFill) {
@@ -103,8 +120,7 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
 
   // Inline Gap Filling renderer
   const renderQuestionTextInline = (text: string) => {
-    // Only apply inline input for gap fill types
-    if (!isGapFill) {
+    if (!isGapFill && qType !== IELTSQuestionType.SUMMARY_COMPLETION_BOX) {
       return <span className="leading-relaxed">{text}</span>;
     }
 
@@ -112,7 +128,6 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
     const parts = text.split(blankRegex);
 
     if (parts.length === 1) {
-      // No blank found, just return the text
       return <span className="leading-relaxed">{text}</span>;
     }
 
@@ -121,7 +136,7 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
     return (
       <span className="leading-loose">
         {parts.map((part, i) => {
-          if (i % 2 !== 0) { // Odd index is the blank delimiter
+          if (i % 2 !== 0) {
             if (!inputRendered) {
               inputRendered = true;
               return (
@@ -133,7 +148,7 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={handleDrop}
                   placeholder="Type answer..."
-                  className={`inline-block w-32 md:w-40 px-3 py-1.5 mx-1.5 text-sm bg-[#FAF4F8] border rounded-lg font-bold placeholder-[#A38DBE] focus:outline-none focus:ring-2 focus:bg-white text-center shadow-inner transition-all align-middle ${
+                  className={`inline-block w-32 md:w-44 px-3 py-1.5 mx-1.5 text-sm bg-[#FAF4F8] border rounded-lg font-bold placeholder-[#A38DBE] focus:outline-none focus:ring-2 focus:bg-white text-center shadow-inner transition-all align-middle ${
                     isOverLimit ? 'border-rose-400 text-rose-700 focus:ring-rose-200' : 'border-pink-200 text-[#3C2A63] focus:ring-[#6B51A5]'
                   }`}
                 />
@@ -164,6 +179,14 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
         </div>
       )}
 
+      {/* NB Condition Warning Banner for Matching Information */}
+      {hasNbCondition && (
+        <div className="px-3.5 py-2 bg-amber-50 border border-amber-300/80 rounded-xl text-amber-900 text-xs font-bold flex items-center gap-2">
+          <Info className="w-4 h-4 text-amber-600 shrink-0" />
+          <span>NB: You may use any letter more than once.</span>
+        </div>
+      )}
+
       {/* Question Header Badge & Type */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center space-x-2.5">
@@ -171,11 +194,11 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
             {questionNumber}
           </span>
           <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-purple-100 text-[#503A7A] font-extrabold uppercase border border-purple-200 shrink-0">
-            {question.question_type.replace(/_/g, ' ')}
+            {qType.replace(/_/g, ' ')}
           </span>
           {isMultiSelect && (
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-extrabold border border-indigo-200">
-              MULTIPLE CHOICES
+              CHOOSE {targetMultiCount} ANSWERS
             </span>
           )}
         </div>
@@ -197,30 +220,6 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
         </div>
       )}
 
-      {/* Word Bank (Drag & Drop) */}
-      {isGapFill && wordBankItems.length > 0 && (
-        <div className="mt-4 p-4 bg-[#F8F6FC] rounded-2xl border border-purple-200 shadow-sm">
-          <div className="text-xs font-extrabold text-[#503A7A] mb-3 uppercase tracking-wider flex items-center gap-2">
-            <GripVertical className="w-4 h-4" />
-            Word Bank (Drag &amp; drop into blank)
-          </div>
-          <div className="flex flex-wrap gap-2.5">
-            {wordBankItems.map((opt, oIdx) => (
-              <div
-                key={oIdx}
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData('text/plain', opt);
-                }}
-                className="px-4 py-2 bg-white border border-purple-200 rounded-xl text-sm font-bold text-[#3C2A63] cursor-grab active:cursor-grabbing hover:border-[#6B51A5] hover:shadow-md transition-all select-none"
-              >
-                {opt}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Word Limit Warning Message */}
       {isGapFill && isOverLimit && (
         <div className="text-xs text-rose-600 font-bold mt-1.5 flex items-center gap-1.5">
@@ -230,16 +229,19 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
       )}
 
       {/* ========================================================= */}
-      {/* 1. MULTIPLE CHOICE (RADIO / CHECKBOX SELECTION)           */}
+      {/* 1. MULTIPLE CHOICE (SINGLE CHOICE & MULTIPLE ANSWERS)      */}
       {/* ========================================================= */}
-      {(question.question_type === 'multiple_choice' || question.question_type === 'multiple_choice_multi') && question.options && (
+      {(qType === IELTSQuestionType.MULTIPLE_CHOICE || qType === IELTSQuestionType.MULTIPLE_CHOICE_MULTIPLE_ANSWERS) && question.options && (
         <div className="space-y-2.5 pt-1">
           {isMultiSelect ? (
             // MULTI-SELECT (CHECKBOX - CHOOSE MULTIPLE OPTIONS)
             <div className="space-y-2">
-              <span className="text-xs text-[#7C68A5] font-bold block mb-1">
-                Check all applicable options (Multiple selections allowed):
-              </span>
+              <div className="flex items-center justify-between text-xs text-[#7C68A5] font-bold mb-1">
+                <span>Check all applicable options:</span>
+                <span className="px-2 py-0.5 rounded-md bg-purple-100 text-[#503A7A] font-black">
+                  {userAnswer ? userAnswer.split(',').filter(Boolean).length : 0} / {targetMultiCount} selected
+                </span>
+              </div>
               {question.options.map((opt, optIdx) => {
                 const letterMatch = opt.match(/^([A-Z])[\.\s]/);
                 const letter = letterMatch ? letterMatch[1] : String.fromCharCode(65 + optIdx);
@@ -301,11 +303,10 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
       {/* ========================================================= */}
       {/* 2. TRUE / FALSE / NOT GIVEN & YES / NO / NOT GIVEN        */}
       {/* ========================================================= */}
-      {(question.question_type === 'true_false_not_given' || question.question_type === 'yes_no_not_given') && (
+      {(qType === IELTSQuestionType.TRUE_FALSE_NOT_GIVEN || qType === IELTSQuestionType.YES_NO_NOT_GIVEN) && (
         <div className="space-y-3 pt-1">
-          {/* Only keep Radio Options for 1 single method constraint */}
           <div className="flex flex-wrap items-center gap-2.5">
-            {(question.question_type === 'true_false_not_given' 
+            {(qType === IELTSQuestionType.TRUE_FALSE_NOT_GIVEN
               ? ['TRUE', 'FALSE', 'NOT GIVEN'] 
               : ['YES', 'NO', 'NOT GIVEN']
             ).map((val) => {
@@ -337,9 +338,8 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
       {/* ========================================================= */}
       {/* 3. MATCHING HEADINGS (LIST OF HEADINGS & DASHED DROP BOX) */}
       {/* ========================================================= */}
-      {question.question_type === 'matching_headings' && (
+      {qType === IELTSQuestionType.MATCHING_HEADINGS && (
         <div className="space-y-3 pt-1">
-          {/* List of Headings Display Box */}
           {availableHeadings && availableHeadings.length > 0 && (
             <div className="p-4 bg-purple-50/90 rounded-2xl border border-purple-200 text-xs text-[#503A7A]">
               <strong className="block mb-2 font-extrabold text-[#3C2A63] flex items-center gap-1.5">
@@ -363,7 +363,6 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
             </div>
           )}
 
-          {/* Single method: Dashed Drop Box (Removed quick buttons) */}
           <div className="space-y-2">
             <span className="text-xs font-bold text-[#7C68A5] block">
               Drag and drop heading (or click) into the box below:
@@ -411,31 +410,22 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
       )}
 
       {/* ========================================================= */}
-      {/* 4. MATCHING FEATURES / INFO / SENTENCE ENDINGS (BUBBLES ONLY)  */}
+      {/* 4. MATCHING INFORMATION (WHICH PARAGRAPH CONTAINS INFO)    */}
       {/* ========================================================= */}
-      {(question.question_type === 'matching_features' || 
-        question.question_type === 'matching_information' || 
-        question.question_type === 'matching_sentence_endings' || 
-        question.question_type === 'matching') && (
+      {qType === IELTSQuestionType.MATCHING_INFORMATION && (
         <div className="space-y-3 pt-1">
-          {/* Display options box if matching_options exist */}
-          {question.matching_options && question.matching_options.length > 0 && (
-            <div className="p-3.5 bg-purple-50 rounded-2xl border border-purple-200 text-xs space-y-1.5">
-              <strong className="block text-[#3C2A63] font-extrabold mb-1">LIST OF OPTIONS:</strong>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {question.matching_options.map((mOpt) => (
-                  <div key={mOpt.id} className="flex items-start gap-1.5">
-                    <span className="font-extrabold text-[#6B51A5]">{mOpt.id}.</span>
-                    <span className="text-[#3C2A63] font-medium">{mOpt.text}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Only Bubble buttons (removed redundant Dropdown) */}
           <div className="space-y-2">
-            <span className="text-xs font-bold text-[#7C68A5]">Select corresponding letter:</span>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-[#7C68A5]">
+                Select corresponding paragraph letter:
+              </span>
+              {hasNbCondition && (
+                <span className="text-[10px] text-amber-700 bg-amber-100 font-extrabold px-2 py-0.5 rounded-full">
+                  NB: Letters may be used more than once
+                </span>
+              )}
+            </div>
+
             <div className="flex flex-wrap gap-2">
               {(question.matching_options && question.matching_options.length > 0
                 ? question.matching_options.map(o => o.id)
@@ -463,17 +453,203 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
       )}
 
       {/* ========================================================= */}
-      {/* 5, 6, 7. GAP FILLING, DIAGRAM & SHORT ANSWER TEXT INPUTS  */}
+      {/* 5. MATCHING FEATURES (PEOPLE / SCIENTISTS / RESEARCHERS)   */}
       {/* ========================================================= */}
-      {(question.question_type === 'sentence_completion' ||
-        question.question_type === 'summary_completion' ||
-        question.question_type === 'diagram_label_completion' ||
-        question.question_type === 'plan_map_diagram_labelling' ||
-        question.question_type === 'short_answer_questions' ||
-        question.question_type === 'form_note_table_flowchart_completion' ||
-        question.question_type === 'fill_in_blank') && (
+      {qType === IELTSQuestionType.MATCHING_FEATURES && (
+        <div className="space-y-3 pt-1">
+          {question.matching_options && question.matching_options.length > 0 && (
+            <div className="p-3.5 bg-gradient-to-br from-purple-50 to-indigo-50/60 rounded-2xl border border-purple-200 text-xs space-y-2">
+              <strong className="block text-[#3C2A63] font-black uppercase tracking-wider flex items-center gap-1.5">
+                <Users className="w-4 h-4 text-[#6B51A5]" />
+                LIST OF PEOPLE / FEATURES
+              </strong>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {question.matching_options.map((mOpt) => (
+                  <div key={mOpt.id} className="p-2 bg-white rounded-xl border border-purple-100 flex items-start gap-2 shadow-xs">
+                    <span className="font-extrabold text-[#6B51A5] shrink-0">{mOpt.id}.</span>
+                    <span className="text-[#3C2A63] font-medium">{mOpt.text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <span className="text-xs font-bold text-[#7C68A5]">Select person/feature letter:</span>
+            <div className="flex flex-wrap gap-2">
+              {(question.matching_options && question.matching_options.length > 0
+                ? question.matching_options.map(o => o.id)
+                : ['A', 'B', 'C', 'D', 'E', 'F']
+              ).map((optKey) => {
+                const isSelected = userAnswer.toUpperCase() === optKey.toUpperCase();
+                return (
+                  <button
+                    key={optKey}
+                    type="button"
+                    onClick={() => onAnswerChange(question.question_id, optKey)}
+                    className={`w-10 h-10 rounded-full border text-sm font-black transition cursor-pointer flex items-center justify-center ${
+                      isSelected
+                        ? 'bg-[#6B51A5] text-white border-[#6B51A5] shadow-md scale-105'
+                        : 'bg-white border-purple-200 text-[#3C2A63] hover:bg-[#F3EFF9]'
+                    }`}
+                  >
+                    {optKey}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* 6. MATCHING SENTENCE ENDINGS (1-1 HALF-SENTENCE MATCHING)  */}
+      {/* ========================================================= */}
+      {qType === IELTSQuestionType.MATCHING_SENTENCE_ENDINGS && (
+        <div className="space-y-3 pt-1">
+          {question.matching_options && question.matching_options.length > 0 && (
+            <div className="p-3.5 bg-purple-50 rounded-2xl border border-purple-200 text-xs space-y-2">
+              <strong className="block text-[#3C2A63] font-black uppercase tracking-wider flex items-center gap-1.5">
+                <ArrowRight className="w-4 h-4 text-[#6B51A5]" />
+                LIST OF SENTENCE ENDINGS
+              </strong>
+              <div className="space-y-1.5">
+                {question.matching_options.map((mOpt) => (
+                  <div key={mOpt.id} className="p-2 bg-white rounded-xl border border-purple-100 flex items-start gap-2 shadow-xs">
+                    <span className="font-extrabold text-[#6B51A5] shrink-0">{mOpt.id}.</span>
+                    <span className="text-[#3C2A63] font-medium leading-relaxed">{mOpt.text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <span className="text-xs font-bold text-[#7C68A5]">Select matching ending letter:</span>
+            <div className="flex flex-wrap gap-2">
+              {(question.matching_options && question.matching_options.length > 0
+                ? question.matching_options.map(o => o.id)
+                : ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+              ).map((optKey) => {
+                const isSelected = userAnswer.toUpperCase() === optKey.toUpperCase();
+                return (
+                  <button
+                    key={optKey}
+                    type="button"
+                    onClick={() => onAnswerChange(question.question_id, optKey)}
+                    className={`w-10 h-10 rounded-full border text-sm font-black transition cursor-pointer flex items-center justify-center ${
+                      isSelected
+                        ? 'bg-[#6B51A5] text-white border-[#6B51A5] shadow-md scale-105'
+                        : 'bg-white border-purple-200 text-[#3C2A63] hover:bg-[#F3EFF9]'
+                    }`}
+                  >
+                    {optKey}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* 7. SUMMARY COMPLETION (WITH A BOX / WORDLIST)              */}
+      {/* ========================================================= */}
+      {qType === IELTSQuestionType.SUMMARY_COMPLETION_BOX && (
+        <IELTSSummaryBoxCompletion
+          question={question}
+          questionNumber={questionNumber}
+          userAnswer={userAnswer}
+          onAnswerChange={onAnswerChange}
+          wordBank={question.word_bank}
+        />
+      )}
+
+      {/* ========================================================= */}
+      {/* 8. TABLE COMPLETION                                       */}
+      {/* ========================================================= */}
+      {qType === IELTSQuestionType.TABLE_COMPLETION && (
+        <IELTSTableCompletion
+          tableData={question.table_data}
+          question={question}
+          questionNumber={questionNumber}
+          userAnswer={userAnswer}
+          onAnswerChange={onAnswerChange}
+        />
+      )}
+
+      {/* ========================================================= */}
+      {/* 9. FLOW-CHART COMPLETION                                  */}
+      {/* ========================================================= */}
+      {qType === IELTSQuestionType.FLOW_CHART_COMPLETION && (
+        <IELTSFlowChartCompletion
+          steps={question.flowchart_steps}
+          question={question}
+          questionNumber={questionNumber}
+          userAnswer={userAnswer}
+          onAnswerChange={onAnswerChange}
+        />
+      )}
+
+      {/* ========================================================= */}
+      {/* 10. DIAGRAM LABEL COMPLETION                              */}
+      {/* ========================================================= */}
+      {qType === IELTSQuestionType.DIAGRAM_LABEL_COMPLETION && (
+        <div className="space-y-3 pt-1">
+          {question.diagram_image_url && (
+            <div className="rounded-2xl overflow-hidden border border-purple-200 shadow-sm max-h-80 flex justify-center bg-white p-2">
+              <img 
+                src={question.diagram_image_url} 
+                alt="Diagram Labelling" 
+                className="max-h-72 object-contain"
+              />
+            </div>
+          )}
+
+          {question.diagram_labels && question.diagram_labels.length > 0 ? (
+            <div className="space-y-2">
+              <span className="text-xs font-bold text-[#7C68A5]">Select diagram label:</span>
+              <div className="flex flex-wrap gap-2">
+                {question.diagram_labels.map((lbl) => {
+                  const isSelected = userAnswer.toUpperCase() === lbl.toUpperCase();
+                  return (
+                    <button
+                      key={lbl}
+                      type="button"
+                      onClick={() => onAnswerChange(question.question_id, lbl)}
+                      className={`w-10 h-10 rounded-xl border text-xs font-black transition cursor-pointer flex items-center justify-center ${
+                        isSelected
+                          ? 'bg-[#6B51A5] text-white shadow-md'
+                          : 'bg-white border-purple-200 text-[#3C2A63] hover:bg-purple-50'
+                      }`}
+                    >
+                      {lbl}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="relative">
+              <input
+                type="text"
+                value={userAnswer || ''}
+                onChange={(e) => onAnswerChange(question.question_id, e.target.value)}
+                placeholder="Type diagram label or text..."
+                className="w-full px-4 py-2.5 bg-[#FAF4F8] border border-pink-200 rounded-xl text-xs font-bold text-[#3C2A63] focus:outline-none focus:ring-2 focus:ring-[#6B51A5]"
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* 11. GAP FILLING, SUMMARY TEXT & SHORT ANSWER TEXT INPUTS  */}
+      {/* ========================================================= */}
+      {(qType === IELTSQuestionType.FILL_IN_THE_BLANK ||
+        qType === IELTSQuestionType.SUMMARY_COMPLETION_TEXT ||
+        qType === IELTSQuestionType.SHORT_ANSWER) && (
         <div className="space-y-2 pt-1">
-          {/* Only render fallback input if no inline blank was found (handled by renderQuestionTextInline) */}
           {(!question.question_text || question.question_text.split(/(_{3,}|\.{3,}|\[\.+\]|\[\s*_+\s*\])/g).length === 1) && (
             <div className="relative">
               <input
@@ -497,4 +673,5 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
     </div>
   );
 };
+
 

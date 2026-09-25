@@ -1,7 +1,51 @@
 export * from './types/practice';
 
+export enum IELTSQuestionType {
+  // Nhóm Trắc nghiệm
+  MULTIPLE_CHOICE = "MULTIPLE_CHOICE",
+  MULTIPLE_CHOICE_MULTIPLE_ANSWERS = "MULTIPLE_CHOICE_MULTIPLE_ANSWERS", // Chọn 2 hoặc 3 đáp án (A, C, E)
+
+  // Nhóm Đúng / Sai / Không đề cập
+  TRUE_FALSE_NOT_GIVEN = "TRUE_FALSE_NOT_GIVEN",
+  YES_NO_NOT_GIVEN = "YES_NO_NOT_GIVEN",
+
+  // Nhóm Nối (Matching)
+  MATCHING_HEADINGS = "MATCHING_HEADINGS",
+  MATCHING_INFORMATION = "MATCHING_INFORMATION",
+  MATCHING_FEATURES = "MATCHING_FEATURES",
+  MATCHING_SENTENCE_ENDINGS = "MATCHING_SENTENCE_ENDINGS",
+
+  // Nhóm Điền từ (Completion)
+  FILL_IN_THE_BLANK = "FILL_IN_THE_BLANK", // Sentence/Note Completion
+  SUMMARY_COMPLETION_TEXT = "SUMMARY_COMPLETION_TEXT", // Lấy từ bài đọc
+  SUMMARY_COMPLETION_BOX = "SUMMARY_COMPLETION_BOX", // Chọn từ trong bảng từ vựng
+  TABLE_COMPLETION = "TABLE_COMPLETION",
+  FLOW_CHART_COMPLETION = "FLOW_CHART_COMPLETION",
+  DIAGRAM_LABEL_COMPLETION = "DIAGRAM_LABEL_COMPLETION",
+
+  // Nhóm Câu trả lời ngắn
+  SHORT_ANSWER = "SHORT_ANSWER"
+}
+
 export type QuestionType =
-  // Listening & Reading shared
+  | IELTSQuestionType
+  | keyof typeof IELTSQuestionType
+  | 'MULTIPLE_CHOICE'
+  | 'MULTIPLE_CHOICE_MULTIPLE_ANSWERS'
+  | 'TRUE_FALSE_NOT_GIVEN'
+  | 'YES_NO_NOT_GIVEN'
+  | 'MATCHING_HEADINGS'
+  | 'MATCHING_INFORMATION'
+  | 'MATCHING_FEATURES'
+  | 'MATCHING_SENTENCE_ENDINGS'
+  | 'FILL_IN_THE_BLANK'
+  | 'SUMMARY_COMPLETION_TEXT'
+  | 'SUMMARY_COMPLETION_BOX'
+  | 'TABLE_COMPLETION'
+  | 'FLOW_CHART_COMPLETION'
+  | 'DIAGRAM_LABEL_COMPLETION'
+  | 'SHORT_ANSWER'
+  // Listening & Reading shared (legacy strings)
   | 'multiple_choice'
   | 'multiple_choice_multi'
   | 'matching'
@@ -18,12 +62,106 @@ export type QuestionType =
   | 'matching_sentence_endings'
   | 'diagram_label_completion'
   | 'summary_completion'
+  | 'summary_completion_text'
+  | 'summary_completion_box'
+  | 'table_completion'
+  | 'flow_chart_completion'
   // Fallbacks & aliases
   | 'fill_in_blank';
+
+export function canonicalizeQuestionType(rawType: string | undefined | null): IELTSQuestionType {
+  if (!rawType) return IELTSQuestionType.MULTIPLE_CHOICE;
+  const upper = rawType.toUpperCase().replace(/[-\s]+/g, '_');
+
+  if (upper in IELTSQuestionType) {
+    return IELTSQuestionType[upper as keyof typeof IELTSQuestionType];
+  }
+
+  // Common aliases & partial matches
+  if (
+    upper.includes('MULTI') || 
+    upper.includes('CHOOSE_TWO') || 
+    upper.includes('CHOOSE_THREE') || 
+    upper.includes('MULTIPLE_ANSWERS')
+  ) {
+    return IELTSQuestionType.MULTIPLE_CHOICE_MULTIPLE_ANSWERS;
+  }
+  if (upper.includes('TRUE_FALSE') || upper === 'TFNG' || upper.includes('TRUE')) {
+    return IELTSQuestionType.TRUE_FALSE_NOT_GIVEN;
+  }
+  if (upper.includes('YES_NO') || upper === 'YNNG') {
+    return IELTSQuestionType.YES_NO_NOT_GIVEN;
+  }
+  if (upper.includes('MATCHING_HEADING') || upper.includes('HEADING')) {
+    return IELTSQuestionType.MATCHING_HEADINGS;
+  }
+  if (upper.includes('MATCHING_INFO') || upper.includes('WHICH_PARAGRAPH')) {
+    return IELTSQuestionType.MATCHING_INFORMATION;
+  }
+  if (upper.includes('MATCHING_FEATURE') || upper.includes('FEATURE') || upper.includes('PERSON') || upper.includes('PEOPLE')) {
+    return IELTSQuestionType.MATCHING_FEATURES;
+  }
+  if (upper.includes('MATCHING_SENTENCE') || upper.includes('SENTENCE_ENDING') || upper.includes('ENDING')) {
+    return IELTSQuestionType.MATCHING_SENTENCE_ENDINGS;
+  }
+  if (upper.includes('SUMMARY_COMPLETION_BOX') || upper.includes('WORD_LIST') || upper.includes('WORDLIST') || upper.includes('WORD_BANK')) {
+    return IELTSQuestionType.SUMMARY_COMPLETION_BOX;
+  }
+  if (upper.includes('SUMMARY_COMPLETION_TEXT') || upper.includes('SUMMARY')) {
+    return IELTSQuestionType.SUMMARY_COMPLETION_TEXT;
+  }
+  if (upper.includes('TABLE')) {
+    return IELTSQuestionType.TABLE_COMPLETION;
+  }
+  if (upper.includes('FLOW_CHART') || upper.includes('FLOWCHART')) {
+    return IELTSQuestionType.FLOW_CHART_COMPLETION;
+  }
+  if (upper.includes('DIAGRAM') || upper.includes('LABEL') || upper.includes('MAP')) {
+    return IELTSQuestionType.DIAGRAM_LABEL_COMPLETION;
+  }
+  if (upper.includes('SHORT_ANSWER')) {
+    return IELTSQuestionType.SHORT_ANSWER;
+  }
+  if (upper.includes('FILL') || upper.includes('BLANK') || upper.includes('SENTENCE_COMPLETION')) {
+    return IELTSQuestionType.FILL_IN_THE_BLANK;
+  }
+
+  return IELTSQuestionType.MULTIPLE_CHOICE;
+}
 
 export interface MatchingOption {
   id: string; // e.g. "A", "i", "1"
   text: string;
+}
+
+export interface TableCell {
+  text?: string;
+  is_blank?: boolean;
+  question_id?: string; // e.g. "R14" or "14"
+  placeholder?: string;
+}
+
+export interface TableRow {
+  cells: TableCell[];
+}
+
+export interface TableData {
+  title?: string;
+  headers: string[]; // Column headers
+  rows: TableRow[];
+}
+
+export interface FlowChartStep {
+  step_number: number;
+  title?: string;
+  description: string;
+  is_blank?: boolean;
+  question_id?: string;
+}
+
+export interface WordBankItem {
+  id: string; // e.g. "A", "B", ...
+  word: string; // e.g. "fossil fuels", "emissions"
 }
 
 export interface Question {
@@ -46,6 +184,13 @@ export interface Question {
   explanation?: string;
   max_score: number;
   image_url?: string;
+
+  // Rich IELTS Question Attributes:
+  table_data?: TableData;
+  flowchart_steps?: FlowChartStep[];
+  word_bank?: WordBankItem[];
+  nb_condition?: boolean | string; // e.g. "NB You may use any letter more than once"
+  multi_select_count?: number; // e.g. 2 for "Choose TWO letters"
 }
 
 export interface ReadingPassageItem {

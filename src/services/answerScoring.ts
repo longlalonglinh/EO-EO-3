@@ -45,11 +45,21 @@ export function parseAcceptableAnswers(
   const result: string[] = [];
 
   if (Array.isArray(correctAnswer)) {
+    const validStrings: string[] = [];
     correctAnswer.forEach(ans => {
       if (typeof ans === 'string' && ans.trim()) {
-        result.push(ans.trim());
+        const trimmed = ans.trim();
+        validStrings.push(trimmed);
+        result.push(trimmed);
       }
     });
+    // If it's an array of single letters e.g. ["A", "C"], also provide the combined "A, C"
+    if (validStrings.length > 1 && validStrings.every(s => /^[A-Za-z]$/.test(s))) {
+      const combined = validStrings.map(s => s.toUpperCase()).sort().join(', ');
+      if (!result.includes(combined)) {
+        result.push(combined);
+      }
+    }
   } else if (typeof correctAnswer === 'string' && correctAnswer.trim()) {
     // Split by pipe '|'
     const parts = correctAnswer.split('|').map(s => s.trim()).filter(Boolean);
@@ -93,6 +103,8 @@ export function isAnswerCorrect(
     return false;
   }
 
+  const cleanQType = (questionType || '').toLowerCase();
+
   // Check normalized candidates
   for (const option of options) {
     const normOption = normalizeAnswer(option);
@@ -104,7 +116,7 @@ export function isAnswerCorrect(
 
     // Handle True / False / Not Given shortcuts (bidirectional T/F/NG vs TRUE/FALSE/NOT GIVEN)
     if (
-      questionType === 'true_false_not_given' || 
+      cleanQType.includes('true_false') || 
       ['true', 'false', 'not given', 't', 'f', 'ng'].includes(normOption)
     ) {
       if ((normOption === 'true' || normOption === 't') && (normUser === 't' || normUser === 'true')) return true;
@@ -114,7 +126,7 @@ export function isAnswerCorrect(
 
     // Handle Yes / No / Not Given shortcuts (bidirectional Y/N/NG vs YES/NO/NOT GIVEN)
     if (
-      questionType === 'yes_no_not_given' || 
+      cleanQType.includes('yes_no') || 
       ['yes', 'no', 'not given', 'y', 'n', 'ng'].includes(normOption)
     ) {
       if ((normOption === 'yes' || normOption === 'y') && (normUser === 'y' || normUser === 'yes')) return true;
@@ -137,6 +149,13 @@ export function isAnswerCorrect(
       if (sortedUser === sortedOption) {
         return true;
       }
+    }
+
+    // Also support if user selected multiple letters and option was comma-separated
+    const userLetters = normUser.split(/[\s,]+/).filter(s => /^[a-h]$/i.test(s)).sort().join(',');
+    const optLetters = normOption.split(/[\s,]+/).filter(s => /^[a-h]$/i.test(s)).sort().join(',');
+    if (userLetters && optLetters && userLetters.length > 1 && userLetters === optLetters) {
+      return true;
     }
 
     // Check single choice option prefix match (e.g. candidate typed "A. 1400 km" when option is "A")
