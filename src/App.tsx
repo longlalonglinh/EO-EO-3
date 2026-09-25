@@ -284,6 +284,26 @@ export default function App() {
     });
   };
 
+  const handleLaunchStudentExam = (exam: ExamData) => {
+    handleSetExamData(exam);
+    setExamCode(exam.exam_code);
+    setTestMode(exam.test_type || 'TEST');
+    setSbd(`CAND_${Math.floor(1000 + Math.random() * 9000)}`);
+    setSubmissionId(`sub_${Date.now()}`);
+    setUserAnswers({});
+    setWritingTask1('');
+    setWritingTask2('');
+    setCompletedSkills({ listening: false, reading: false, writing: false });
+    const initialMod = (exam.listening_questions && exam.listening_questions.length > 0)
+      ? 'listening'
+      : ((exam.reading_questions && exam.reading_questions.length > 0) || (exam.passages && exam.passages.length > 0))
+      ? 'reading'
+      : 'writing';
+    setCurrentModule(initialMod);
+    setIsLoggedIn(true);
+    setActiveView('student');
+  };
+
   const [isLoadingExam, setIsLoadingExam] = useState(false);
   const [loginErrorMessage, setLoginErrorMessage] = useState<string | null>(null);
 
@@ -1702,6 +1722,7 @@ function doPost(e) {
               <UploadModule 
                 onParsedData={(parsed) => handleSetExamData(parsed)} 
                 onNavigateToPreview={() => setAdminTab('preview')}
+                onTakeExamNow={(exam) => handleLaunchStudentExam(exam)}
               />
             )}
             {adminTab === 'custom_practice' && <CustomPracticeManager gasUrl={gasUrl} />}
