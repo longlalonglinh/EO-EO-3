@@ -17,10 +17,16 @@ export function normalizeAnswer(input: string | undefined | null): string {
   // 1. Strip leading optional articles: ^(a|an|the)\s+
   text = text.replace(/^(a|an|the)\s+/i, '');
 
-  // 2. Remove redundant punctuation
-  text = text.replace(/[.,/#!$%^&*;:{}=\-_~()]/g, '');
+  // 2. Remove hyphens, slashes, underscores, and redundant punctuation
+  text = text.replace(/[-_/\\]+/g, '');
 
-  // 3. Remove excess whitespace and trim
+  // 3. Strip ordinal suffixes from numbers (e.g. 14th -> 14, 1st -> 1, 2nd -> 2, 3rd -> 3)
+  text = text.replace(/\b(\d+)(st|nd|rd|th)\b/gi, '$1');
+
+  // 4. Remove redundant punctuation (excluding letters, digits, and spaces)
+  text = text.replace(/[.,#!$%^&*;:{}=\~()]/g, '');
+
+  // 5. Remove excess whitespace and trim
   text = text.replace(/\s+/g, ' ').trim();
 
   return text;
@@ -122,6 +128,66 @@ export function isAnswerCorrect(
     if (strippedUser === strippedOption) {
       return true;
     }
+
+    // Check multi-choice letter sets unordered equality (e.g. "A, B" vs "B, A" or "A, C" vs "C, A")
+    const isLetterList = (str: string) => /^[a-h](\s*,\s*[a-h])+$/i.test(str.trim()) || /^[a-h](\s+[a-h])+$/i.test(str.trim());
+    if (isLetterList(normUser) && isLetterList(normOption)) {
+      const sortedUser = normUser.split(/[\s,]+/).filter(Boolean).sort().join(',');
+      const sortedOption = normOption.split(/[\s,]+/).filter(Boolean).sort().join(',');
+      if (sortedUser === sortedOption) {
+        return true;
+      }
+    }
+
+    // Check single choice option prefix match (e.g. candidate typed "A. 1400 km" when option is "A")
+    if (/^[A-H]$/i.test(option.trim())) {
+      const match = rawUser.match(/^([A-H])[\.\)\:\s]/i);
+      if (match && match[1].toUpperCase() === option.trim().toUpperCase()) {
+        return true;
+      }
+    }
+
+    // Date permutation match: e.g. "14 may" vs "may 14"
+    const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december', 'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec'];
+    const userWords = normUser.split(' ');
+    const optWords = normOption.split(' ');
+    if (userWords.length === 2 && optWords.length === 2) {
+      const hasMonthUser = userWords.some(w => MONTHS.includes(w));
+      const hasNumUser = userWords.some(w => /^\d{1,2}$/.test(w));
+      const hasMonthOpt = optWords.some(w => MONTHS.includes(w));
+      const hasNumOpt = optWords.some(w => /^\d{1,2}$/.test(w));
+      if (hasMonthUser && hasNumUser && hasMonthOpt && hasNumOpt) {
+        if (userWords.slice().sort().join(' ') === optWords.slice().sort().join(' ')) {
+          return true;
+        }
+      }
+    }
+
+    // Common UK vs US spelling equivalence in IELTS
+    const canonicalizeUKUS = (str: string) => {
+      return str
+        .replace(/\bcolor\b/g, 'colour')
+        .replace(/\bfavorite\b/g, 'favourite')
+        .replace(/\btheater\b/g, 'theatre')
+        .replace(/\bcenter\b/g, 'centre')
+        .replace(/\bmeter\b/g, 'metre')
+        .replace(/\bmeters\b/g, 'metres')
+        .replace(/\bkilometer\b/g, 'kilometre')
+        .replace(/\bkilometers\b/g, 'kilometres')
+        .replace(/\bprogram\b/g, 'programme')
+        .replace(/\btraveling\b/g, 'travelling')
+        .replace(/\bcanceled\b/g, 'cancelled')
+        .replace(/\bdialog\b/g, 'dialogue')
+        .replace(/\bdefense\b/g, 'defence')
+        .replace(/\boffense\b/g, 'offence')
+        .replace(/\borganize\b/g, 'organise')
+        .replace(/\borganized\b/g, 'organised')
+        .replace(/\brecognize\b/g, 'recognise')
+        .replace(/\brecognized\b/g, 'recognised');
+    };
+    if (canonicalizeUKUS(normUser) === canonicalizeUKUS(normOption)) {
+      return true;
+    }
   }
 
   return false;
@@ -129,9 +195,12 @@ export function isAnswerCorrect(
 
 /**
  * Official IELTS Academic Reading Raw-to-Band Conversion Table (0 - 40 Raw Points)
+ * If maxScore < 40 (e.g. mini practice test), scales score proportionally to 40-point IELTS standard.
  */
-export function calculateAcademicReadingBand(rawScore: number): number {
-  const score = Math.max(0, Math.min(40, Math.round(rawScore)));
+export function calculateAcademicReadingBand(rawScore: number, maxScore: number = 40): number {
+  if (maxScore <= 0) return 0.0;
+  const scaled = maxScore !== 40 ? Math.round((rawScore / maxScore) * 40) : rawScore;
+  const score = Math.max(0, Math.min(40, Math.round(scaled)));
 
   if (score >= 39) return 9.0;
   if (score >= 37) return 8.5;
@@ -154,9 +223,12 @@ export function calculateAcademicReadingBand(rawScore: number): number {
 
 /**
  * Official IELTS Listening Raw-to-Band Conversion Table (0 - 40 Raw Points)
+ * If maxScore < 40 (e.g. mini practice test), scales score proportionally to 40-point IELTS standard.
  */
-export function calculateListeningBand(rawScore: number): number {
-  const score = Math.max(0, Math.min(40, Math.round(rawScore)));
+export function calculateListeningBand(rawScore: number, maxScore: number = 40): number {
+  if (maxScore <= 0) return 0.0;
+  const scaled = maxScore !== 40 ? Math.round((rawScore / maxScore) * 40) : rawScore;
+  const score = Math.max(0, Math.min(40, Math.round(scaled)));
 
   if (score >= 39) return 9.0;
   if (score >= 37) return 8.5;
@@ -257,15 +329,18 @@ export function gradeExamAnswers(
     };
   });
 
-  const listeningBand = calculateListeningBand(listeningRaw);
-  const readingBand = calculateAcademicReadingBand(readingRaw);
+  const listeningMax = allListeningQuestions.length;
+  const readingMax = allReadingQuestions.length;
+
+  const listeningBand = listeningMax > 0 ? calculateListeningBand(listeningRaw, listeningMax) : 0;
+  const readingBand = readingMax > 0 ? calculateAcademicReadingBand(readingRaw, readingMax) : 0;
 
   return {
     listening_raw: listeningRaw,
-    listening_max: allListeningQuestions.length || 40,
+    listening_max: listeningMax,
     listening_band: listeningBand,
     reading_raw: readingRaw,
-    reading_max: allReadingQuestions.length || 40,
+    reading_max: readingMax,
     reading_band: readingBand,
     total_raw: listeningRaw + readingRaw,
     results

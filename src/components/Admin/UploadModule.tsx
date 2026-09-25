@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
-import { Upload, FileUp, Cpu, Sparkles, CheckCircle2, AlertCircle, FileCode } from 'lucide-react';
+import { Upload, FileUp, Cpu, Sparkles, CheckCircle2, AlertCircle, FileCode, ArrowRight } from 'lucide-react';
 import { parsePdfWithGemini } from '../../services/gemini';
 import { ExamData } from '../../types';
 
 interface UploadModuleProps {
   onParsedData: (data: ExamData) => void;
+  onNavigateToPreview?: () => void;
 }
 
-export const UploadModule: React.FC<UploadModuleProps> = ({ onParsedData }) => {
+export const UploadModule: React.FC<UploadModuleProps> = ({ onParsedData, onNavigateToPreview }) => {
   const [apiKey, setApiKey] = useState('AQ.Ab8RN6J8TwSqeuTmSr4Jg_CcHeJ7smPZleTAm3obPxLmEPSqYA');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [base64Data, setBase64Data] = useState<string | null>(null);
@@ -178,6 +179,17 @@ export const UploadModule: React.FC<UploadModuleProps> = ({ onParsedData }) => {
               </div>
             )}
           </div>
+
+          {rawJsonOutput && onNavigateToPreview && (
+            <button
+              type="button"
+              onClick={onNavigateToPreview}
+              className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-emerald-950/10 flex items-center justify-center gap-2 transition cursor-pointer"
+            >
+              <span>Review &amp; Edit in Visual Builder</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
       </div>

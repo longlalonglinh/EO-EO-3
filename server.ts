@@ -1,7 +1,23 @@
 import express from 'express';
 import path from 'path';
+import { Readable } from 'node:stream';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
+import { 
+  getStoredExams, 
+  getStoredExam, 
+  saveStoredExam, 
+  deleteStoredExam,
+  getStoredSubmissions, 
+  saveStoredSubmission, 
+  updateStoredWritingScore,
+  getStoredCheatLogs, 
+  saveStoredCheatLog,
+  getStoredConfig, 
+  saveStoredConfig,
+  getStoredPracticeDecks,
+  saveStoredPracticeDeck
+} from './server/storage';
 
 const __dirname = process.cwd();
 
@@ -366,7 +382,335 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
     });
   });
 
-  // Vite development middleware or static production serving
+  // -------------------------------------------------------------
+  // CENTRALIZED SERVER-SIDE DATABASE & AUDIO STREAMING PROXY APIS
+  // -------------------------------------------------------------
+
+  // Universal Audio Streaming Proxy (Google Drive, Dropbox, CDNs, Range Requests & CORS)
+  app.options('/api/audio-proxy', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Accept');
+    res.sendStatus(204);
+  });
+
+  app.get('/api/audio-proxy', async (req, res) => {
+    const rawUrl = req.query.url as string;
+    if (!rawUrl || typeof rawUrl !== 'string') {
+      return res.status(400).json({ error: 'Missing or invalid url parameter' });
+    }
+
+    try {
+      let targetUrl = rawUrl.trim();
+
+      // Check if Google Drive link
+      const driveMatch = targetUrl.match(/\/file\/d\/([a-zA-Z0-9_-]{20,})/i) || 
+                         targetUrl.match(/[?&]id=([a-zA-Z0-9_-]{20,})/i) ||
+                         targetUrl.match(/open\?id=([a-zA-Z0-9_-]{20,})/i);
+
+      if (driveMatch && driveMatch[1]) {
+        const fileId = driveMatch[1];
+        targetUrl = `https://drive.usercontent.google.com/download?id=${fileId}&export=download&authuser=0`;
+      } else if (targetUrl.includes('dropbox.com')) {
+        targetUrl = targetUrl.replace(/[?&]dl=0/g, '').replace(/[?&]dl=1/g, '');
+        targetUrl += (targetUrl.includes('?') ? '&' : '?') + 'raw=1';
+      }
+
+      const headers: Record<string, string> = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': '*/*'
+      };
+
+      if (req.headers.range) {
+        headers['Range'] = req.headers.range;
+      }
+
+      let response = await fetch(targetUrl, { headers, redirect: 'follow' });
+
+      // Handle Google Drive virus scan warning HTML page if returned
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('text/html') && driveMatch && driveMatch[1]) {
+        const fileId = driveMatch[1];
+        const htmlText = await response.text();
+        const confirmMatch = htmlText.match(/confirm=([a-zA-Z0-9_-]+)/) || htmlText.match(/name="confirm"\s+value="([^"]+)"/);
+        if (confirmMatch && confirmMatch[1]) {
+          const confirmToken = confirmMatch[1];
+          const confirmUrl = `https://drive.usercontent.google.com/download?id=${fileId}&confirm=${confirmToken}&export=download`;
+          response = await fetch(confirmUrl, { headers, redirect: 'follow' });
+        } else {
+          const fallbackUrl = `https://docs.google.com/uc?export=download&id=${fileId}&confirm=t`;
+          response = await fetch(fallbackUrl, { headers, redirect: 'follow' });
+        }
+      }
+
+      // Set CORS and audio streaming response headers
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Accept');
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+
+      const upstreamType = response.headers.get('content-type') || 'audio/mpeg';
+      res.setHeader('Content-Type', upstreamType.includes('html') ? 'audio/mpeg' : upstreamType);
+
+      const contentLength = response.headers.get('content-length');
+      if (contentLength) {
+        res.setHeader('Content-Length', contentLength);
+      }
+
+      const contentRange = response.headers.get('content-range');
+      if (contentRange) {
+        res.setHeader('Content-Range', contentRange);
+      }
+
+      res.status(response.status);
+
+      if (response.body) {
+        const stream = Readable.fromWeb(response.body as any);
+        stream.pipe(res);
+      } else {
+        res.end();
+      }
+    } catch (err: any) {
+      console.error('[Audio Proxy Error]:', err);
+      if (!res.headersSent) {
+        res.status(502).json({ error: 'Failed to stream audio file: ' + (err.message || 'Unknown network error') });
+      }
+    }
+  });
+
+  // Server Configuration (Shared GAS URL across all devices)
+  app.get('/api/config', (req, res) => {
+    const config = getStoredConfig();
+    res.json({ success: true, config });
+  });
+
+  app.post('/api/config', (req, res) => {
+    const { gas_url } = req.body;
+    const updated = saveStoredConfig({ gas_url: String(gas_url || '').trim() });
+    res.json({ success: true, config: updated });
+  });
+
+  // Centralized Exams API
+  app.get('/api/exams', (req, res) => {
+    const exams = getStoredExams();
+    res.json({ 
+      success: true, 
+      exams: exams.map((e: any) => ({
+        exam_code: e.exam_code,
+        title: e.title,
+        duration_mins: e.duration_mins,
+        test_type: e.test_type,
+        audio_url: e.audio_url,
+        listening_questions_count: (e.listening_questions || []).length,
+        reading_questions_count: (e.reading_questions || []).length,
+        has_writing: Boolean(e.writing_task1_prompt || e.writing_task2_prompt)
+      })),
+      count: exams.length 
+    });
+  });
+
+  app.get('/api/exams/:code', async (req, res) => {
+    const code = req.params.code.trim().toUpperCase();
+    const stored = getStoredExam(code);
+    if (stored) {
+      return res.json({ success: true, exam: stored, source: 'server_db' });
+    }
+
+    // Bridge: If not found in local server storage, fetch from Google Apps Script in background
+    const config = getStoredConfig();
+    if (config.gas_url && !config.gas_url.includes('AKfycbx_mock')) {
+      try {
+        const fetchUrl = `${config.gas_url}?action=get_exam&exam_code=${encodeURIComponent(code)}&_t=${Date.now()}`;
+        const gasRes = await fetch(fetchUrl);
+        if (gasRes.ok) {
+          const gasData = await gasRes.json();
+          const questions = gasData.questions || gasData.data || [];
+          const meta = gasData.exam_meta || gasData.meta || {};
+
+          if (questions.length > 0 || meta.title || meta.reading_passage) {
+            const listeningQs = questions.filter((q: any) => q.section === 'listening');
+            const readingQs = questions.filter((q: any) => q.section === 'reading');
+
+            const bridgeExam = {
+              exam_code: code,
+              title: meta.title || `IELTS Examination - ${code}`,
+              audio_url: meta.audio_url || '',
+              passages: meta.reading_passage ? [{ passage_index: 1, title: 'Reading Passage 1', text: meta.reading_passage }] : [],
+              listening_questions: listeningQs,
+              reading_questions: readingQs,
+              writing_task1_prompt: meta.writing_task1_prompt || '',
+              writing_task2_prompt: meta.writing_task2_prompt || '',
+              questions
+            };
+
+            saveStoredExam(bridgeExam);
+            return res.json({ success: true, exam: bridgeExam, source: 'gas_bridge' });
+          }
+        }
+      } catch (gasErr: any) {
+        console.warn(`[GAS Bridge Fetch Error for ${code}]:`, gasErr.message);
+      }
+    }
+
+    return res.status(404).json({ 
+      success: false, 
+      error: `Exam code [${code}] not found in Server Database or Google Sheets.` 
+    });
+  });
+
+  app.post('/api/exams', async (req, res) => {
+    try {
+      const exam = req.body;
+      if (!exam || !exam.exam_code) {
+        return res.status(400).json({ success: false, error: 'Missing exam_code in body' });
+      }
+      const saved = saveStoredExam(exam);
+
+      // Asynchronously push to Google Apps Script
+      const config = getStoredConfig();
+      if (config.gas_url && !config.gas_url.includes('AKfycbx_mock')) {
+        fetch(config.gas_url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'upload_exam', exam_data: saved })
+        }).catch(err => console.warn('[GAS Async Push Error]:', err.message));
+      }
+
+      res.json({ success: true, exam: saved });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.delete('/api/exams/:code', (req, res) => {
+    const success = deleteStoredExam(req.params.code);
+    res.json({ success });
+  });
+
+  // Centralized Submissions API
+  app.get('/api/submissions', (req, res) => {
+    const submissions = getStoredSubmissions();
+    res.json({ success: true, data: submissions, count: submissions.length });
+  });
+
+  app.post('/api/submissions', (req, res) => {
+    try {
+      const saved = saveStoredSubmission(req.body);
+
+      // Asynchronously forward to GAS
+      const config = getStoredConfig();
+      if (config.gas_url && !config.gas_url.includes('AKfycbx_mock')) {
+        fetch(config.gas_url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'submit_exam', ...req.body })
+        }).catch(err => console.warn('[GAS Async Submit Error]:', err.message));
+      }
+
+      res.json({ success: true, submission: saved });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/submissions/grade-writing', (req, res) => {
+    try {
+      const { submission_id, writing_scores, overall_writing, feedback } = req.body;
+      const updated = updateStoredWritingScore(submission_id, writing_scores, Number(overall_writing) || 0, feedback);
+      if (!updated) {
+        return res.status(404).json({ success: false, error: 'Submission not found' });
+      }
+
+      // Asynchronously forward to GAS
+      const config = getStoredConfig();
+      if (config.gas_url && !config.gas_url.includes('AKfycbx_mock')) {
+        fetch(config.gas_url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'grade_writing',
+            submission_id,
+            writing_scores,
+            writing_feedback: feedback
+          })
+        }).catch(err => console.warn('[GAS Async Grade Error]:', err.message));
+      }
+
+      res.json({ success: true, submission: updated });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Centralized Cheat Logs API
+  app.get('/api/cheat-logs', (req, res) => {
+    res.json({ success: true, data: getStoredCheatLogs() });
+  });
+
+  app.post('/api/cheat-logs', (req, res) => {
+    const saved = saveStoredCheatLog(req.body);
+    res.json({ success: true, log: saved });
+  });
+
+  // Server-to-GAS Synchronization
+  app.post('/api/sync/pull-from-gas', async (req, res) => {
+    const config = getStoredConfig();
+    const gasUrl = (req.body.gas_url || config.gas_url || '').trim();
+
+    if (!gasUrl || gasUrl.includes('AKfycbx_mock')) {
+      return res.status(400).json({ success: false, error: 'Invalid or mock GAS URL' });
+    }
+
+    try {
+      // 1. Fetch Submissions
+      const subsRes = await fetch(`${gasUrl}?action=get_submissions&_t=${Date.now()}`);
+      let importedSubs = 0;
+      if (subsRes.ok) {
+        const subsData = await subsRes.json();
+        const list = Array.isArray(subsData.submissions) ? subsData.submissions : (Array.isArray(subsData.data) ? subsData.data : []);
+        list.forEach((sub: any) => {
+          saveStoredSubmission(sub);
+          importedSubs++;
+        });
+      }
+
+      // 2. Fetch Cheat Logs
+      const logsRes = await fetch(`${gasUrl}?action=get_cheatlogs&_t=${Date.now()}`);
+      let importedLogs = 0;
+      if (logsRes.ok) {
+        const logsData = await logsRes.json();
+        const list = Array.isArray(logsData.cheatlogs) ? logsData.cheatlogs : (Array.isArray(logsData.data) ? logsData.data : []);
+        list.forEach((log: any) => {
+          saveStoredCheatLog(log);
+          importedLogs++;
+        });
+      }
+
+      saveStoredConfig({ gas_url: gasUrl, last_synced_at: new Date().toISOString() });
+
+      res.json({
+        success: true,
+        message: `Synced with Google Sheets: ${importedSubs} submissions and ${importedLogs} violation logs imported.`,
+        imported_submissions: importedSubs,
+        imported_cheat_logs: importedLogs,
+        synced_at: new Date().toISOString()
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: 'Sync failed: ' + err.message });
+    }
+  });
+
+  // Centralized Practice Decks API
+  app.get('/api/practice-decks', (req, res) => {
+    res.json({ success: true, data: getStoredPracticeDecks() });
+  });
+
+  app.post('/api/practice-decks', (req, res) => {
+    const saved = saveStoredPracticeDeck(req.body);
+    res.json({ success: true, deck: saved });
+  });
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },

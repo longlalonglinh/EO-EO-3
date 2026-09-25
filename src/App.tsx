@@ -6,6 +6,7 @@ import { ReadingModule } from './components/Student/ReadingModule';
 import { WritingModule } from './components/Student/WritingModule';
 import { ProctoringMonitor } from './components/Student/ProctoringMonitor';
 import { ResultPage } from './components/Student/ResultPage';
+import { SubmitConfirmationModal } from './components/Student/SubmitConfirmationModal';
 import { MonitoringDashboard } from './components/Admin/MonitoringDashboard';
 import { ManualGrading } from './components/Admin/ManualGrading';
 import { UploadModule } from './components/Admin/UploadModule';
@@ -40,9 +41,9 @@ import {
   AlertTriangle
 } from 'lucide-react';
 
-import { DEFAULT_API_URL, fetchExam, prefetchExam, submitExamPayload, clearExamCache } from './services/api';
+import { DEFAULT_API_URL, fetchExam, prefetchExam, submitExamPayload, clearExamCache, clearSessionTimers, fetchServerConfig, saveServerConfig } from './services/api';
 import { gradeExamAnswers } from './services/answerScoring';
-import { getCurrentAnswersFromIndexedDB, getWritingDraftFromIndexedDB } from './services/indexedDb';
+import { getCurrentAnswersFromIndexedDB, getWritingDraftFromIndexedDB, saveCurrentAnswersToIndexedDB, clearCurrentAnswersFromIndexedDB } from './services/indexedDb';
 import { DEFAULT_EXAMS } from './data/defaultExams';
 import { DatabaseDiagnosticsModal } from './components/Common/DatabaseDiagnosticsModal';
 import { extractQuestionsFromRawResponse } from './services/dbDiagnostics';
@@ -111,6 +112,22 @@ export default function App() {
     return localStorage.getItem('ielts_gas_url') || DEFAULT_GAS_URL;
   });
 
+  // Automatically fetch centralized GAS URL from server database on mount (Cross-Device Sync)
+  useEffect(() => {
+    fetchServerConfig().then(cfg => {
+      if (cfg && cfg.gas_url && cfg.gas_url.trim() && !cfg.gas_url.includes('mock_ielts_exam_system_gas_url')) {
+        const remoteUrl = cfg.gas_url.trim();
+        setGasUrl(prev => {
+          if (!prev || prev === DEFAULT_GAS_URL || prev.includes('mock_ielts_exam_system_gas_url')) {
+            localStorage.setItem('ielts_gas_url', remoteUrl);
+            return remoteUrl;
+          }
+          return prev;
+        });
+      }
+    }).catch(() => {});
+  }, []);
+
   // Diagnostics Modal State
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
 
@@ -130,8 +147,50 @@ export default function App() {
   });
   const [skillNotice, setSkillNotice] = useState<string | null>(null);
 
+  // Exam Data State
+  const [examData, setExamData] = useState<ExamData>(SAMPLE_EXAM);
+
+  // Dynamic skill presence flags
+  const hasListening = (examData.listening_questions?.length ?? 0) > 0;
+  const hasReading = (examData.reading_questions?.length ?? 0) > 0 || ((examData.passages?.length ?? 0) > 0);
+  const hasWriting = Boolean(examData.writing_task1_prompt || examData.writing_task2_prompt);
+
+  // Submit confirmation dialog state
+  const [isConfirmSubmitOpen, setIsConfirmSubmitOpen] = useState<boolean>(false);
+
+  // Reading questions count & ids helper
+  const readingQuestionsCount = (examData.passages && examData.passages.length > 0)
+    ? examData.passages.reduce((acc, p) => acc + (p.questions?.length || 0), 0)
+    : (examData.reading_questions?.length ?? 0);
+
+  const allReadingQuestionIds = (examData.passages && examData.passages.length > 0)
+    ? examData.passages.flatMap(p => (p.questions || []).map(q => q.question_id))
+    : (examData.reading_questions || []).map(q => q.question_id);
+
+  const defaultInitialModule: 'listening' | 'reading' | 'writing' = hasListening 
+    ? 'listening' 
+    : hasReading 
+    ? 'reading' 
+    : 'writing';
+
   // Switch tabs safely based on TEST vs PRACTICE mode
   const handleSwitchTab = (targetModule: 'listening' | 'reading' | 'writing') => {
+    if (targetModule === 'listening' && !hasListening) {
+      setSkillNotice('ℹ️ Listening section is not included in this test paper.');
+      setTimeout(() => setSkillNotice(null), 3000);
+      return;
+    }
+    if (targetModule === 'reading' && !hasReading) {
+      setSkillNotice('ℹ️ Reading section is not included in this test paper.');
+      setTimeout(() => setSkillNotice(null), 3000);
+      return;
+    }
+    if (targetModule === 'writing' && !hasWriting) {
+      setSkillNotice('ℹ️ Writing section is not included in this test paper.');
+      setTimeout(() => setSkillNotice(null), 3000);
+      return;
+    }
+
     if (testMode === 'PRACTICE') {
       setCurrentModule(targetModule);
       setSkillNotice(null);
@@ -140,10 +199,20 @@ export default function App() {
 
     // TEST MODE ENFORCEMENT
     if (targetModule === 'listening') {
+      if (testMode === 'TEST' && completedSkills.listening) {
+        setSkillNotice('🔒 In TEST MODE: Listening section has already been submitted and locked.');
+        setTimeout(() => setSkillNotice(null), 4000);
+        return;
+      }
       setCurrentModule('listening');
       setSkillNotice(null);
     } else if (targetModule === 'reading') {
-      if (!completedSkills.listening) {
+      if (testMode === 'TEST' && completedSkills.reading) {
+        setSkillNotice('🔒 In TEST MODE: Reading section has already been submitted and locked.');
+        setTimeout(() => setSkillNotice(null), 4000);
+        return;
+      }
+      if (hasListening && !completedSkills.listening) {
         setSkillNotice('🔒 In TEST MODE: You must complete and submit the Listening section to unlock Reading!');
         setTimeout(() => setSkillNotice(null), 4000);
         return;
@@ -151,12 +220,12 @@ export default function App() {
       setCurrentModule('reading');
       setSkillNotice(null);
     } else if (targetModule === 'writing') {
-      if (!completedSkills.listening) {
-        setSkillNotice('🔒 In TEST MODE: You must submit each section in sequence (Listening → Reading → Writing)!');
+      if (hasListening && !completedSkills.listening) {
+        setSkillNotice('🔒 In TEST MODE: You must complete the Listening section before Writing!');
         setTimeout(() => setSkillNotice(null), 4000);
         return;
       }
-      if (!completedSkills.reading) {
+      if (hasReading && !completedSkills.reading) {
         setSkillNotice('🔒 In TEST MODE: You must complete and submit the Reading section to unlock Writing!');
         setTimeout(() => setSkillNotice(null), 4000);
         return;
@@ -169,20 +238,31 @@ export default function App() {
   // Section Advancement Handlers
   const handleCompleteListening = () => {
     setCompletedSkills(prev => ({ ...prev, listening: true }));
-    setCurrentModule('reading');
-    setSkillNotice('✅ Listening section submitted! Proceeding to Reading.');
+    if (hasReading) {
+      setCurrentModule('reading');
+      setSkillNotice('✅ Listening section submitted! Proceeding to Reading.');
+    } else if (hasWriting) {
+      setCompletedSkills(prev => ({ ...prev, listening: true, reading: true }));
+      setCurrentModule('writing');
+      setSkillNotice('✅ Listening section submitted! Proceeding directly to Writing.');
+    } else {
+      setSkillNotice('✅ Listening section completed! Submitting examination.');
+      handleSubmitExam('STANDARD');
+    }
     setTimeout(() => setSkillNotice(null), 5000);
   };
 
   const handleCompleteReading = () => {
     setCompletedSkills(prev => ({ ...prev, reading: true }));
-    setCurrentModule('writing');
-    setSkillNotice('✅ Reading section submitted! Proceeding to Writing.');
+    if (hasWriting) {
+      setCurrentModule('writing');
+      setSkillNotice('✅ Reading section submitted! Proceeding to Writing.');
+    } else {
+      setSkillNotice('✅ Reading section completed! Submitting examination.');
+      handleSubmitExam('STANDARD');
+    }
     setTimeout(() => setSkillNotice(null), 5000);
   };
-
-  // Exam Data State
-  const [examData, setExamData] = useState<ExamData>(SAMPLE_EXAM);
   
   const handleSetExamData = (data: ExamData) => {
     const sanitizeQs = (qs: any[], prefix: string) => {
@@ -213,6 +293,14 @@ export default function App() {
   const [writingTask2, setWritingTask2] = useState('');
   const [violationCount, setViolationCount] = useState(0);
 
+  const answeredListeningCount = Object.keys(userAnswers).filter(k => 
+    (examData.listening_questions || []).some(q => q.question_id === k) && Boolean(userAnswers[k]?.trim())
+  ).length;
+
+  const answeredReadingCount = Object.keys(userAnswers).filter(k => 
+    allReadingQuestionIds.includes(k) && Boolean(userAnswers[k]?.trim())
+  ).length;
+
   // Submission & Retry State
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isForcedSubmitting, setIsForcedSubmitting] = useState(false);
@@ -220,21 +308,40 @@ export default function App() {
   const [offlinePending, setOfflinePending] = useState(false);
   const [copiedGasCode, setCopiedGasCode] = useState(false);
 
-  // Save GAS URL to LocalStorage
+  // Save GAS URL to LocalStorage & Central Server Database
   const handleSaveGasUrl = (url: string) => {
     setGasUrl(url);
     localStorage.setItem('ielts_gas_url', url);
+    saveServerConfig(url).catch(() => {});
   };
 
-  // Determine TEST vs PRACTICE Mode using (code % 2) math
+  // Determine TEST vs PRACTICE Mode:
+  // Explicit prefix overrides:
+  // - PRAC, PRACTICE, WT (Writing tasks), DRILL, ON_TAP -> PRACTICE
+  // - TEST, EXAM -> TEST
+  // Fallback: (code % 2) math (odd = TEST, even = PRACTICE)
   const determineTestMode = (code: string): 'TEST' | 'PRACTICE' => {
-    const digits = code.replace(/\D/g, '');
+    const clean = (code || '').trim().toUpperCase();
+    if (clean.startsWith('PRAC') || clean.startsWith('WT') || clean.startsWith('DRILL') || clean.startsWith('ON_TAP')) {
+      return 'PRACTICE';
+    }
+    if (clean.startsWith('TEST') || clean.startsWith('EXAM')) {
+      // If code starts with TEST or EXAM, use numeric parity if digits exist
+      const digits = clean.replace(/\D/g, '');
+      if (digits.length > 0) {
+        const numVal = parseInt(digits, 10);
+        return numVal % 2 !== 0 ? 'TEST' : 'PRACTICE';
+      }
+      return 'TEST';
+    }
+
+    const digits = clean.replace(/\D/g, '');
     let numVal = 1;
     if (digits.length > 0) {
       numVal = parseInt(digits, 10);
     } else {
       // Sum char codes if no digits
-      numVal = code.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      numVal = clean.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
     }
     return numVal % 2 !== 0 ? 'TEST' : 'PRACTICE';
   };
@@ -242,67 +349,6 @@ export default function App() {
   // Custom Practice Deck Session State
   const [isCustomPracticeSession, setIsCustomPracticeSession] = useState(false);
   const [customPracticeDeckId, setCustomPracticeDeckId] = useState('ON_TAP_01');
-
-  // Helper to format any raw exam structure into ExamData
-  const formatRawExamToExamData = (examObj: any, cleanCode: string): ExamData => {
-    const allQs: Question[] = Array.isArray(examObj.questions) ? examObj.questions : [];
-    
-    const isListening = (q: any) => {
-      const s = String(q.section || '').toLowerCase().trim();
-      const id = String(q.question_id || '').toLowerCase().trim();
-      return s.includes('listen') || s === 'l' || id.startsWith('l');
-    };
-
-    const isReading = (q: any) => {
-      const s = String(q.section || '').toLowerCase().trim();
-      const id = String(q.question_id || '').toLowerCase().trim();
-      return s.includes('read') || s.includes('passage') || s === 'r' || id.startsWith('r');
-    };
-
-    let lQs = allQs.filter(isListening);
-    let rQs = allQs.filter(isReading);
-
-    // If section wasn't labeled in Sheet, intelligently divide or assign questions
-    if (lQs.length === 0 && rQs.length === 0 && allQs.length > 0) {
-      if (examObj.reading_passage || examObj.passage_text || examObj.passages || examObj.reading_passages) {
-        rQs = allQs;
-      } else if (examObj.audio_url) {
-        lQs = allQs;
-      } else {
-        rQs = allQs;
-      }
-    }
-
-    // Default template fallback for passages and audio
-    const fallbackTemplate = DEFAULT_EXAMS[0];
-
-    // Parse passages array if available or from reading_passage JSON string
-    let parsedPassages = examObj.passages || examObj.reading_passages || fallbackTemplate.passages;
-    if (!parsedPassages && examObj.reading_passage) {
-      try {
-        const testJson = JSON.parse(examObj.reading_passage);
-        if (Array.isArray(testJson)) {
-          parsedPassages = testJson;
-        }
-      } catch (e) {
-        // Not JSON string, use normal text
-      }
-    }
-
-    return {
-      exam_code: examObj.exam_code || cleanCode,
-      title: examObj.title || `IELTS Examination ${cleanCode}`,
-      audio_url: examObj.audio_url || fallbackTemplate.audio_url,
-      listening_questions: lQs.length > 0 ? lQs : (examObj.listening_questions?.length ? examObj.listening_questions : fallbackTemplate.questions.filter(q => q.section === 'listening')),
-      passage_title: examObj.passage_title || (parsedPassages?.[0]?.title) || examObj.reading_passage_title || fallbackTemplate.passages?.[0]?.title || 'Reading Passage',
-      passage_text: examObj.passage_text || (parsedPassages?.[0]?.text) || examObj.reading_passage || fallbackTemplate.passages?.[0]?.text || '',
-      passages: parsedPassages,
-      reading_questions: rQs.length > 0 ? rQs : (examObj.reading_questions?.length ? examObj.reading_questions : fallbackTemplate.questions.filter(q => q.section === 'reading')),
-      writing_task1_prompt: examObj.writing_task1_prompt || fallbackTemplate.writing_task1_prompt,
-      writing_task1_image: examObj.writing_task1_image || fallbackTemplate.writing_task1_image,
-      writing_task2_prompt: examObj.writing_task2_prompt || fallbackTemplate.writing_task2_prompt
-    };
-  };
 
   // Prefetch default exams on mount for 0-second instant transition
   useEffect(() => {
@@ -349,6 +395,7 @@ export default function App() {
 
     const cleanSbd = sbdInput.trim();
     const cleanCode = codeInput.trim().toUpperCase();
+    clearSessionTimers(cleanCode);
     setSbd(cleanSbd);
     setExamCode(cleanCode);
     setUserAnswers({});
@@ -452,10 +499,32 @@ export default function App() {
       }
     }
 
+    // Restore any existing answers from IndexedDB or LocalStorage
+    try {
+      const savedAnswers = await getCurrentAnswersFromIndexedDB(cleanCode, cleanSbd);
+      if (savedAnswers && Object.keys(savedAnswers).length > 0) {
+        setUserAnswers(savedAnswers);
+        setSkillNotice(`🔄 Restored ${Object.keys(savedAnswers).length} previously saved answers.`);
+        setTimeout(() => setSkillNotice(null), 4000);
+      }
+    } catch (e) {}
+
+    // Restore writing drafts from IndexedDB
+    try {
+      const draft = await getWritingDraftFromIndexedDB(cleanCode, cleanSbd);
+      if (draft) {
+        if (draft.task1) setWritingTask1(draft.task1);
+        if (draft.task2) setWritingTask2(draft.task2);
+      }
+    } catch (e) {}
+
     // Intelligently route to Listening, Reading, or Writing depending on available questions/tasks
+    const examHasReading = (finalExamData.reading_questions && finalExamData.reading_questions.length > 0) ||
+      (finalExamData.passages && finalExamData.passages.some(p => (p.questions?.length ?? 0) > 0));
+
     if (finalExamData.listening_questions && finalExamData.listening_questions.length > 0) {
       setCurrentModule('listening');
-    } else if (finalExamData.reading_questions && finalExamData.reading_questions.length > 0) {
+    } else if (examHasReading) {
       setCurrentModule('reading');
       setCompletedSkills({ listening: true, reading: false, writing: false });
     } else if (finalExamData.writing_task1_prompt || finalExamData.writing_task2_prompt) {
@@ -466,6 +535,15 @@ export default function App() {
       setCurrentModule('reading');
     }
   };
+
+  // Debounced auto-save of userAnswers to IndexedDB
+  useEffect(() => {
+    if (!isLoggedIn || !examCode || !sbd || Object.keys(userAnswers).length === 0) return;
+    const timeout = setTimeout(() => {
+      saveCurrentAnswersToIndexedDB(examCode, sbd, userAnswers).catch(() => {});
+    }, 400);
+    return () => clearTimeout(timeout);
+  }, [userAnswers, examCode, sbd, isLoggedIn]);
 
   // Force Resync test directly from remote server and bypass local caches
   const handleForceResyncExam = async (codeToResync: string) => {
@@ -575,6 +653,7 @@ export default function App() {
     setSubmitResult(serverResponse);
     setIsSubmitting(false);
     setIsForcedSubmitting(false);
+    clearCurrentAnswersFromIndexedDB(examCode, sbd).catch(() => {});
     setCurrentModule('results');
   };
 
@@ -1286,73 +1365,79 @@ function doPost(e) {
                   <div className="bg-white/90 border border-purple-100/80 p-2.5 rounded-3xl shadow-xl shadow-purple-950/5 flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center space-x-2">
                       
-                      <button
-                        onClick={() => handleSwitchTab('listening')}
-                        className={`px-5 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                          currentModule === 'listening'
-                            ? 'bg-[#6B51A5] text-white shadow-md'
-                            : completedSkills.listening
-                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                            : 'bg-[#E2DDEC] text-[#3C2A63] hover:bg-[#D9D3E4]'
-                        }`}
-                      >
-                        {completedSkills.listening ? (
-                          <CheckCircle2 className="w-4 h-4 text-emerald-700" />
-                        ) : (
-                          <Headphones className="w-4 h-4" />
-                        )}
-                        <span>1. Listening ({examData.listening_questions.length} Qs)</span>
-                      </button>
+                      {hasListening && (
+                        <button
+                          onClick={() => handleSwitchTab('listening')}
+                          className={`px-5 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                            currentModule === 'listening'
+                              ? 'bg-[#6B51A5] text-white shadow-md'
+                              : completedSkills.listening
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              : 'bg-[#E2DDEC] text-[#3C2A63] hover:bg-[#D9D3E4]'
+                          }`}
+                        >
+                          {completedSkills.listening ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                          ) : (
+                            <Headphones className="w-4 h-4" />
+                          )}
+                          <span>1. Listening ({examData.listening_questions?.length ?? 0} Qs)</span>
+                        </button>
+                      )}
 
-                      <button
-                        onClick={() => handleSwitchTab('reading')}
-                        className={`px-5 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                          currentModule === 'reading'
-                            ? 'bg-[#6B51A5] text-white shadow-md'
-                            : completedSkills.reading
-                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                            : testMode === 'TEST' && !completedSkills.listening
-                            ? 'bg-purple-50 text-[#7C68A5] border border-purple-200/60 opacity-80'
-                            : 'bg-[#E2DDEC] text-[#3C2A63] hover:bg-[#D9D3E4]'
-                        }`}
-                      >
-                        {completedSkills.reading ? (
-                          <CheckCircle2 className="w-4 h-4 text-emerald-700" />
-                        ) : testMode === 'TEST' && !completedSkills.listening ? (
-                          <Lock className="w-3.5 h-3.5 text-rose-500" />
-                        ) : (
-                          <BookOpen className="w-4 h-4" />
-                        )}
-                        <span>2. Reading ({examData.reading_questions.length} Qs)</span>
-                      </button>
+                      {hasReading && (
+                        <button
+                          onClick={() => handleSwitchTab('reading')}
+                          className={`px-5 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                            currentModule === 'reading'
+                              ? 'bg-[#6B51A5] text-white shadow-md'
+                              : completedSkills.reading
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              : testMode === 'TEST' && hasListening && !completedSkills.listening
+                              ? 'bg-purple-50 text-[#7C68A5] border border-purple-200/60 opacity-80'
+                              : 'bg-[#E2DDEC] text-[#3C2A63] hover:bg-[#D9D3E4]'
+                          }`}
+                        >
+                          {completedSkills.reading ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                          ) : testMode === 'TEST' && hasListening && !completedSkills.listening ? (
+                            <Lock className="w-3.5 h-3.5 text-rose-500" />
+                          ) : (
+                            <BookOpen className="w-4 h-4" />
+                          )}
+                          <span>2. Reading ({readingQuestionsCount} Qs)</span>
+                        </button>
+                      )}
 
-                      <button
-                        onClick={() => handleSwitchTab('writing')}
-                        className={`px-5 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                          currentModule === 'writing'
-                            ? 'bg-[#6B51A5] text-white shadow-md'
-                            : completedSkills.writing
-                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                            : testMode === 'TEST' && (!completedSkills.listening || !completedSkills.reading)
-                            ? 'bg-purple-50 text-[#7C68A5] border border-purple-200/60 opacity-80'
-                            : 'bg-[#E2DDEC] text-[#3C2A63] hover:bg-[#D9D3E4]'
-                        }`}
-                      >
-                        {completedSkills.writing ? (
-                          <CheckCircle2 className="w-4 h-4 text-emerald-700" />
-                        ) : testMode === 'TEST' && (!completedSkills.listening || !completedSkills.reading) ? (
-                          <Lock className="w-3.5 h-3.5 text-rose-500" />
-                        ) : (
-                          <FileText className="w-4 h-4" />
-                        )}
-                        <span>3. Writing (Task 1 &amp; Task 2)</span>
-                      </button>
+                      {hasWriting && (
+                        <button
+                          onClick={() => handleSwitchTab('writing')}
+                          className={`px-5 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                            currentModule === 'writing'
+                              ? 'bg-[#6B51A5] text-white shadow-md'
+                              : completedSkills.writing
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              : testMode === 'TEST' && ((hasListening && !completedSkills.listening) || (hasReading && !completedSkills.reading))
+                              ? 'bg-purple-50 text-[#7C68A5] border border-purple-200/60 opacity-80'
+                              : 'bg-[#E2DDEC] text-[#3C2A63] hover:bg-[#D9D3E4]'
+                          }`}
+                        >
+                          {completedSkills.writing ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                          ) : testMode === 'TEST' && ((hasListening && !completedSkills.listening) || (hasReading && !completedSkills.reading)) ? (
+                            <Lock className="w-3.5 h-3.5 text-rose-500" />
+                          ) : (
+                            <FileText className="w-4 h-4" />
+                          )}
+                          <span>3. Writing (Task 1 &amp; Task 2)</span>
+                        </button>
+                      )}
 
                     </div>
 
                     {/* SUBMIT BUTTON */}
                     <button
-                      onClick={() => handleSubmitExam('STANDARD')}
+                      onClick={() => setIsConfirmSubmitOpen(true)}
                       disabled={isSubmitting}
                       className="px-6 py-3 bg-[#6B51A5] hover:bg-[#583F8F] text-white font-extrabold text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-purple-900/15 flex items-center gap-2 transition disabled:opacity-50 cursor-pointer"
                     >
@@ -1396,8 +1481,12 @@ function doPost(e) {
                           <h4 className="text-sm font-extrabold text-[#3C2A63]">Submit Listening Answers</h4>
                           <p className="text-xs text-[#7C68A5] font-medium">
                             {testMode === 'TEST'
-                              ? 'In TEST MODE: Submitting Listening locks your answers and unlocks the Reading section.'
-                              : 'Proceed directly to Reading practice.'}
+                              ? hasReading
+                                ? 'In TEST MODE: Submitting Listening locks your answers and unlocks the Reading section.'
+                                : hasWriting
+                                ? 'In TEST MODE: Submitting Listening locks your answers and unlocks the Writing section.'
+                                : 'In TEST MODE: Submitting Listening locks your answers and submits the examination.'
+                              : 'Proceed to next section.'}
                           </p>
                         </div>
                       </div>
@@ -1405,7 +1494,13 @@ function doPost(e) {
                         onClick={handleCompleteListening}
                         className="px-6 py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-emerald-950/10 flex items-center gap-2 transition cursor-pointer shrink-0"
                       >
-                        <span>Submit Listening &amp; Proceed to Reading</span>
+                        <span>
+                          {hasReading
+                            ? 'Submit Listening & Proceed to Reading'
+                            : hasWriting
+                            ? 'Submit Listening & Proceed to Writing'
+                            : 'Submit Listening & Finish Exam'}
+                        </span>
                         <ArrowRight className="w-4 h-4" />
                       </button>
                     </div>
@@ -1423,6 +1518,8 @@ function doPost(e) {
                       onAnswerChange={handleAnswerChange}
                       testMode={testMode}
                       durationMins={examData.reading_duration_mins || 60}
+                      examCode={examCode}
+                      candidateId={sbd}
                       onTimeExpire={() => handleSubmitExam('TIMEOUT_FORCED')}
                     />
 
@@ -1436,8 +1533,10 @@ function doPost(e) {
                           <h4 className="text-sm font-extrabold text-[#3C2A63]">Submit Reading Answers</h4>
                           <p className="text-xs text-[#7C68A5] font-medium">
                             {testMode === 'TEST'
-                              ? 'In TEST MODE: Submitting Reading locks your answers and unlocks the Writing section.'
-                              : 'Proceed directly to Writing practice.'}
+                              ? hasWriting
+                                ? 'In TEST MODE: Submitting Reading locks your answers and unlocks the Writing section.'
+                                : 'In TEST MODE: Submitting Reading locks your answers and submits the examination.'
+                              : 'Proceed to next section.'}
                           </p>
                         </div>
                       </div>
@@ -1445,7 +1544,11 @@ function doPost(e) {
                         onClick={handleCompleteReading}
                         className="px-6 py-3 bg-[#6B51A5] hover:bg-[#583F8F] text-white font-extrabold text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-purple-900/15 flex items-center gap-2 transition cursor-pointer shrink-0"
                       >
-                        <span>Submit Reading &amp; Proceed to Writing</span>
+                        <span>
+                          {hasWriting
+                            ? 'Submit Reading & Proceed to Writing'
+                            : 'Submit Reading & Finish Exam'}
+                        </span>
                         <ArrowRight className="w-4 h-4" />
                       </button>
                     </div>
@@ -1484,7 +1587,7 @@ function doPost(e) {
                         </div>
                       </div>
                       <button
-                        onClick={() => handleSubmitExam('STANDARD')}
+                        onClick={() => setIsConfirmSubmitOpen(true)}
                         disabled={isSubmitting}
                         className="px-8 py-3.5 bg-[#6B51A5] hover:bg-[#583F8F] text-white font-extrabold text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-purple-900/15 flex items-center gap-2 transition disabled:opacity-50 cursor-pointer shrink-0"
                       >
@@ -1501,6 +1604,26 @@ function doPost(e) {
                         )}
                       </button>
                     </div>
+
+                    {/* Final Submission Pre-flight Confirmation Modal */}
+                    <SubmitConfirmationModal
+                      isOpen={isConfirmSubmitOpen}
+                      onClose={() => setIsConfirmSubmitOpen(false)}
+                      onConfirmSubmit={() => {
+                        setIsConfirmSubmitOpen(false);
+                        handleSubmitExam('STANDARD');
+                      }}
+                      isSubmitting={isSubmitting}
+                      totalListening={examData.listening_questions?.length ?? 0}
+                      answeredListening={answeredListeningCount}
+                      totalReading={readingQuestionsCount}
+                      answeredReading={answeredReadingCount}
+                      hasListening={hasListening}
+                      hasReading={hasReading}
+                      hasWriting={hasWriting}
+                      writingTask1Words={writingTask1.trim().split(/\s+/).filter(Boolean).length}
+                      writingTask2Words={writingTask2.trim().split(/\s+/).filter(Boolean).length}
+                    />
                   </div>
                 )}
 
@@ -1508,23 +1631,29 @@ function doPost(e) {
                   <ResultPage
                     result={submitResult}
                     testMode={testMode}
+                    examData={examData}
+                    userAnswers={userAnswers}
+                    writingTask1={writingTask1}
+                    writingTask2={writingTask2}
                     onReturnHome={() => {
+                      clearSessionTimers();
                       setIsLoggedIn(false);
                       setUserAnswers({});
                       setWritingTask1('');
                       setWritingTask2('');
                       setSubmitResult(null);
-                      setCurrentModule('listening');
+                      setCurrentModule(defaultInitialModule);
                       setCompletedSkills({ listening: false, reading: false, writing: false });
                       setSkillNotice(null);
                     }}
                     onRestartPractice={() => {
+                      clearSessionTimers();
                       setIsLoggedIn(false);
                       setUserAnswers({});
                       setWritingTask1('');
                       setWritingTask2('');
                       setSubmitResult(null);
-                      setCurrentModule('listening');
+                      setCurrentModule(defaultInitialModule);
                       setCompletedSkills({ listening: false, reading: false, writing: false });
                       setSkillNotice(null);
                     }}
@@ -1569,7 +1698,12 @@ function doPost(e) {
             {/* Admin Tab Content */}
             {adminTab === 'dashboard' && <MonitoringDashboard gasUrl={gasUrl} />}
             {adminTab === 'grading' && <ManualGrading gasUrl={gasUrl} />}
-            {adminTab === 'upload' && <UploadModule onParsedData={(parsed) => handleSetExamData(parsed)} />}
+            {adminTab === 'upload' && (
+              <UploadModule 
+                onParsedData={(parsed) => handleSetExamData(parsed)} 
+                onNavigateToPreview={() => setAdminTab('preview')}
+              />
+            )}
             {adminTab === 'custom_practice' && <CustomPracticeManager gasUrl={gasUrl} />}
             
             {adminTab === 'preview' && (

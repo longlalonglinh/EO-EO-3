@@ -1,10 +1,30 @@
-import React from 'react';
-import { Award, CheckCircle2, Clock, RotateCcw, FileText, Headphones, BookOpen, AlertCircle, Sparkles, Home, ArrowLeft } from 'lucide-react';
-import { SubmissionResponse } from '../../types';
+import React, { useState } from 'react';
+import { 
+  Award, 
+  CheckCircle2, 
+  Clock, 
+  RotateCcw, 
+  FileText, 
+  Headphones, 
+  BookOpen, 
+  AlertCircle, 
+  Sparkles, 
+  Home, 
+  XCircle, 
+  ChevronDown, 
+  ChevronUp, 
+  Filter, 
+  Check 
+} from 'lucide-react';
+import { SubmissionResponse, ExamData } from '../../types';
 
 interface ResultPageProps {
   result: SubmissionResponse;
   testMode: 'TEST' | 'PRACTICE';
+  examData?: ExamData | null;
+  userAnswers?: Record<string, string>;
+  writingTask1?: string;
+  writingTask2?: string;
   onRestartPractice?: () => void;
   onReturnHome?: () => void;
 }
@@ -12,11 +32,56 @@ interface ResultPageProps {
 export const ResultPage: React.FC<ResultPageProps> = ({
   result,
   testMode,
+  examData,
+  userAnswers = {},
+  writingTask1 = '',
+  writingTask2 = '',
   onRestartPractice,
   onReturnHome
 }) => {
+  const [showDetailedReview, setShowDetailedReview] = useState(false);
+  const [activeReviewTab, setActiveReviewTab] = useState<'listening' | 'reading' | 'writing'>('listening');
+  const [reviewFilter, setReviewFilter] = useState<'all' | 'incorrect' | 'correct'>('all');
+
+  const detailedResults = result.detailed_results || {};
+
+  // Extract listening and reading questions from examData
+  const listeningQuestions = examData?.listening_questions || (examData?.questions || []).filter(q => q.section === 'listening');
+  
+  const readingQuestions: any[] = [];
+  if (examData?.passages && examData.passages.length > 0) {
+    examData.passages.forEach(p => {
+      if (p.questions) readingQuestions.push(...p.questions);
+    });
+  }
+  if (readingQuestions.length === 0) {
+    readingQuestions.push(...(examData?.reading_questions || (examData?.questions || []).filter(q => q.section === 'reading')));
+  }
+
+  const hasListeningQuestions = listeningQuestions.length > 0;
+  const hasReadingQuestions = readingQuestions.length > 0;
+  const hasWritingSubmitted = Boolean(writingTask1 || writingTask2 || examData?.writing_task1_prompt || examData?.writing_task2_prompt);
+
+  // Overall Band calculation fallback if not already provided
+  const overallBand = result.overall_band !== undefined 
+    ? result.overall_band 
+    : (result.listening_band !== undefined && result.reading_band !== undefined)
+      ? Math.round(((result.listening_band + result.reading_band) / 2) * 2) / 2
+      : result.reading_band ?? result.listening_band ?? undefined;
+
+  const getFilteredQuestions = (section: 'listening' | 'reading') => {
+    const list = section === 'listening' ? listeningQuestions : readingQuestions;
+    return list.filter((q, idx) => {
+      const qRes = detailedResults[q.question_id];
+      const isCorrect = qRes ? qRes.is_correct : false;
+      if (reviewFilter === 'incorrect') return !isCorrect;
+      if (reviewFilter === 'correct') return isCorrect;
+      return true;
+    });
+  };
+
   return (
-    <div className="max-w-4xl mx-auto space-y-8 py-8 px-4">
+    <div className="max-w-5xl mx-auto space-y-8 py-8 px-4 font-sans text-[#3C2A63]">
       
       {/* Header Banner */}
       <div className="bg-gradient-to-r from-[#6B51A5] via-[#503A7A] to-[#3C2A63] border border-purple-200 rounded-3xl p-8 shadow-xl text-center relative overflow-hidden">
@@ -33,9 +98,9 @@ export const ResultPage: React.FC<ResultPageProps> = ({
           <h1 className="text-3xl md:text-4xl font-black text-white">
             EXAM COMPLETED SUCCESSFULLY!
           </h1>
-          <div className="flex flex-wrap items-center justify-center gap-2">
+          <div className="flex flex-wrap items-center justify-center gap-3">
             <p className="text-sm text-purple-100 font-medium">
-              Submission ID: <strong className="text-white font-bold">{result.submission_id}</strong>
+              Candidate: <strong className="text-white font-bold">{result.sbd || 'Candidate'}</strong> | Exam Code: <strong className="text-white font-bold">{result.exam_code}</strong>
             </p>
             {result.submission_type === 'TIMEOUT_FORCED' && (
               <span className="px-3 py-1 bg-amber-400 text-amber-950 font-black text-xs rounded-full uppercase tracking-wider shadow-md flex items-center gap-1.5">
@@ -47,82 +112,362 @@ export const ResultPage: React.FC<ResultPageProps> = ({
         </div>
       </div>
 
-      {/* Raw & Band Score Display Cards (Listening & Reading) */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* Raw & Band Score Display Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         
+        {/* Overall Estimated Band */}
+        {overallBand !== undefined && (
+          <div className="bg-gradient-to-br from-indigo-900 to-[#503A7A] text-white rounded-3xl p-6 shadow-xl shadow-purple-950/10 flex flex-col items-center justify-between text-center space-y-3 relative overflow-hidden">
+            <div className="p-3.5 bg-white/15 rounded-2xl border border-white/20">
+              <Award className="w-7 h-7 text-amber-300" />
+            </div>
+            <div>
+              <h4 className="text-[11px] font-extrabold text-purple-200 uppercase tracking-wider">ESTIMATED OVERALL</h4>
+              <div className="text-4xl font-black text-white mt-1.5 font-mono">
+                {overallBand.toFixed(1)}
+              </div>
+              <p className="text-[11px] text-purple-200 font-medium mt-0.5">
+                Standard IELTS Rounding
+              </p>
+            </div>
+            <span className="text-[10px] font-extrabold px-3 py-0.5 rounded-full bg-amber-400 text-amber-950 uppercase tracking-wider">
+              Receptive Skills Band
+            </span>
+          </div>
+        )}
+
         {/* Listening Raw & Band Score */}
-        <div className="bg-white border border-purple-100/80 rounded-3xl p-6 shadow-xl shadow-purple-950/5 flex flex-col items-center justify-between text-center space-y-4 hover:border-emerald-300 transition-all">
-          <div className="p-4 bg-emerald-100 text-emerald-800 rounded-2xl border border-emerald-200">
-            <Headphones className="w-8 h-8" />
+        <div className="bg-white border border-purple-100/80 rounded-3xl p-6 shadow-xl shadow-purple-950/5 flex flex-col items-center justify-between text-center space-y-3 hover:border-emerald-300 transition-all">
+          <div className={`p-3.5 rounded-2xl border ${
+            result.listening_max_score === 0
+              ? 'bg-gray-100 text-gray-500 border-gray-200'
+              : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+          }`}>
+            <Headphones className="w-7 h-7" />
           </div>
 
           <div>
-            <h4 className="text-xs font-extrabold text-[#7C68A5] uppercase tracking-wider">LISTENING RAW &amp; BAND</h4>
-            <div className="text-4xl font-black text-emerald-700 mt-2">
-              {result.listening_score ?? result.listening_raw_score ?? 0} <span className="text-xl text-[#7C68A5]">/ 40</span>
-            </div>
-            {result.listening_band !== undefined && (
-              <div className="mt-1 text-sm font-black text-[#3C2A63]">
-                Estimated Band: <span className="text-emerald-600 font-black text-base">{result.listening_band.toFixed(1)}</span>
+            <h4 className="text-[11px] font-extrabold text-[#7C68A5] uppercase tracking-wider">LISTENING RAW &amp; BAND</h4>
+            {result.listening_max_score === 0 ? (
+              <div className="mt-1.5 space-y-0.5">
+                <div className="text-2xl font-black text-gray-400">N/A</div>
+                <p className="text-[11px] text-[#7C68A5] font-semibold">Not in test paper</p>
               </div>
+            ) : (
+              <>
+                <div className="text-3xl font-black text-emerald-700 mt-1.5 font-mono">
+                  {result.listening_score ?? result.listening_raw_score ?? 0}{' '}
+                  <span className="text-lg text-[#7C68A5]">/ {result.listening_max_score ?? 40}</span>
+                </div>
+                {result.listening_band !== undefined && (
+                  <div className="mt-1 text-xs font-black text-[#3C2A63]">
+                    Band: <span className="text-emerald-600 font-black text-sm">{result.listening_band.toFixed(1)}</span>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
-          <span className="text-[11px] text-emerald-800 font-extrabold bg-emerald-100 px-3.5 py-1 rounded-full border border-emerald-200">
-            Normalized Auto-Graded
+          <span className={`text-[10px] font-extrabold px-3 py-0.5 rounded-full border ${
+            result.listening_max_score === 0
+              ? 'bg-gray-100 text-gray-600 border-gray-200'
+              : 'text-emerald-800 bg-emerald-100 border-emerald-200'
+          }`}>
+            {result.listening_max_score === 0 ? 'Section Omitted' : 'Normalized Auto-Graded'}
           </span>
         </div>
 
         {/* Reading Raw & Band Score */}
-        <div className="bg-white border border-purple-100/80 rounded-3xl p-6 shadow-xl shadow-purple-950/5 flex flex-col items-center justify-between text-center space-y-4 hover:border-purple-300 transition-all">
-          <div className="p-4 bg-purple-100 text-[#503A7A] rounded-2xl border border-purple-200">
-            <BookOpen className="w-8 h-8" />
+        <div className="bg-white border border-purple-100/80 rounded-3xl p-6 shadow-xl shadow-purple-950/5 flex flex-col items-center justify-between text-center space-y-3 hover:border-purple-300 transition-all">
+          <div className={`p-3.5 rounded-2xl border ${
+            result.reading_max_score === 0
+              ? 'bg-gray-100 text-gray-500 border-gray-200'
+              : 'bg-purple-100 text-[#503A7A] border border-purple-200'
+          }`}>
+            <BookOpen className="w-7 h-7" />
           </div>
 
           <div>
-            <h4 className="text-xs font-extrabold text-[#7C68A5] uppercase tracking-wider">READING RAW &amp; BAND</h4>
-            <div className="text-4xl font-black text-[#6B51A5] mt-2">
-              {result.reading_score ?? result.reading_raw_score ?? 0} <span className="text-xl text-[#7C68A5]">/ 40</span>
-            </div>
-            {result.reading_band !== undefined && (
-              <div className="mt-1 text-sm font-black text-[#3C2A63]">
-                Estimated Band: <span className="text-[#6B51A5] font-black text-base">{result.reading_band.toFixed(1)}</span>
+            <h4 className="text-[11px] font-extrabold text-[#7C68A5] uppercase tracking-wider">READING RAW &amp; BAND</h4>
+            {result.reading_max_score === 0 ? (
+              <div className="mt-1.5 space-y-0.5">
+                <div className="text-2xl font-black text-gray-400">N/A</div>
+                <p className="text-[11px] text-[#7C68A5] font-semibold">Not in test paper</p>
               </div>
+            ) : (
+              <>
+                <div className="text-3xl font-black text-[#6B51A5] mt-1.5 font-mono">
+                  {result.reading_score ?? result.reading_raw_score ?? 0}{' '}
+                  <span className="text-lg text-[#7C68A5]">/ {result.reading_max_score ?? 40}</span>
+                </div>
+                {result.reading_band !== undefined && (
+                  <div className="mt-1 text-xs font-black text-[#3C2A63]">
+                    Band: <span className="text-[#6B51A5] font-black text-sm">{result.reading_band.toFixed(1)}</span>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
-          <span className="text-[11px] text-emerald-800 font-extrabold bg-purple-100 px-3.5 py-1 rounded-full border border-purple-200">
-            Normalized Auto-Graded
+          <span className={`text-[10px] font-extrabold px-3 py-0.5 rounded-full border ${
+            result.reading_max_score === 0
+              ? 'bg-gray-100 text-gray-600 border-gray-200'
+              : 'text-purple-800 bg-purple-100 border-purple-200'
+          }`}>
+            {result.reading_max_score === 0 ? 'Section Omitted' : 'Normalized Auto-Graded'}
           </span>
         </div>
 
-        {/* Writing Status (Pending Teacher) */}
-        <div className="bg-white border border-purple-100/80 rounded-3xl p-6 shadow-xl shadow-purple-950/5 flex flex-col items-center justify-between text-center space-y-4 hover:border-amber-300 transition-all">
-          <div className="p-4 bg-amber-100 text-amber-800 rounded-2xl border border-amber-200">
-            <FileText className="w-8 h-8" />
+        {/* Writing Status */}
+        <div className="bg-white border border-purple-100/80 rounded-3xl p-6 shadow-xl shadow-purple-950/5 flex flex-col items-center justify-between text-center space-y-3 hover:border-amber-300 transition-all">
+          <div className="p-3.5 bg-amber-100 text-amber-800 rounded-2xl border border-amber-200">
+            <FileText className="w-7 h-7" />
           </div>
 
           <div>
-            <h4 className="text-xs font-extrabold text-[#7C68A5] uppercase tracking-wider">WRITING STATUS</h4>
-            <div className="text-base font-extrabold text-amber-800 mt-2 bg-amber-100 border border-amber-200 px-3.5 py-1.5 rounded-2xl inline-block">
+            <h4 className="text-[11px] font-extrabold text-[#7C68A5] uppercase tracking-wider">WRITING STATUS</h4>
+            <div className="text-sm font-black text-amber-800 mt-1.5 bg-amber-50 border border-amber-200 px-3 py-1 rounded-xl inline-block">
               {result.writing_status || 'PENDING_TEACHER'}
             </div>
+            {writingTask1 && (
+              <p className="text-[10px] text-[#7C68A5] mt-1">
+                Task 1: {writingTask1.trim().split(/\s+/).filter(Boolean).length}w | Task 2: {writingTask2.trim().split(/\s+/).filter(Boolean).length}w
+              </p>
+            )}
           </div>
 
-          <span className="text-[11px] text-amber-800 font-extrabold bg-amber-100 px-3.5 py-1 rounded-full border border-amber-200">
-            Pending Teacher Evaluation
+          <span className="text-[10px] text-amber-800 font-extrabold bg-amber-100 px-3 py-0.5 rounded-full border border-amber-200">
+            Pending Teacher Review
           </span>
         </div>
 
+      </div>
+
+      {/* Accordion Toggle: Detailed Question Breakdown */}
+      <div className="bg-white border border-purple-100 rounded-3xl p-6 shadow-xl shadow-purple-950/5 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-black text-[#3C2A63] flex items-center gap-2">
+              <span>Detailed Answer Key &amp; Solutions</span>
+            </h3>
+            <p className="text-xs text-[#7C68A5] font-medium mt-0.5">
+              Review your responses against official correct answers and acceptable spelling variations.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowDetailedReview(prev => !prev)}
+            className="px-5 py-2.5 bg-[#F5F2F9] hover:bg-[#E2DDEC] text-[#503A7A] rounded-2xl text-xs font-black transition flex items-center justify-center gap-2 cursor-pointer border border-purple-200 self-start sm:self-auto"
+          >
+            <span>{showDetailedReview ? 'Hide Solutions Review' : 'Show Solutions Review'}</span>
+            {showDetailedReview ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+        </div>
+
+        {showDetailedReview && (
+          <div className="pt-4 border-t border-purple-100 space-y-6">
+            
+            {/* Section Switcher Tabs & Filter */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2 bg-[#F5F2F9] p-1.5 rounded-2xl border border-purple-100">
+                {hasListeningQuestions && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveReviewTab('listening')}
+                    className={`px-4 py-2 rounded-xl text-xs font-extrabold transition flex items-center gap-1.5 cursor-pointer ${
+                      activeReviewTab === 'listening'
+                        ? 'bg-[#6B51A5] text-white shadow-md'
+                        : 'text-[#503A7A] hover:bg-[#E2DDEC]'
+                    }`}
+                  >
+                    <Headphones className="w-3.5 h-3.5" />
+                    <span>Listening ({listeningQuestions.length})</span>
+                  </button>
+                )}
+
+                {hasReadingQuestions && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveReviewTab('reading')}
+                    className={`px-4 py-2 rounded-xl text-xs font-extrabold transition flex items-center gap-1.5 cursor-pointer ${
+                      activeReviewTab === 'reading'
+                        ? 'bg-[#6B51A5] text-white shadow-md'
+                        : 'text-[#503A7A] hover:bg-[#E2DDEC]'
+                    }`}
+                  >
+                    <BookOpen className="w-3.5 h-3.5" />
+                    <span>Reading ({readingQuestions.length})</span>
+                  </button>
+                )}
+
+                {hasWritingSubmitted && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveReviewTab('writing')}
+                    className={`px-4 py-2 rounded-xl text-xs font-extrabold transition flex items-center gap-1.5 cursor-pointer ${
+                      activeReviewTab === 'writing'
+                        ? 'bg-[#6B51A5] text-white shadow-md'
+                        : 'text-[#503A7A] hover:bg-[#E2DDEC]'
+                    }`}
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Writing Drafts</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Status Filter for Receptive Skills */}
+              {activeReviewTab !== 'writing' && (
+                <div className="flex items-center space-x-1.5 text-xs font-bold">
+                  <Filter className="w-3.5 h-3.5 text-[#7C68A5]" />
+                  <span className="text-[#7C68A5] mr-1">Filter:</span>
+                  {(['all', 'incorrect', 'correct'] as const).map((filterOpt) => (
+                    <button
+                      key={filterOpt}
+                      type="button"
+                      onClick={() => setReviewFilter(filterOpt)}
+                      className={`px-3 py-1 rounded-xl text-xs font-black transition cursor-pointer capitalize ${
+                        reviewFilter === filterOpt
+                          ? 'bg-[#503A7A] text-white shadow-sm'
+                          : 'bg-[#F5F2F9] text-[#7C68A5] hover:bg-[#E2DDEC]'
+                      }`}
+                    >
+                      {filterOpt}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Questions Table / List */}
+            {activeReviewTab !== 'writing' ? (
+              <div className="space-y-3">
+                {getFilteredQuestions(activeReviewTab).length === 0 ? (
+                  <div className="p-8 text-center bg-[#FAF8FE] border border-purple-100 rounded-2xl">
+                    <p className="text-xs text-[#7C68A5] font-bold">No questions match the current filter.</p>
+                  </div>
+                ) : (
+                  getFilteredQuestions(activeReviewTab).map((q, idx) => {
+                    const qRes = detailedResults[q.question_id];
+                    const isCorrect = qRes ? qRes.is_correct : false;
+                    const studentAns = userAnswers[q.question_id] || (qRes ? qRes.user_answer : '') || '(No answer)';
+                    const correctAnswers = qRes?.acceptable_answers?.length 
+                      ? qRes.acceptable_answers.join(' / ')
+                      : q.correct_answer || 'N/A';
+
+                    return (
+                      <div
+                        key={`${q.question_id}-${idx}`}
+                        className={`p-4 rounded-2xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-3 ${
+                          isCorrect
+                            ? 'bg-emerald-50/50 border-emerald-200'
+                            : 'bg-rose-50/50 border-rose-200'
+                        }`}
+                      >
+                        <div className="flex items-start space-x-3">
+                          <span className={`w-7 h-7 rounded-xl flex items-center justify-center font-mono font-black text-xs shrink-0 ${
+                            isCorrect ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
+                          }`}>
+                            {q.question_number || idx + 1}
+                          </span>
+
+                          <div className="space-y-1">
+                            <p className="text-xs font-bold text-[#3C2A63]">
+                              {q.question_text || `Question ${q.question_number || idx + 1}`}
+                            </p>
+                            <div className="flex flex-wrap items-center gap-3 text-xs">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[#7C68A5] font-medium">Your Answer:</span>
+                                <span className={`font-black font-mono px-2 py-0.5 rounded-md ${
+                                  isCorrect ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                                }`}>
+                                  {studentAns}
+                                </span>
+                              </div>
+
+                              {!isCorrect && (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[#7C68A5] font-medium">Acceptable Answers:</span>
+                                  <span className="font-black font-mono px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
+                                    {correctAnswers}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center space-x-2 shrink-0 self-end md:self-auto">
+                          {isCorrect ? (
+                            <span className="flex items-center space-x-1 text-xs font-black text-emerald-700 bg-emerald-100 px-3 py-1 rounded-xl">
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Correct (+1)</span>
+                            </span>
+                          ) : (
+                            <span className="flex items-center space-x-1 text-xs font-black text-rose-700 bg-rose-100 px-3 py-1 rounded-xl">
+                              <XCircle className="w-3.5 h-3.5" />
+                              <span>Incorrect (0)</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            ) : (
+              /* Writing Review Section */
+              <div className="space-y-6">
+                {/* Task 1 */}
+                <div className="p-5 bg-[#FAF8FE] border border-purple-100 rounded-3xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-black text-[#3C2A63]">Writing Task 1 Submission</h4>
+                    <span className="text-xs font-mono font-bold text-[#6B51A5]">
+                      {writingTask1.trim().split(/\s+/).filter(Boolean).length} words (Recommended: 150+)
+                    </span>
+                  </div>
+                  {examData?.writing_task1_prompt && (
+                    <p className="text-xs text-[#7C68A5] italic bg-white p-3 rounded-xl border border-purple-100">
+                      Prompt: {examData.writing_task1_prompt}
+                    </p>
+                  )}
+                  <div className="bg-white p-4 rounded-2xl border border-purple-100 text-xs text-[#3C2A63] leading-relaxed whitespace-pre-wrap font-serif">
+                    {writingTask1.trim() || '(No draft entered for Task 1)'}
+                  </div>
+                </div>
+
+                {/* Task 2 */}
+                <div className="p-5 bg-[#FAF8FE] border border-purple-100 rounded-3xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-black text-[#3C2A63]">Writing Task 2 Submission</h4>
+                    <span className="text-xs font-mono font-bold text-[#6B51A5]">
+                      {writingTask2.trim().split(/\s+/).filter(Boolean).length} words (Recommended: 250+)
+                    </span>
+                  </div>
+                  {examData?.writing_task2_prompt && (
+                    <p className="text-xs text-[#7C68A5] italic bg-white p-3 rounded-xl border border-purple-100">
+                      Prompt: {examData.writing_task2_prompt}
+                    </p>
+                  )}
+                  <div className="bg-white p-4 rounded-2xl border border-purple-100 text-xs text-[#3C2A63] leading-relaxed whitespace-pre-wrap font-serif">
+                    {writingTask2.trim() || '(No draft entered for Task 2)'}
+                  </div>
+                </div>
+              </div>
+            )}
+
+          </div>
+        )}
       </div>
 
       {/* Info Note */}
       <div className="p-5 bg-white border border-purple-100/80 rounded-3xl text-xs text-[#503A7A] flex items-start space-x-3 shadow-sm">
         <AlertCircle className="w-5 h-5 text-[#6B51A5] shrink-0 mt-0.5" />
         <div className="space-y-1">
-          <p className="font-extrabold text-[#3C2A63]">Grading &amp; Assessment Information:</p>
+          <p className="font-extrabold text-[#3C2A63]">Official IELTS Assessment Standards:</p>
           <p className="leading-relaxed">
-            Listening and Reading raw scores were automatically evaluated and calculated by the system. The 4 Writing assessment criteria (TR, CC, LR, GRA) will be reviewed directly by instructors.
+            Listening and Reading band scores are automatically determined according to Cambridge IELTS scoring conversion scales. Writing submissions are securely persisted and queued for instructor evaluation based on Task Response, Coherence &amp; Cohesion, Lexical Resource, and Grammatical Range &amp; Accuracy.
           </p>
         </div>
       </div>
@@ -131,6 +476,7 @@ export const ResultPage: React.FC<ResultPageProps> = ({
       <div className="flex flex-wrap items-center justify-center gap-4 pt-4">
         {onReturnHome && (
           <button
+            type="button"
             onClick={onReturnHome}
             className="px-7 py-3.5 bg-[#6B51A5] hover:bg-[#583F8F] text-white font-extrabold text-sm rounded-2xl shadow-lg shadow-purple-950/10 flex items-center space-x-2 transition cursor-pointer"
           >
@@ -141,6 +487,7 @@ export const ResultPage: React.FC<ResultPageProps> = ({
 
         {testMode === 'PRACTICE' && onRestartPractice && (
           <button
+            type="button"
             onClick={onRestartPractice}
             className="px-7 py-3.5 bg-[#E2DDEC] hover:bg-[#D9D3E4] text-[#3C2A63] font-extrabold text-sm rounded-2xl border border-purple-200/80 flex items-center space-x-2 transition cursor-pointer"
           >

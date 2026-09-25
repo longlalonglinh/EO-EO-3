@@ -9,7 +9,8 @@ import {
   Lock,
   Sparkles,
   ChevronRight,
-  Info
+  Info,
+  AlertCircle
 } from 'lucide-react';
 import { CountdownTimer } from './CountdownTimer';
 import { IELTSQuestionCard } from './IELTSQuestionCard';
@@ -17,6 +18,7 @@ import {
   saveAudioProgressToIndexedDB, 
   getAudioProgressFromIndexedDB 
 } from '../../services/indexedDb';
+import { resolvePlayableAudioUrl, isGoogleDriveAudio } from '../../utils/audioUrl';
 
 interface ListeningModuleProps {
   audioUrl?: string;
@@ -50,12 +52,15 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
   const [isMuted, setIsMuted] = useState(false);
   const [activePart, setActivePart] = useState<1 | 2 | 3 | 4>(1);
   const [resumeNotice, setResumeNotice] = useState<string | null>(null);
+  const [useDirectStream, setUseDirectStream] = useState(false);
 
   const cleanAudioUrl = (audioUrl && typeof audioUrl === 'string' && audioUrl.trim().length > 0) ? audioUrl.trim() : null;
+  const playableUrl = cleanAudioUrl ? resolvePlayableAudioUrl(cleanAudioUrl, useDirectStream) : null;
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const maxAllowedTimeRef = useRef<number>(0);
   const lastSavedTimeRef = useRef<number>(0);
+  const [audioError, setAudioError] = useState<string | null>(null);
 
   // Group questions into IELTS Parts (Part 1, 2, 3, 4)
   const getPartForQuestion = (q: Question, idx: number): 1 | 2 | 3 | 4 => {
@@ -68,7 +73,8 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
 
   const questionsWithPart = questions.map((q, idx) => ({
     ...q,
-    computedPart: getPartForQuestion(q, idx)
+    computedPart: getPartForQuestion(q, idx),
+    globalNumber: q.question_number || (idx + 1)
   }));
 
   const filteredQuestions = questionsWithPart.filter(q => q.computedPart === activePart);
@@ -185,26 +191,51 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
 
   // Requirement 4: Single Playthrough Audio Lock
   const handleStartAudio = () => {
-    if (!audioRef.current || hasEnded || !cleanAudioUrl) return;
+    if (!audioRef.current || hasEnded || !playableUrl) return;
+    setAudioError(null);
 
     if (testMode === 'TEST') {
       // Once started in TEST mode, audio plays continuously without pausing
-      audioRef.current.play().then(() => {
-        setIsPlaying(true);
-        setHasStarted(true);
-      }).catch(err => {
-        console.warn('Audio play request error:', err);
-      });
+      const playPromise = audioRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.then(() => {
+          setIsPlaying(true);
+          setHasStarted(true);
+          setAudioError(null);
+        }).catch(err => {
+          console.warn('Audio play request error in TEST mode:', err);
+          if (!useDirectStream) {
+            setUseDirectStream(true);
+            setAudioError('Proxy stream interrupted. Switched to direct audio stream. Please click Play again to start.');
+          } else {
+            setAudioError(`Audio playback error (${err.name || 'PlaybackBlocked'}): Tap Play again or check connection.`);
+          }
+          setIsPlaying(false);
+        });
+      }
     } else {
       // Practice mode allows play/pause toggle
       if (isPlaying) {
         audioRef.current.pause();
         setIsPlaying(false);
       } else {
-        audioRef.current.play().then(() => {
-          setIsPlaying(true);
-          setHasStarted(true);
-        }).catch(err => console.warn(err));
+        const playPromise = audioRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise.then(() => {
+            setIsPlaying(true);
+            setHasStarted(true);
+            setAudioError(null);
+          }).catch(err => {
+            console.warn('Audio play request error in Practice mode:', err);
+            if (!useDirectStream) {
+              setUseDirectStream(true);
+              setAudioError('Proxy stream interrupted. Switched to direct audio stream. Click Play to start.');
+            } else {
+              setAudioError('Audio playback blocked. Tap Play to start.');
+            }
+            setIsPlaying(false);
+          });
+        }
       }
     }
   };
@@ -238,7 +269,8 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
       <CountdownTimer
         initialMinutes={durationMins}
         testMode={testMode}
-        sectionName="ACADEMIC LISTENING (40 Questions / 4 Parts)"
+        sectionName={`ACADEMIC LISTENING (${questions.length} Questions)`}
+        sessionKey={`${examCode || 'EXAM'}_${candidateId || 'USER'}_listening`}
         onTimeExpire={onTimeExpire}
       />
 
@@ -259,16 +291,67 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
         </div>
       )}
 
+      {/* Audio Load Failure Alert & Diagnostics */}
+      {audioError && (
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-800 font-bold flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-center space-x-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{audioError}</span>
+          </div>
+          <div className="flex items-center space-x-2 self-end sm:self-auto">
+            {cleanAudioUrl && isGoogleDriveAudio(cleanAudioUrl) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setUseDirectStream(!useDirectStream);
+                  setAudioError(null);
+                  if (audioRef.current) {
+                    setTimeout(() => {
+                      if (audioRef.current) audioRef.current.load();
+                    }, 50);
+                  }
+                }}
+                className="px-3 py-1 bg-white border border-rose-300 hover:bg-rose-100 text-rose-900 rounded-lg text-xs font-extrabold transition cursor-pointer"
+              >
+                {useDirectStream ? 'Use Proxy Stream' : 'Use Direct Stream'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setAudioError(null);
+                if (audioRef.current) audioRef.current.load();
+              }}
+              className="px-3 py-1 bg-rose-200 hover:bg-rose-300 text-rose-900 rounded-lg text-xs font-black transition cursor-pointer"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* AUDIO PLAYER & ENFORCEMENT BANNER */}
       <div className="bg-white border border-purple-100/80 rounded-3xl p-5 shadow-xl shadow-purple-950/5 flex flex-col md:flex-row items-center justify-between gap-4">
         
-        {/* Hidden Audio Tag: controls={false} as mandated - rendered only when cleanAudioUrl exists */}
-        {cleanAudioUrl && (
+        {/* Audio Tag: controls={false} as mandated - rendered with resolved streamable proxy URL */}
+        {playableUrl && (
           <audio 
             ref={audioRef} 
-            src={cleanAudioUrl} 
+            src={playableUrl} 
             preload="auto" 
-            controls={false} 
+            controls={false}
+            crossOrigin="anonymous"
+            onError={() => {
+              console.warn('Audio streaming error on URL:', playableUrl);
+              if (!useDirectStream && cleanAudioUrl) {
+                // Auto fallback to direct stream
+                setUseDirectStream(true);
+                setAudioError('Proxy stream interrupted. Switched to direct audio link. Tap Play to resume.');
+              } else {
+                setAudioError('Unable to stream audio. Please ensure Google Drive permissions are set to "Anyone with the link can view".');
+              }
+              setIsPlaying(false);
+            }}
           />
         )}
 
@@ -442,24 +525,30 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
 
         {/* Question Numbers Quick Navigator */}
         <div className="flex items-center gap-1.5 overflow-x-auto py-1">
-          {filteredQuestions.map((q, idx) => {
+          {filteredQuestions.map((q) => {
             const isFilled = Boolean(userAnswers[q.question_id]?.trim());
             return (
               <button
-                key={`${q.question_id || 'lq_nav'}-${idx}`}
+                key={`${q.question_id || 'lq_nav'}-${q.globalNumber}`}
                 type="button"
                 onClick={() => {
-                  const el = document.getElementById(`lq_box_${q.question_id}`);
-                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  const el = document.getElementById(`lq_box_${q.question_id}`) || document.getElementById(`q_box_${q.question_id}`);
+                  if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    el.classList.add('ring-4', 'ring-[#6B51A5]', 'rounded-3xl');
+                    setTimeout(() => {
+                      el.classList.remove('ring-4', 'ring-[#6B51A5]');
+                    }, 2000);
+                  }
                 }}
                 className={`w-7 h-7 rounded-xl text-xs font-bold transition flex items-center justify-center cursor-pointer ${
                   isFilled
                     ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                     : 'bg-[#F5F2F9] text-[#503A7A] hover:bg-[#E2DDEC] border border-purple-100'
                 }`}
-                title={`Jump to Question ${idx + 1}`}
+                title={`Jump to Question ${q.globalNumber}`}
               >
-                {idx + 1}
+                {q.globalNumber}
               </button>
             );
           })}
@@ -477,7 +566,7 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
               <span>Part {activePart} Questions ({filteredQuestions.length} Questions)</span>
             </h3>
             <p className="text-xs text-[#7C68A5] font-medium mt-0.5">
-              Listen carefully to the recording and answer questions 1 to {filteredQuestions.length}.
+              Listen carefully to the recording and answer questions {filteredQuestions[0]?.globalNumber || 1} to {filteredQuestions[filteredQuestions.length - 1]?.globalNumber || filteredQuestions.length}.
             </p>
           </div>
 
@@ -496,14 +585,19 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
         ) : (
           <div className="space-y-5">
             {filteredQuestions.map((q, idx) => (
-              <IELTSQuestionCard
+              <div
                 key={`${q.question_id || 'lq'}-${idx}`}
-                question={q}
-                questionNumber={idx + 1}
-                userAnswer={userAnswers[q.question_id] || ''}
-                onAnswerChange={onAnswerChange}
-                headingsList={q.headings_list}
-              />
+                id={`lq_box_${q.question_id}`}
+                className="transition-all duration-300 rounded-3xl"
+              >
+                <IELTSQuestionCard
+                  question={q}
+                  questionNumber={q.globalNumber}
+                  userAnswer={userAnswers[q.question_id] || ''}
+                  onAnswerChange={onAnswerChange}
+                  headingsList={q.headings_list}
+                />
+              </div>
             ))}
           </div>
         )}

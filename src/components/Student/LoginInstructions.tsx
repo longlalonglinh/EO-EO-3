@@ -86,11 +86,19 @@ export const LoginInstructions: React.FC<LoginInstructionsProps> = ({
       return;
     }
 
-    // Standardized Candidate ID / Name validation (minimum 4 characters, letters/numbers/spaces/hyphens/underscores)
-    // Strictly rejects junk placeholders like "SSS"
-    const sbdRegex = /^[A-Za-z0-9 _-]{4,30}$/;
-    if (!sbdRegex.test(cleanSbd) || cleanSbd.length < 4) {
-      setErrorMsg('Invalid Candidate ID / Name format. Must be at least 4 characters (letters, numbers, hyphens, or underscores). Single/triple letter codes like "SSS" are invalid.');
+    // Standardized Candidate ID / Name validation (supports Vietnamese & international Unicode names, short IDs like HV1, TS01)
+    // Minimum 2 characters, maximum 50 characters, rejects dangerous tags/brackets
+    if (cleanSbd.length < 2) {
+      setErrorMsg('Candidate Name or Candidate ID must be at least 2 characters.');
+      return;
+    }
+    if (cleanSbd.length > 50) {
+      setErrorMsg('Candidate Name or Candidate ID must not exceed 50 characters.');
+      return;
+    }
+    // Reject HTML/script or bracket injection characters
+    if (/[<>{}[\]\\/]/.test(cleanSbd)) {
+      setErrorMsg('Candidate ID / Name contains invalid special characters.');
       return;
     }
 
@@ -233,7 +241,7 @@ export const LoginInstructions: React.FC<LoginInstructionsProps> = ({
                   <UserCheck className="w-4 h-4 text-[#7C68A5] absolute left-3.5 top-3.5 pointer-events-none" />
                 </div>
                 <span className="text-[11px] text-[#7C68A5] block">
-                  Must be at least 4 characters. Used to track your exam results.
+                  Must be at least 2 characters. Used to track your exam results.
                 </span>
               </div>
 

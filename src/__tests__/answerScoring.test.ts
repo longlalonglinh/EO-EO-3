@@ -109,6 +109,22 @@ describe('answerScoring.ts - Unit Tests', () => {
       expect(isAnswerCorrect('1400 km', '1400km')).toBe(true);
       expect(isAnswerCorrect('25 kg', '25kg')).toBe(true);
     });
+
+    it('should handle date permutations and ordinal suffixes (e.g. 14th May vs May 14)', () => {
+      expect(isAnswerCorrect('14th May', '14 May')).toBe(true);
+      expect(isAnswerCorrect('May 14th', '14 May')).toBe(true);
+      expect(isAnswerCorrect('14 May', 'May 14')).toBe(true);
+      expect(isAnswerCorrect('1st June', 'June 1')).toBe(true);
+      expect(isAnswerCorrect('23rd August', '23 August')).toBe(true);
+    });
+
+    it('should match UK and US spelling equivalents (e.g. colour vs color, theatre vs theater)', () => {
+      expect(isAnswerCorrect('colour', 'color')).toBe(true);
+      expect(isAnswerCorrect('color', 'colour')).toBe(true);
+      expect(isAnswerCorrect('theater', 'theatre')).toBe(true);
+      expect(isAnswerCorrect('centre', 'center')).toBe(true);
+      expect(isAnswerCorrect('kilometres', 'kilometers')).toBe(true);
+    });
   });
 
   describe('4. Official IELTS Band Calculation', () => {

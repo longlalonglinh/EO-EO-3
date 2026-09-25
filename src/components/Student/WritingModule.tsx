@@ -65,6 +65,13 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
   const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
   const writingSplitContainerRef = useRef<HTMLDivElement | null>(null);
 
+  // Automatically switch to Task 2 if only Task 2 is present in the exam paper
+  useEffect(() => {
+    if (!task1Prompt && task2Prompt) {
+      setActiveTab('task2');
+    }
+  }, [task1Prompt, task2Prompt]);
+
   // Track window resizing for 13-inch screens and browser zoom
   useEffect(() => {
     const handleResize = () => {
@@ -207,7 +214,8 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
       <CountdownTimer
         initialMinutes={durationMins}
         testMode={testMode}
-        sectionName="ACADEMIC WRITING (Task 1 & Task 2 - 60 Minutes)"
+        sectionName="ACADEMIC WRITING (Task 1 & Task 2)"
+        sessionKey={`${examCode || 'EXAM'}_${candidateId || 'USER'}_writing`}
         onTimeExpire={onTimeExpire}
       />
 

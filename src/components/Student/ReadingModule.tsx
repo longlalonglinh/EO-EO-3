@@ -29,6 +29,8 @@ interface ReadingModuleProps {
   onAnswerChange: (questionId: string, value: string) => void;
   testMode?: 'TEST' | 'PRACTICE';
   durationMins?: number;
+  examCode?: string;
+  candidateId?: string;
   onTimeExpire?: () => void;
 }
 
@@ -41,6 +43,8 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
   onAnswerChange,
   testMode = 'TEST',
   durationMins = 60,
+  examCode = '',
+  candidateId = '',
   onTimeExpire
 }) => {
   const [leftWidth, setLeftWidth] = useState<number>(50); // 50% default split
@@ -339,7 +343,8 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
       <CountdownTimer
         initialMinutes={durationMins}
         testMode={testMode}
-        sectionName="ACADEMIC READING (40 Questions / 3 Passages)"
+        sectionName={`ACADEMIC READING (${all40Questions.length} Questions / ${normalizedPassages.length} Passage${normalizedPassages.length > 1 ? 's' : ''})`}
+        sessionKey={`${examCode || 'EXAM'}_${candidateId || 'USER'}_reading`}
         onTimeExpire={onTimeExpire}
       />
 

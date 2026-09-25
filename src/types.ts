@@ -122,6 +122,14 @@ export interface SubmissionRecord {
   writing_status: 'PENDING_TEACHER' | 'GRADED';
   writing_feedback?: string;
   overall_band?: number;
+  detailed_results?: Record<string, {
+    question_id: string;
+    section: 'listening' | 'reading';
+    user_answer: string;
+    is_correct: boolean;
+    score_awarded: number;
+    acceptable_answers: string[];
+  }>;
   submitted_at?: string;
   timestamp?: string;
   created_at?: string;
@@ -166,6 +174,15 @@ export interface SubmissionResponse {
   reading_band?: number;
   reading_score?: number;
   overall_raw_score?: number;
+  overall_band?: number;
+  detailed_results?: Record<string, {
+    question_id: string;
+    section: 'listening' | 'reading';
+    user_answer: string;
+    is_correct: boolean;
+    score_awarded: number;
+    acceptable_answers: string[];
+  }>;
   writing_status: 'PENDING_TEACHER' | 'GRADED';
   submitted_at?: string;
   created_at?: string;

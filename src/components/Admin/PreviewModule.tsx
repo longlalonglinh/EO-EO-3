@@ -18,6 +18,7 @@ import {
 import { DEFAULT_EXAMS } from '../../data/defaultExams';
 import { VisualExamBuilder } from './VisualExamBuilder';
 import { saveExamToIndexedDB } from '../../services/indexedDb';
+import { saveExamToServerDb } from '../../services/api';
 
 interface PreviewModuleProps {
   initialExamData?: ExamData;
@@ -43,6 +44,9 @@ export const PreviewModule: React.FC<PreviewModuleProps> = ({
 
     // Dual persist in IndexedDB
     await saveExamToIndexedDB(updatedExam);
+
+    // Save to Centralized Server Database so all devices can access immediately
+    await saveExamToServerDb(updatedExam);
 
     // Dual persist in localStorage
     try {

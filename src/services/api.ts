@@ -5,7 +5,8 @@ import {
   SubmissionPayload, 
   SubmissionResponse, 
   ExamData,
-  ReadingPassageItem
+  ReadingPassageItem,
+  Question
 } from '../types';
 import { extractQuestionsFromRawResponse } from './dbDiagnostics';
 import { DEFAULT_EXAMS } from '../data/defaultExams';
@@ -180,17 +181,33 @@ export function deduplicateCheatLogs(list: CheatLog[]): CheatLog[] {
  */
 export async function fetchSubmissions(
   apiUrl: string = DEFAULT_API_URL
-): Promise<{ success: boolean; data?: SubmissionRecord[]; error?: string; source?: 'gas' | 'idb' | 'local' }> {
+): Promise<{ success: boolean; data?: SubmissionRecord[]; error?: string; source?: 'gas' | 'idb' | 'local' | 'server' }> {
   // Load local backups first
   const localSaved = localStorage.getItem('ielts_student_submissions');
   const localData: SubmissionRecord[] = localSaved ? JSON.parse(localSaved) : [];
   const idbData = await getAllSubmissionsFromIndexedDB();
 
   // Combine unique local & idb submissions
-  const cachedSubmissions = deduplicateSubmissions([...localData, ...idbData]);
+  let combinedSubmissions = deduplicateSubmissions([...localData, ...idbData]);
+
+  // Fetch from Centralized Server Database (/api/submissions) - Cross-Device Sync
+  try {
+    const serverRes = await fetch('/api/submissions');
+    if (serverRes.ok) {
+      const serverJson = await serverRes.json();
+      if (serverJson && Array.isArray(serverJson.data)) {
+        combinedSubmissions = deduplicateSubmissions([...serverJson.data, ...combinedSubmissions]);
+        combinedSubmissions.forEach(sub => {
+          saveSubmissionToIndexedDB(sub).catch(() => {});
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('Server submissions fetch error:', err);
+  }
 
   if (!apiUrl || apiUrl.includes('mock_ielts_exam_system_gas_url') || apiUrl.includes('AKfycbx_mock')) {
-    return { success: true, data: cachedSubmissions, source: 'idb' };
+    return { success: true, data: combinedSubmissions, source: 'server' };
   }
 
   try {
@@ -201,25 +218,25 @@ export async function fetchSubmissions(
 
     if (response.ok) {
       const result = await response.json();
-      const rows = Array.isArray(result) ? result : (Array.isArray(result?.data) ? result.data : null);
+      const rows = Array.isArray(result) ? result : (Array.isArray(result?.data) ? result.data : (Array.isArray(result?.submissions) ? result.submissions : null));
       if (rows) {
-        // Merge with local submissions to avoid losing offline attempts
-        const combined = deduplicateSubmissions([...rows, ...cachedSubmissions]);
+        // Merge with local & server submissions
+        const allMerged = deduplicateSubmissions([...rows, ...combinedSubmissions]);
 
         // Backup newly synced submissions into IndexedDB & localStorage
-        combined.forEach(sub => {
+        allMerged.forEach(sub => {
           saveSubmissionToIndexedDB(sub).catch(() => {});
         });
-        localStorage.setItem('ielts_student_submissions', JSON.stringify(combined.slice(0, 50)));
+        localStorage.setItem('ielts_student_submissions', JSON.stringify(allMerged.slice(0, 100)));
 
-        return { success: true, data: combined, source: 'gas' };
+        return { success: true, data: allMerged, source: 'gas' };
       }
     }
   } catch (err) {
-    console.warn('GAS API fetchSubmissions failed after retries, utilizing IndexedDB/LocalStorage vault:', err);
+    console.warn('GAS API fetchSubmissions failed after retries, utilizing Server/IndexedDB vault:', err);
   }
 
-  return { success: true, data: cachedSubmissions, source: 'idb' };
+  return { success: true, data: combinedSubmissions, source: 'server' };
 }
 
 /**
@@ -227,15 +244,26 @@ export async function fetchSubmissions(
  */
 export async function fetchCheatLogs(
   apiUrl: string
-): Promise<{ success: boolean; data?: CheatLog[]; error?: string; source?: 'gas' | 'idb' | 'local' }> {
+): Promise<{ success: boolean; data?: CheatLog[]; error?: string; source?: 'gas' | 'idb' | 'local' | 'server' }> {
   const localLogs = localStorage.getItem('ielts_cheat_logs');
   const logsArr: CheatLog[] = localLogs ? JSON.parse(localLogs) : [];
   const idbLogs = await getAllCheatLogsFromIndexedDB();
 
-  const cachedLogs = deduplicateCheatLogs([...logsArr, ...idbLogs]);
+  let combinedLogs = deduplicateCheatLogs([...logsArr, ...idbLogs]);
+
+  // Fetch from Centralized Server Database (/api/cheat-logs)
+  try {
+    const sRes = await fetch('/api/cheat-logs');
+    if (sRes.ok) {
+      const sJson = await sRes.json();
+      if (sJson && Array.isArray(sJson.data)) {
+        combinedLogs = deduplicateCheatLogs([...sJson.data, ...combinedLogs]);
+      }
+    }
+  } catch (err) {}
 
   if (!apiUrl || apiUrl.includes('mock_ielts_exam_system_gas_url') || apiUrl.includes('AKfycbx_mock')) {
-    return { success: true, data: cachedLogs, source: 'idb' };
+    return { success: true, data: combinedLogs, source: 'server' };
   }
 
   try {
@@ -246,24 +274,24 @@ export async function fetchCheatLogs(
 
     if (response.ok) {
       const result = await response.json();
-      const rows = Array.isArray(result) ? result : (Array.isArray(result?.data) ? result.data : null);
+      const rows = Array.isArray(result) ? result : (Array.isArray(result?.data) ? result.data : (Array.isArray(result?.cheatlogs) ? result.cheatlogs : null));
       if (rows) {
-        const combined = deduplicateCheatLogs([...rows, ...cachedLogs]);
+        const allMerged = deduplicateCheatLogs([...rows, ...combinedLogs]);
 
         // Backup to IndexedDB
-        combined.forEach(log => {
+        allMerged.forEach(log => {
           saveCheatLogToIndexedDB(log).catch(() => {});
         });
-        localStorage.setItem('ielts_cheat_logs', JSON.stringify(combined.slice(0, 100)));
+        localStorage.setItem('ielts_cheat_logs', JSON.stringify(allMerged.slice(0, 100)));
 
-        return { success: true, data: combined, source: 'gas' };
+        return { success: true, data: allMerged, source: 'gas' };
       }
     }
   } catch (err) {
     console.warn('GAS API fetchCheatLogs failed after retries, falling back to IndexedDB vault:', err);
   }
 
-  return { success: true, data: cachedLogs, source: 'idb' };
+  return { success: true, data: combinedLogs, source: 'server' };
 }
 
 /**
@@ -300,6 +328,25 @@ export async function saveWritingScore(
     });
     localStorage.setItem('ielts_student_submissions', JSON.stringify(updated));
   }
+
+  // Centralized Server DB Sync (/api/submissions/grade-writing)
+  try {
+    fetch('/api/submissions/grade-writing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        submission_id: submissionId,
+        writing_scores: {
+          TR: form.tr,
+          CC: form.cc,
+          LR: form.lr,
+          GRA: form.gra
+        },
+        overall_writing: form.overall_writing,
+        feedback: form.feedback
+      })
+    }).catch(err => console.warn('Server DB grade sync failed:', err));
+  } catch (e) {}
 
   if (!apiUrl || apiUrl.includes('mock_ielts_exam_system_gas_url')) {
     return { success: true, message: 'Writing scores saved to IndexedDB & LocalStorage successfully!' };
@@ -419,16 +466,22 @@ export async function submitExamPayload(
 
   let listeningRaw = 0;
   let readingRaw = 0;
+  let listeningMax = 0;
+  let readingMax = 0;
   let listeningBand = 0;
   let readingBand = 0;
+  let detailedResults: Record<string, any> | undefined = undefined;
 
   // Grade using Answer Normalization Engine if examData is available
   if (examData) {
     const grading = gradeExamAnswers(examData, userAnswers);
     listeningRaw = grading.listening_raw;
     readingRaw = grading.reading_raw;
+    listeningMax = grading.listening_max;
+    readingMax = grading.reading_max;
     listeningBand = grading.listening_band;
     readingBand = grading.reading_band;
+    detailedResults = grading.results;
   } else {
     // Count filled answers as reasonable fallback
     Object.keys(payload.listening_answers || {}).forEach(k => {
@@ -441,8 +494,20 @@ export async function submitExamPayload(
         readingRaw += 1;
       }
     });
+    listeningMax = examData?.listening_questions?.length ?? 40;
+    readingMax = examData?.reading_questions?.length ?? 40;
     listeningBand = Math.min(9, Math.max(1, Math.round((listeningRaw / 3) * 2) / 2 || 4.5));
     readingBand = Math.min(9, Math.max(1, Math.round((readingRaw / 3) * 2) / 2 || 4.5));
+  }
+
+  // Calculate overall estimated band for completed receptive skills
+  let overallBand: number | undefined = undefined;
+  if (listeningMax > 0 && readingMax > 0) {
+    overallBand = Math.round(((listeningBand + readingBand) / 2) * 2) / 2;
+  } else if (readingMax > 0) {
+    overallBand = readingBand;
+  } else if (listeningMax > 0) {
+    overallBand = listeningBand;
   }
 
   const responseObj: SubmissionResponse = {
@@ -452,11 +517,13 @@ export async function submitExamPayload(
     exam_code: payload.exam_code,
     submission_type: submissionType,
     listening_raw_score: listeningRaw,
-    listening_max_score: 40,
+    listening_max_score: listeningMax,
     listening_band: listeningBand,
     reading_raw_score: readingRaw,
-    reading_max_score: 40,
+    reading_max_score: readingMax,
     reading_band: readingBand,
+    overall_band: overallBand,
+    detailed_results: detailedResults,
     writing_status: 'PENDING_TEACHER',
     submitted_at: timestamp,
     message: submissionType === 'TIMEOUT_FORCED' 
@@ -475,11 +542,13 @@ export async function submitExamPayload(
     writing_task1_text: payload.writing_task1_text || payload.writing_task1,
     writing_task2_text: payload.writing_task2_text || payload.writing_task2,
     listening_raw_score: listeningRaw,
-    listening_max_score: 40,
+    listening_max_score: listeningMax,
     listening_band: listeningBand,
     reading_raw_score: readingRaw,
-    reading_max_score: 40,
+    reading_max_score: readingMax,
     reading_band: readingBand,
+    overall_band: overallBand,
+    detailed_results: detailedResults,
     writing_status: 'PENDING_TEACHER',
     submitted_at: timestamp,
     violations_count: payload.violations_count
@@ -500,15 +569,25 @@ export async function submitExamPayload(
     console.warn('LocalStorage save failed, IndexedDB preserved:', e);
   }
 
-  // If cheat logs present in payload, persist to IndexedDB
-  if (payload.violation_logs && Array.isArray(payload.violation_logs)) {
-    payload.violation_logs.forEach(log => {
+  // 2.5. Centralized Server Database Submission Sync (/api/submissions)
+  try {
+    fetch('/api/submissions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(record)
+    }).catch(e => console.warn('Server submission push failed:', e));
+  } catch (err) {}
+
+  // If cheat logs present in payload, persist to IndexedDB & Server DB
+  const rawLogs = (payload.violation_logs || payload.cheat_logs || []) as CheatLog[];
+  if (Array.isArray(rawLogs) && rawLogs.length > 0) {
+    rawLogs.forEach(log => {
       saveCheatLogToIndexedDB(log).catch(() => {});
-    });
-  }
-  if (payload.cheat_logs && Array.isArray(payload.cheat_logs)) {
-    payload.cheat_logs.forEach(log => {
-      saveCheatLogToIndexedDB(log).catch(() => {});
+      fetch('/api/cheat-logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(log)
+      }).catch(() => {});
     });
   }
 
@@ -552,9 +631,22 @@ export async function submitExamPayload(
 export function standardizeExamData(rawExam: any, cleanCode: string): ExamData {
   const allQs = rawExam.questions || [];
   const listeningQs = rawExam.listening_questions || allQs.filter((q: any) => q.section === 'listening');
-  const readingQs = rawExam.reading_questions || allQs.filter((q: any) => q.section === 'reading');
+  let readingQs = rawExam.reading_questions || allQs.filter((q: any) => q.section === 'reading');
 
   let rawPassages: any[] = rawExam.passages || [];
+
+  // If reading questions are nested in passages but not in reading_questions
+  if (readingQs.length === 0 && Array.isArray(rawPassages)) {
+    const extracted: Question[] = [];
+    rawPassages.forEach((p: any) => {
+      if (Array.isArray(p?.questions)) {
+        extracted.push(...p.questions);
+      }
+    });
+    if (extracted.length > 0) {
+      readingQs = extracted;
+    }
+  }
 
   // Check if Reading skill exists in this exam
   const hasReadingContent = readingQs.length > 0 || rawPassages.some((p: any) => (p?.text && p.text.trim()) || (p?.questions && p.questions.length > 0));
@@ -785,6 +877,20 @@ export function prefetchExam(
       }
     } catch (e) {}
 
+    // 2.5. Check Centralized Server DB (/api/exams/:code) for Instant Cross-Device Sync
+    try {
+      const sRes = await fetch(`/api/exams/${encodeURIComponent(cleanCode)}`);
+      if (sRes.ok) {
+        const sJson = await sRes.json();
+        if (sJson && sJson.success && sJson.exam) {
+          const standardized = standardizeExamData(sJson.exam, cleanCode);
+          examMemoryCache.set(cleanCode, standardized);
+          saveExamToIndexedDB(standardized).catch(() => {});
+          return { success: true, exam: standardized };
+        }
+      }
+    } catch (e) {}
+
     // 3. Check built-in default (STRICT exact code match only)
     const foundDefault = DEFAULT_EXAMS.find(
       (ex) => ex.exam_code.trim().toUpperCase() === cleanCode
@@ -857,6 +963,25 @@ export function prefetchExam(
  * Loads in ~0ms if in-memory, ~2ms if in IndexedDB/LocalStorage, or resolves prefetch.
  */
 /**
+ * Clear timer countdown targets stored in sessionStorage
+ */
+export function clearSessionTimers(examCode?: string): void {
+  try {
+    const cleanCode = examCode ? examCode.trim().toUpperCase().replace(/[^a-zA-Z0-9]/g, '_') : '';
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const k = sessionStorage.key(i);
+      if (k && k.startsWith('ielts_timer_target_')) {
+        if (!cleanCode || k.includes(cleanCode)) {
+          keysToRemove.push(k);
+        }
+      }
+    }
+    keysToRemove.forEach(k => sessionStorage.removeItem(k));
+  } catch (e) {}
+}
+
+/**
  * Purge cached exam entry from memory, IndexedDB, and LocalStorage to force clean re-synchronization
  */
 export async function clearExamCache(examCode: string): Promise<void> {
@@ -864,6 +989,7 @@ export async function clearExamCache(examCode: string): Promise<void> {
   if (!cleanCode) return;
   examMemoryCache.delete(cleanCode);
   inFlightExamFetches.delete(cleanCode);
+  clearSessionTimers(cleanCode);
   try {
     await deleteExamFromIndexedDB(cleanCode);
   } catch (e) {}
@@ -913,6 +1039,24 @@ export async function fetchExam(
         return { success: true, exam: fastResult.exam, source: 'gas' };
       }
     } catch (e) {}
+  }
+
+  // Tier 2.5: Centralized Server Database (/api/exams/:code) - Cross-Device Sync
+  if (!forceFresh) {
+    try {
+      const serverRes = await fetch(`/api/exams/${encodeURIComponent(cleanCode)}`);
+      if (serverRes.ok) {
+        const serverJson = await serverRes.json();
+        if (serverJson && serverJson.success && serverJson.exam) {
+          const standardized = standardizeExamData(serverJson.exam, cleanCode);
+          examMemoryCache.set(cleanCode, standardized);
+          saveExamToIndexedDB(standardized).catch(() => {});
+          return { success: true, exam: standardized, source: 'server' as any };
+        }
+      }
+    } catch (e) {
+      // Fallback to client cache
+    }
   }
 
   // Tier 3: IndexedDB Cache (~2-5ms)
@@ -1012,6 +1156,9 @@ export async function fetchExam(
               localStorage.setItem('ielts_current_exam', JSON.stringify(standardized));
             } catch (e) {}
 
+            // Save to centralized server database so all other devices can fetch it instantly!
+            saveExamToServerDb(standardized).catch(() => {});
+
             return { success: true, exam: standardized, source: 'gas' };
           }
         }
@@ -1020,6 +1167,20 @@ export async function fetchExam(
       console.warn(`Direct fetch failed for exam ${cleanCode}:`, err);
     }
   }
+
+  // Tier 6.5: Direct Server fallback check before giving up
+  try {
+    const sFallback = await fetch(`/api/exams/${encodeURIComponent(cleanCode)}`);
+    if (sFallback.ok) {
+      const sJson = await sFallback.json();
+      if (sJson && sJson.success && sJson.exam) {
+        const standardized = standardizeExamData(sJson.exam, cleanCode);
+        examMemoryCache.set(cleanCode, standardized);
+        saveExamToIndexedDB(standardized).catch(() => {});
+        return { success: true, exam: standardized, source: 'server' as any };
+      }
+    }
+  } catch (e) {}
 
   // Tier 7: Invalidate cache for this code so failed state doesn't block later attempts
   examMemoryCache.delete(cleanCode);
@@ -1245,3 +1406,72 @@ export async function fetchStudentProgressFromGAS(
 
   return { success: false, error: 'Unable to retrieve learner progress from Google Sheets' };
 }
+
+/**
+ * Persist an exam to the Centralized Server Database (/api/exams)
+ * Ensures any exam created or downloaded is instantly available across all devices.
+ */
+export async function saveExamToServerDb(exam: ExamData): Promise<boolean> {
+  try {
+    const res = await fetch('/api/exams', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(exam)
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('Could not save exam to server DB:', err);
+    return false;
+  }
+}
+
+/**
+ * Fetch server configuration (e.g. centralized gas_url)
+ */
+export async function fetchServerConfig(): Promise<{ gas_url?: string; last_synced_at?: string } | null> {
+  try {
+    const res = await fetch('/api/config');
+    if (res.ok) {
+      const data = await res.json();
+      return data.config || null;
+    }
+  } catch (err) {
+    console.warn('Could not fetch server config:', err);
+  }
+  return null;
+}
+
+/**
+ * Save server configuration (e.g. update gas_url for all connected devices)
+ */
+export async function saveServerConfig(gasUrl: string): Promise<boolean> {
+  try {
+    const res = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ gas_url: gasUrl })
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('Could not save server config:', err);
+    return false;
+  }
+}
+
+/**
+ * Pull all data from Google Apps Script into the Centralized Server Database
+ */
+export async function syncServerWithGas(gasUrl?: string): Promise<{ success: boolean; message: string }> {
+  try {
+    const res = await fetch('/api/sync/pull-from-gas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ gas_url: gasUrl })
+    });
+    const data = await res.json();
+    return { success: data.success, message: data.message || data.error || 'Sync completed' };
+  } catch (err: any) {
+    return { success: false, message: 'Sync error: ' + err.message };
+  }
+}
+

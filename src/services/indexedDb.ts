@@ -445,3 +445,27 @@ export async function getCurrentAnswersFromIndexedDB(
   return {};
 }
 
+export async function clearCurrentAnswersFromIndexedDB(
+  examCode: string,
+  candidateId: string
+): Promise<void> {
+  const cleanCode = (examCode || 'EXAM').toUpperCase().replace(/[^A-Z0-9]/g, '_');
+  const cleanId = (candidateId || 'CANDIDATE').toUpperCase().replace(/[^A-Z0-9]/g, '_');
+  const key = `ACTIVE_ANSWERS_${cleanCode}_${cleanId}`;
+
+  try {
+    localStorage.removeItem(key);
+  } catch (e) {}
+
+  try {
+    const db = await openIndexedDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction('key_values', 'readwrite');
+      const store = tx.objectStore('key_values');
+      const req = store.delete(key);
+      req.onsuccess = () => resolve();
+      req.onerror = () => resolve();
+    });
+  } catch (err) {}
+}
+
