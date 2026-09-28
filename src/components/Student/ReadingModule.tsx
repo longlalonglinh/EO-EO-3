@@ -15,7 +15,8 @@ import {
   Check,
   RotateCcw,
   Sparkles,
-  Maximize2
+  Maximize2,
+  Save
 } from 'lucide-react';
 import { CountdownTimer } from './CountdownTimer';
 import { IELTSQuestionCard } from './IELTSQuestionCard';
@@ -57,6 +58,19 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
   const [highlightedQuestionId, setHighlightedQuestionId] = useState<string | null>(null);
   const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
   const [fontScale, setFontScale] = useState<'sm' | 'base' | 'lg'>('base');
+  const [autoSaveTime, setAutoSaveTime] = useState<string>('');
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (Object.keys(userAnswers).length > 0) {
+      setIsSaving(true);
+      const timer = setTimeout(() => {
+        setAutoSaveTime(new Date().toLocaleTimeString());
+        setIsSaving(false);
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [userAnswers]);
 
   // Track window resize to ensure fluid responsive layout on 13-inch screens / zoom changes
   useEffect(() => {
@@ -425,9 +439,18 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
             </button>
           </div>
 
-          <div className="hidden lg:flex items-center text-xs text-[#7C68A5] font-medium pl-2">
-            <span>
-              Total Answered: <strong className="text-[#6B51A5] font-black">{totalAnswered}</strong> / {all40Questions.length}
+          <div className="flex items-center gap-2 pl-2">
+            <span className={`text-[11px] font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 border transition-all ${
+              isSaving 
+                ? 'bg-amber-50 text-amber-800 border-amber-200' 
+                : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+            }`}>
+              <Save className={`w-3.5 h-3.5 ${isSaving ? 'animate-spin text-amber-600' : 'text-emerald-700'}`} />
+              <span>{isSaving ? 'Đang lưu...' : autoSaveTime ? `Đã lưu (${autoSaveTime})` : 'Tự động lưu'}</span>
+            </span>
+
+            <span className="hidden lg:inline text-xs text-[#7C68A5] font-medium">
+              Đã làm: <strong className="text-[#6B51A5] font-black">{totalAnswered}</strong> / {all40Questions.length}
             </span>
           </div>
         </div>

@@ -246,11 +246,18 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
                 const letterMatch = opt.match(/^([A-Z])[\.\s]/);
                 const letter = letterMatch ? letterMatch[1] : String.fromCharCode(65 + optIdx);
                 const isChecked = isMultiSelected(letter);
+                const shapeMeta = [
+                  { shape: '●', bg: 'bg-indigo-100 text-indigo-800' },
+                  { shape: '■', bg: 'bg-blue-100 text-blue-800' },
+                  { shape: '◆', bg: 'bg-amber-100 text-amber-800' },
+                  { shape: '★', bg: 'bg-emerald-100 text-emerald-800' },
+                  { shape: '▲', bg: 'bg-purple-100 text-purple-800' }
+                ][optIdx % 5];
 
                 return (
                   <label
                     key={optIdx}
-                    className={`flex items-center space-x-3 p-3.5 rounded-2xl border text-xs md:text-sm cursor-pointer transition-all ${
+                    className={`flex items-center space-x-3 p-3.5 min-h-[48px] rounded-2xl border text-xs md:text-sm cursor-pointer transition-all ${
                       isChecked
                         ? 'bg-[#6B51A5] border-[#6B51A5] text-white font-bold shadow-md'
                         : 'bg-white border-purple-200/80 text-[#3C2A63] hover:bg-[#F3EFF9]'
@@ -262,6 +269,11 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
                       onChange={() => handleMultiSelectToggle(letter)}
                       className="w-4 h-4 rounded text-[#6B51A5] border-purple-300 focus:ring-[#6B51A5]"
                     />
+                    <span className={`w-6 h-6 rounded-lg text-xs font-black flex items-center justify-center border shadow-xs shrink-0 ${
+                      isChecked ? 'bg-white/20 text-white border-white/40' : `${shapeMeta.bg} border-purple-200`
+                    }`}>
+                      {shapeMeta.shape}
+                    </span>
                     <span className="flex-1">{opt}</span>
                   </label>
                 );
@@ -269,18 +281,25 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
             </div>
           ) : (
             // SINGLE-SELECT (RADIO BUTTON - CHOOSE ONE OPTION)
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {question.options.map((opt, optIdx) => {
                 const letterMatch = opt.match(/^([A-Z])[\.\s]/);
                 const letter = letterMatch ? letterMatch[1] : String.fromCharCode(65 + optIdx);
                 const isSelected = userAnswer.trim().toUpperCase() === letter.toUpperCase() || userAnswer.trim() === opt.trim();
+                const shapeMeta = [
+                  { shape: '●', bg: 'bg-indigo-100 text-indigo-800' },
+                  { shape: '■', bg: 'bg-blue-100 text-blue-800' },
+                  { shape: '◆', bg: 'bg-amber-100 text-amber-800' },
+                  { shape: '★', bg: 'bg-emerald-100 text-emerald-800' },
+                  { shape: '▲', bg: 'bg-purple-100 text-purple-800' }
+                ][optIdx % 5];
 
                 return (
                   <label
                     key={optIdx}
-                    className={`flex items-center space-x-3 p-3.5 rounded-2xl border text-xs md:text-sm cursor-pointer transition-all ${
+                    className={`flex items-center space-x-3 p-3.5 min-h-[48px] rounded-2xl border text-xs md:text-sm cursor-pointer transition-all ${
                       isSelected
-                        ? 'bg-[#6B51A5] border-[#6B51A5] text-white font-bold shadow-md'
+                        ? 'bg-[#6B51A5] border-[#6B51A5] text-white font-bold shadow-md ring-2 ring-purple-300'
                         : 'bg-white border-purple-200/80 text-[#3C2A63] hover:bg-[#F3EFF9]'
                     }`}
                   >
@@ -291,6 +310,11 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
                       onChange={() => onAnswerChange(question.question_id, letter)}
                       className="w-4 h-4 text-[#6B51A5] border-purple-300 focus:ring-[#6B51A5]"
                     />
+                    <span className={`w-6 h-6 rounded-lg text-xs font-black flex items-center justify-center border shadow-xs shrink-0 ${
+                      isSelected ? 'bg-white/20 text-white border-white/40' : `${shapeMeta.bg} border-purple-200`
+                    }`} title={`Option ${letter} Shape Indicator`}>
+                      {shapeMeta.shape}
+                    </span>
                     <span className="flex-1">{opt}</span>
                   </label>
                 );
@@ -305,16 +329,27 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
       {/* ========================================================= */}
       {(qType === IELTSQuestionType.TRUE_FALSE_NOT_GIVEN || qType === IELTSQuestionType.YES_NO_NOT_GIVEN) && (
         <div className="space-y-3 pt-1">
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-3">
             {(qType === IELTSQuestionType.TRUE_FALSE_NOT_GIVEN
               ? ['TRUE', 'FALSE', 'NOT GIVEN'] 
               : ['YES', 'NO', 'NOT GIVEN']
             ).map((val) => {
               const isSelected = userAnswer.trim().toUpperCase() === val;
+              const shapeIcon = (val === 'TRUE' || val === 'YES') 
+                ? '●' 
+                : (val === 'FALSE' || val === 'NO') 
+                ? '■' 
+                : '◆';
+              const shapeColor = (val === 'TRUE' || val === 'YES')
+                ? 'bg-emerald-100 text-emerald-800'
+                : (val === 'FALSE' || val === 'NO')
+                ? 'bg-rose-100 text-rose-800'
+                : 'bg-purple-100 text-[#503A7A]';
+
               return (
                 <label
                   key={val}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl border text-xs font-black transition-all cursor-pointer ${
+                  className={`flex items-center gap-2.5 px-4 py-3 min-h-[48px] rounded-2xl border text-xs font-black transition-all cursor-pointer ${
                     isSelected
                       ? 'bg-[#6B51A5] text-white border-[#6B51A5] shadow-md scale-105 ring-2 ring-purple-300'
                       : 'bg-white border-purple-200 text-[#3C2A63] hover:bg-[#F3EFF9]'
@@ -327,6 +362,11 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
                     onChange={() => onAnswerChange(question.question_id, val)}
                     className="w-3.5 h-3.5 text-[#6B51A5]"
                   />
+                  <span className={`w-5 h-5 rounded-md text-[10px] font-black flex items-center justify-center border shadow-xs ${
+                    isSelected ? 'bg-white/20 text-white border-white/40' : `${shapeColor} border-purple-200`
+                  }`}>
+                    {shapeIcon}
+                  </span>
                   <span>{val}</span>
                 </label>
               );

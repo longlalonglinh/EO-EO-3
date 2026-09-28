@@ -1,5 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Clock, AlertTriangle, BellRing, Hourglass, RotateCcw } from 'lucide-react';
+import { 
+  Clock, 
+  AlertTriangle, 
+  Hourglass, 
+  RotateCcw, 
+  Eye, 
+  EyeOff, 
+  CheckCircle2 
+} from 'lucide-react';
 
 interface CountdownTimerProps {
   initialMinutes: number;
@@ -23,18 +31,17 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
   // Construct a stable storage key based on sessionKey or sectionName
   const cleanKey = (sessionKey || sectionName || 'general_timer').replace(/[^a-zA-Z0-9]/g, '_');
   const storageKey = `ielts_timer_target_${cleanKey}`;
+  const totalSeconds = Math.max(1, initialMinutes * 60);
 
   const getOrInitEndTime = (): number => {
     const existing = sessionStorage.getItem(storageKey);
     if (existing) {
       const parsed = parseInt(existing, 10);
-      // Validate that it's a valid timestamp
       if (!isNaN(parsed) && parsed > Date.now()) {
         return parsed;
       }
     }
-    // Initialize new end time
-    const newEndTime = Date.now() + Math.max(1, initialMinutes * 60) * 1000;
+    const newEndTime = Date.now() + totalSeconds * 1000;
     sessionStorage.setItem(storageKey, newEndTime.toString());
     return newEndTime;
   };
@@ -44,6 +51,9 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
     Math.max(0, Math.floor((getOrInitEndTime() - Date.now()) / 1000))
   );
   const [hasWarned5Min, setHasWarned5Min] = useState<boolean>(false);
+  
+  // User Control and Freedom: Allow hiding the frantic countdown digits
+  const [isTimeHidden, setIsTimeHidden] = useState<boolean>(false);
   const hasExpiredRef = useRef(false);
 
   // Sync if initialMinutes changes and no active valid timer exists
@@ -69,22 +79,9 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
         }
       }
 
-      // Trigger subtle beep or warning at 5 minutes mark (300 seconds)
+      // Trigger subtle notification at 5 minutes mark without alarming sounds
       if (remaining === 300 && !hasWarned5Min) {
         setHasWarned5Min(true);
-        try {
-          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.frequency.value = 520;
-          gain.gain.setValueAtTime(0.1, ctx.currentTime);
-          osc.start();
-          osc.stop(ctx.currentTime + 0.3);
-        } catch (e) {
-          // AudioContext silent
-        }
       }
     }, 1000);
 
@@ -93,10 +90,10 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
 
   const handleResetTimer = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const newTarget = Date.now() + Math.max(1, initialMinutes * 60) * 1000;
+    const newTarget = Date.now() + totalSeconds * 1000;
     sessionStorage.setItem(storageKey, newTarget.toString());
     setEndTime(newTarget);
-    setSecondsLeft(initialMinutes * 60);
+    setSecondsLeft(totalSeconds);
     hasExpiredRef.current = false;
     setHasWarned5Min(false);
   };
@@ -109,32 +106,52 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
     ? `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
     : `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 
-  const isCritical = secondsLeft <= 300; // <= 5 mins
-  const isWarning = secondsLeft > 300 && secondsLeft <= 600; // <= 10 mins
+  const isUnder10Min = secondsLeft > 0 && secondsLeft <= 600; // <= 10 mins
+  const isUnder5Min = secondsLeft > 0 && secondsLeft <= 300; // <= 5 mins
+
+  // Peripheral Vision Progress: percentage of time remaining
+  const progressPercent = Math.min(100, Math.max(0, (secondsLeft / totalSeconds) * 100));
 
   if (compact) {
     return (
-      <div className={`flex items-center space-x-2 px-3 py-1.5 rounded-2xl text-xs font-black transition-all ${
-        isCritical
-          ? 'bg-rose-100 text-rose-700 border border-rose-300 animate-pulse shadow-sm shadow-rose-200'
-          : isWarning
-          ? 'bg-amber-100 text-amber-800 border border-amber-300'
+      <div className={`relative flex items-center space-x-2 px-3 py-1.5 rounded-2xl text-xs font-bold transition-all overflow-hidden ${
+        isUnder5Min
+          ? 'bg-amber-50 text-amber-900 border border-amber-300'
+          : isUnder10Min
+          ? 'bg-amber-50/80 text-amber-800 border border-amber-200'
           : 'bg-[#E2DDEC] text-[#3C2A63] border border-purple-200/80'
       } ${className}`}>
-        {isCritical ? (
-          <AlertTriangle className="w-3.5 h-3.5 text-rose-600 animate-bounce" />
-        ) : (
-          <Clock className="w-3.5 h-3.5 text-[#6B51A5]" />
-        )}
-        <span className="font-mono text-xs tracking-wider">{formattedTime}</span>
-        {sectionName && <span className="text-[10px] opacity-75 hidden sm:inline">({sectionName})</span>}
+        {/* Subtle Ambient Background Bar for peripheral vision */}
+        <div 
+          className={`absolute bottom-0 left-0 h-0.5 transition-all duration-1000 ${
+            isUnder5Min ? 'bg-amber-500' : isUnder10Min ? 'bg-amber-400' : 'bg-[#6B51A5]'
+          }`}
+          style={{ width: `${progressPercent}%` }}
+        />
+
+        <Clock className="w-3.5 h-3.5 text-[#6B51A5] shrink-0" />
         
+        {isTimeHidden ? (
+          <span className="font-sans text-[11px] text-[#7C68A5]">Đã ẩn số</span>
+        ) : (
+          <span className="font-mono text-xs font-bold tracking-wider">{formattedTime}</span>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setIsTimeHidden(!isTimeHidden)}
+          className="p-1 text-[#7C68A5] hover:text-[#3C2A63] transition rounded-md cursor-pointer"
+          title={isTimeHidden ? 'Hiện đồng hồ đếm ngược' : 'Ẩn con số để giảm căng thẳng'}
+        >
+          {isTimeHidden ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+        </button>
+
         {testMode === 'PRACTICE' && (
           <button
             type="button"
             onClick={handleResetTimer}
-            className="p-1 text-purple-600 hover:text-purple-900 transition rounded-md"
-            title="Reset timer"
+            className="p-1 text-purple-600 hover:text-purple-900 transition rounded-md cursor-pointer"
+            title="Đặt lại đồng hồ"
           >
             <RotateCcw className="w-3 h-3" />
           </button>
@@ -144,66 +161,117 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
   }
 
   return (
-    <div className={`bg-white border rounded-2xl p-3.5 shadow-md flex items-center justify-between gap-4 transition-all ${
-      isCritical
-        ? 'border-rose-300 bg-rose-50/50 shadow-rose-100 ring-2 ring-rose-400/40'
-        : isWarning
-        ? 'border-amber-300 bg-amber-50/40'
-        : 'border-purple-100 bg-white'
+    <div className={`relative bg-white border rounded-3xl p-4 shadow-sm flex flex-col justify-between gap-3 transition-all overflow-hidden ${
+      isUnder5Min
+        ? 'border-amber-300/80 bg-amber-50/20'
+        : isUnder10Min
+        ? 'border-amber-200/80 bg-amber-50/10'
+        : 'border-purple-100/90 bg-white'
     } ${className}`}>
       
-      {/* Left info */}
-      <div className="flex items-center space-x-3">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-          isCritical
-            ? 'bg-rose-100 text-rose-700 animate-pulse'
-            : isWarning
-            ? 'bg-amber-100 text-amber-700'
-            : 'bg-purple-100 text-[#6B51A5]'
-        }`}>
-          {isCritical ? (
-            <BellRing className="w-5 h-5 text-rose-600 animate-bounce" />
-          ) : (
-            <Hourglass className="w-5 h-5" />
-          )}
+      {/* Top row */}
+      <div className="flex items-center justify-between gap-4">
+        {/* Left info */}
+        <div className="flex items-center space-x-3">
+          <div className={`w-9 h-9 rounded-2xl flex items-center justify-center transition-all ${
+            isUnder5Min
+              ? 'bg-amber-100 text-amber-800'
+              : isUnder10Min
+              ? 'bg-amber-50 text-amber-700'
+              : 'bg-purple-100 text-[#6B51A5]'
+          }`}>
+            <Hourglass className="w-4 h-4" />
+          </div>
+
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#7C68A5]">
+                {sectionName ? `${sectionName}` : 'Thời gian làm bài còn lại'}
+              </span>
+              {testMode === 'TEST' && (
+                <span className="text-[9px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold border border-slate-200">
+                  Chính thức
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-baseline space-x-2 mt-0.5">
+              {isTimeHidden ? (
+                <div className="flex items-center gap-2 text-xs font-semibold text-[#7C68A5]">
+                  <span>Đồng hồ đang chạy ngầm</span>
+                  <span className="text-[11px] font-normal italic">(Theo dõi thanh tiến trình ngoại vi bên dưới)</span>
+                </div>
+              ) : (
+                <span className={`font-mono text-xl font-black tracking-tight ${
+                  isUnder5Min ? 'text-amber-700' : isUnder10Min ? 'text-amber-800' : 'text-[#3C2A63]'
+                }`}>
+                  {formattedTime}
+                </span>
+              )}
+
+              {!isTimeHidden && (
+                <span className="text-[11px] text-[#7C68A5] font-medium hidden sm:inline">
+                  {isUnder5Min ? '• Dưới 5 phút (chuẩn bị kết thúc)' : isUnder10Min ? '• Dưới 10 phút' : '• Đang đếm ngược'}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
 
-        <div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#7C68A5]">
-              {sectionName ? `Time Remaining: ${sectionName}` : 'Exam Time Remaining'}
-            </span>
-            {testMode === 'TEST' && (
-              <span className="text-[9px] px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 font-extrabold border border-rose-200">
-                LOCKED
-              </span>
+        {/* Right Controls: User Control & Freedom Toggle */}
+        <div className="flex items-center space-x-2">
+          <button
+            type="button"
+            onClick={() => setIsTimeHidden(!isTimeHidden)}
+            className="px-3 py-1.5 bg-[#F5F2F9] hover:bg-[#E2DDEC] text-[#503A7A] border border-purple-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+            title={isTimeHidden ? 'Hiện số phút giây đếm ngược' : 'Thu gọn / Ẩn con số để tập trung làm bài'}
+          >
+            {isTimeHidden ? (
+              <>
+                <Eye className="w-3.5 h-3.5 text-[#6B51A5]" />
+                <span className="hidden sm:inline">Hiện số đếm</span>
+              </>
+            ) : (
+              <>
+                <EyeOff className="w-3.5 h-3.5 text-[#6B51A5]" />
+                <span className="hidden sm:inline">Ẩn số đếm</span>
+              </>
             )}
-          </div>
-          <div className="flex items-baseline space-x-2">
-            <span className={`font-mono text-xl sm:text-2xl font-black tracking-tight ${
-              isCritical ? 'text-rose-600' : isWarning ? 'text-amber-700' : 'text-[#3C2A63]'
-            }`}>
-              {formattedTime}
-            </span>
-            <span className="text-[11px] text-[#7C68A5] font-medium">
-              {isCritical ? '⚠️ Time almost up!' : isWarning ? 'Under 10 minutes left' : 'Continuous timer active'}
-            </span>
-          </div>
+          </button>
+
+          {testMode === 'PRACTICE' && (
+            <button
+              type="button"
+              onClick={handleResetTimer}
+              className="px-3 py-1.5 bg-[#F5F2F9] hover:bg-[#E2DDEC] text-[#503A7A] border border-purple-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+              title="Đặt lại đồng hồ bài thi"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-[#6B51A5]" />
+              <span className="hidden sm:inline">Reset</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {testMode === 'PRACTICE' && (
-        <button
-          type="button"
-          onClick={handleResetTimer}
-          className="px-3 py-1.5 bg-[#F5F2F9] hover:bg-[#E2DDEC] text-[#503A7A] border border-purple-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
-          title="Reset timer"
-        >
-          <RotateCcw className="w-3.5 h-3.5 text-[#6B51A5]" />
-          <span className="hidden sm:inline">Reset Timer</span>
-        </button>
-      )}
+      {/* Ambient Peripheral Vision Progress Bar */}
+      <div className="space-y-1">
+        <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+          <div 
+            className={`h-1.5 rounded-full transition-all duration-1000 ease-out ${
+              isUnder5Min 
+                ? 'bg-amber-600' 
+                : isUnder10Min 
+                ? 'bg-amber-500' 
+                : 'bg-[#6B51A5]'
+            }`}
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+        <div className="flex items-center justify-between text-[10px] text-[#7C68A5] font-medium">
+          <span>Tiến độ thời gian (Thị giác ngoại vi)</span>
+          <span>{Math.round(progressPercent)}% còn lại</span>
+        </div>
+      </div>
     </div>
   );
 };
-

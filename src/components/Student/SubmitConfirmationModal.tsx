@@ -1,10 +1,24 @@
-import React from 'react';
-import { AlertTriangle, CheckCircle2, X, Send, Headphones, BookOpen, FileText } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { 
+  AlertTriangle, 
+  CheckCircle2, 
+  X, 
+  Send, 
+  Headphones, 
+  BookOpen, 
+  FileText, 
+  Save, 
+  ShieldCheck, 
+  Loader2, 
+  Server, 
+  Lock 
+} from 'lucide-react';
 
 interface SubmitConfirmationModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirmSubmit: () => void;
+  onSaveDraft?: () => void;
   isSubmitting: boolean;
   totalListening: number;
   answeredListening: number;
@@ -21,6 +35,7 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
   isOpen,
   onClose,
   onConfirmSubmit,
+  onSaveDraft,
   isSubmitting,
   totalListening,
   answeredListening,
@@ -32,6 +47,24 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
   writingTask1Words,
   writingTask2Words
 }) => {
+  const [submissionStage, setSubmissionStage] = useState<1 | 2 | 3>(1);
+  const [draftSavedToast, setDraftSavedToast] = useState(false);
+
+  useEffect(() => {
+    let t1: any, t2: any;
+    if (isSubmitting) {
+      setSubmissionStage(1);
+      t1 = setTimeout(() => setSubmissionStage(2), 600);
+      t2 = setTimeout(() => setSubmissionStage(3), 1400);
+    } else {
+      setSubmissionStage(1);
+    }
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [isSubmitting]);
+
   if (!isOpen) return null;
 
   const totalQuestions = (hasListening ? totalListening : 0) + (hasReading ? totalReading : 0);
@@ -44,156 +77,239 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
     (writingTask1Words === 0 && writingTask2Words === 0)
   );
 
+  const handleSaveDraftClick = () => {
+    if (onSaveDraft) {
+      onSaveDraft();
+    }
+    setDraftSavedToast(true);
+    setTimeout(() => {
+      setDraftSavedToast(false);
+      onClose();
+    }, 1200);
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-fadeIn">
       <div 
-        className="bg-white border border-purple-100 rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl shadow-purple-950/20 space-y-6 relative"
+        className="bg-white border border-purple-100 rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl shadow-purple-950/20 space-y-6 relative overflow-hidden"
         role="dialog"
         aria-modal="true"
       >
         {/* Close Button */}
-        <button
-          type="button"
-          onClick={onClose}
-          disabled={isSubmitting}
-          className="absolute top-5 right-5 p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition cursor-pointer"
-        >
-          <X className="w-5 h-5" />
-        </button>
+        {!isSubmitting && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute top-5 right-5 p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
 
         {/* Modal Header */}
         <div className="flex items-center space-x-3.5">
           <div className="p-3 bg-purple-100 text-[#503A7A] rounded-2xl shrink-0">
-            <Send className="w-6 h-6" />
+            <Send className="w-6 h-6 text-[#6B51A5]" />
           </div>
           <div>
-            <h3 className="text-lg font-black text-[#3C2A63]">
-              Submit Examination?
-            </h3>
+            <div className="flex items-center space-x-2">
+              <h3 className="text-lg font-black text-[#3C2A63]">
+                Xác nhận Nộp bài thi
+              </h3>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-[#6B51A5] font-extrabold uppercase tracking-wider">
+                Official Exam
+              </span>
+            </div>
             <p className="text-xs text-[#7C68A5] font-medium">
-              Please review your completion status before final submission.
+              Kiểm tra kỹ lưỡng câu trả lời trước khi chuyển giao quyền chấm điểm
             </p>
           </div>
         </div>
 
-        {/* Completion Progress Cards */}
-        <div className="space-y-3">
-          {hasListening && (
-            <div className="p-3.5 bg-[#FAF8FE] border border-purple-100 rounded-2xl flex items-center justify-between">
-              <div className="flex items-center space-x-2.5">
-                <Headphones className="w-4 h-4 text-[#6B51A5]" />
-                <span className="text-xs font-bold text-[#3C2A63]">Listening Section</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <span className="text-xs font-extrabold text-[#503A7A] font-mono">
-                  {answeredListening} / {totalListening} answered
-                </span>
-                {answeredListening === totalListening ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                ) : (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold">
-                    {totalListening - answeredListening} left
-                  </span>
-                )}
+        {/* Material Design 3 Progress Stepper during submission */}
+        {isSubmitting ? (
+          <div className="py-6 px-4 bg-[#FAF8FE] border border-purple-100 rounded-2xl space-y-5 text-center">
+            <div className="flex items-center justify-center">
+              <div className="relative">
+                <Loader2 className="w-12 h-12 text-[#6B51A5] animate-spin" />
+                <Server className="w-5 h-5 text-[#3C2A63] absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
               </div>
             </div>
-          )}
 
-          {hasReading && (
-            <div className="p-3.5 bg-[#FAF8FE] border border-purple-100 rounded-2xl flex items-center justify-between">
-              <div className="flex items-center space-x-2.5">
-                <BookOpen className="w-4 h-4 text-[#6B51A5]" />
-                <span className="text-xs font-bold text-[#3C2A63]">Reading Section</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <span className="text-xs font-extrabold text-[#503A7A] font-mono">
-                  {answeredReading} / {totalReading} answered
-                </span>
-                {answeredReading === totalReading ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                ) : (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold">
-                    {totalReading - answeredReading} left
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
-
-          {hasWriting && (
-            <div className="p-3.5 bg-[#FAF8FE] border border-purple-100 rounded-2xl space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2.5">
-                  <FileText className="w-4 h-4 text-[#6B51A5]" />
-                  <span className="text-xs font-bold text-[#3C2A63]">Academic Writing</span>
-                </div>
-                <span className="text-xs font-bold text-[#7C68A5]">Task 1 &amp; 2</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-purple-100/60">
-                <div className="bg-white p-2 rounded-xl border border-purple-100">
-                  <span className="text-[10px] text-[#7C68A5] block font-semibold">Task 1 (Target 150+)</span>
-                  <span className={`font-black font-mono ${writingTask1Words >= 150 ? 'text-emerald-700' : 'text-amber-700'}`}>
-                    {writingTask1Words} words
-                  </span>
-                </div>
-                <div className="bg-white p-2 rounded-xl border border-purple-100">
-                  <span className="text-[10px] text-[#7C68A5] block font-semibold">Task 2 (Target 250+)</span>
-                  <span className={`font-black font-mono ${writingTask2Words >= 250 ? 'text-emerald-700' : 'text-amber-700'}`}>
-                    {writingTask2Words} words
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Warning If Questions Left Unanswered */}
-        {unansweredCount > 0 && (
-          <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-start space-x-2.5 text-xs text-amber-900">
-            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-bold">You have {unansweredCount} unanswered questions.</p>
-              <p className="text-[11px] text-amber-700 mt-0.5">
-                In IELTS, there is no penalty for wrong answers. We strongly encourage guessing all questions before submitting.
+            <div className="space-y-1">
+              <h4 className="text-sm font-black text-[#3C2A63]">
+                {submissionStage === 1 && 'Giai đoạn 1: Đóng gói và mã hóa bài làm...'}
+                {submissionStage === 2 && 'Giai đoạn 2: Máy chủ đang chấm điểm bảo mật...'}
+                {submissionStage === 3 && 'Giai đoạn 3: Hoàn tất & cấp biên lai điểm số chính thức...'}
+              </h4>
+              <p className="text-xs text-[#7C68A5]">
+                {submissionStage === 1 && 'Kiểm tra tính toàn vẹn của các đáp án Listening, Reading và Writing.'}
+                {submissionStage === 2 && 'Chấm điểm độc lập tại máy chủ backend để bảo vệ kết quả bài thi.'}
+                {submissionStage === 3 && 'Đang đồng bộ hóa biên lai lên Google Sheets và cơ sở dữ liệu.'}
               </p>
             </div>
-          </div>
-        )}
 
-        {/* Writing warning if empty or very short */}
-        {hasWritingWarnings && (
-          <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-start space-x-2.5 text-xs text-rose-900">
-            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-bold">Writing essays are below recommended word counts.</p>
-              <p className="text-[11px] text-rose-700 mt-0.5">
-                Ensure both Task 1 (150 words) and Task 2 (250 words) are adequately developed to avoid band score penalties.
-              </p>
+            {/* Stepper Dots */}
+            <div className="flex items-center justify-center gap-3 pt-2">
+              {[1, 2, 3].map((step) => (
+                <div key={step} className="flex items-center gap-2">
+                  <div className={`w-3 h-3 rounded-full transition-all duration-300 ${
+                    submissionStage >= step 
+                      ? 'bg-[#6B51A5] scale-110 shadow-sm' 
+                      : 'bg-purple-200'
+                  }`} />
+                  {step < 3 && <div className={`w-8 h-0.5 transition-colors ${
+                    submissionStage > step ? 'bg-[#6B51A5]' : 'bg-purple-200'
+                  }`} />}
+                </div>
+              ))}
+            </div>
+
+            <div className="text-[11px] text-emerald-800 font-bold bg-emerald-50 py-1.5 px-3 rounded-xl border border-emerald-200 flex items-center justify-center gap-1.5">
+              <Lock className="w-3.5 h-3.5" />
+              <span>Tiến trình an toàn: Không tắt trình duyệt hoặc tải lại trang lúc này.</span>
             </div>
           </div>
+        ) : (
+          <>
+            {/* Completion Progress Cards */}
+            <div className="space-y-3">
+              {hasListening && (
+                <div className="p-3.5 bg-[#FAF8FE] border border-purple-100 rounded-2xl flex items-center justify-between">
+                  <div className="flex items-center space-x-2.5">
+                    <Headphones className="w-4 h-4 text-[#6B51A5]" />
+                    <span className="text-xs font-bold text-[#3C2A63]">Listening Section</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs font-extrabold text-[#503A7A] font-mono">
+                      {answeredListening} / {totalListening} đã làm
+                    </span>
+                    {answeredListening === totalListening ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    ) : (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold">
+                        còn {totalListening - answeredListening} câu
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {hasReading && (
+                <div className="p-3.5 bg-[#FAF8FE] border border-purple-100 rounded-2xl flex items-center justify-between">
+                  <div className="flex items-center space-x-2.5">
+                    <BookOpen className="w-4 h-4 text-[#6B51A5]" />
+                    <span className="text-xs font-bold text-[#3C2A63]">Reading Section</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs font-extrabold text-[#503A7A] font-mono">
+                      {answeredReading} / {totalReading} đã làm
+                    </span>
+                    {answeredReading === totalReading ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    ) : (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold">
+                        còn {totalReading - answeredReading} câu
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {hasWriting && (
+                <div className="p-3.5 bg-[#FAF8FE] border border-purple-100 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2.5">
+                      <FileText className="w-4 h-4 text-[#6B51A5]" />
+                      <span className="text-xs font-bold text-[#3C2A63]">Academic Writing</span>
+                    </div>
+                    <span className="text-xs font-bold text-[#7C68A5]">Task 1 &amp; 2</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-purple-100/60">
+                    <div className="bg-white p-2 rounded-xl border border-purple-100">
+                      <span className="text-[10px] text-[#7C68A5] block font-semibold">Task 1 (Target 150+)</span>
+                      <span className={`font-black font-mono ${writingTask1Words >= 150 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                        {writingTask1Words} words
+                      </span>
+                    </div>
+                    <div className="bg-white p-2 rounded-xl border border-purple-100">
+                      <span className="text-[10px] text-[#7C68A5] block font-semibold">Task 2 (Target 250+)</span>
+                      <span className={`font-black font-mono ${writingTask2Words >= 250 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                        {writingTask2Words} words
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Warning If Questions Left Unanswered */}
+            {unansweredCount > 0 && (
+              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-start space-x-2.5 text-xs text-amber-900">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">Bạn còn {unansweredCount} câu hỏi chưa điền đáp án.</p>
+                  <p className="text-[11px] text-amber-700 mt-0.5">
+                    Trong kỳ thi IELTS, câu trả lời sai không bị trừ điểm. Khuyến khích bạn đoán và điền đầy đủ tất cả câu hỏi trước khi nộp.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Writing warning if empty or very short */}
+            {hasWritingWarnings && (
+              <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-start space-x-2.5 text-xs text-rose-900">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">Bài viết Writing chưa đạt số lượng từ tối thiểu.</p>
+                  <p className="text-[11px] text-rose-700 mt-0.5">
+                    Đảm bảo cả Task 1 (tối thiểu 150 từ) và Task 2 (tối thiểu 250 từ) để tránh bị trừ điểm tiêu chí Task Achievement.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Draft Saved Toast Notification */}
+            {draftSavedToast && (
+              <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-xs text-emerald-800 font-bold flex items-center gap-2 animate-bounce">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>Đã lưu bản nháp an toàn vào IndexedDB &amp; LocalStorage!</span>
+              </div>
+            )}
+
+            {/* Action Buttons: Differentiating Save Draft vs Official Turn In (Google Classroom Pattern) */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+              <button
+                type="button"
+                onClick={handleSaveDraftClick}
+                className="w-full sm:w-auto px-4 py-2.5 bg-white hover:bg-purple-50 text-[#503A7A] font-extrabold text-xs rounded-xl border border-purple-200 transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                title="Lưu nháp và tiếp tục làm sau"
+              >
+                <Save className="w-3.5 h-3.5 text-[#6B51A5]" />
+                <span>LƯU BẢN NHÁP (SAVE DRAFT)</span>
+              </button>
+
+              <div className="flex items-center space-x-2 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2.5 bg-[#F5F2F9] hover:bg-[#E2DDEC] text-[#503A7A] font-extrabold text-xs rounded-xl border border-purple-200 transition cursor-pointer"
+                >
+                  Tiếp tục làm bài
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onConfirmSubmit}
+                  className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-black text-xs rounded-xl shadow-md shadow-emerald-950/20 transition flex items-center gap-2 cursor-pointer"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>XÁC NHẬN NỘP BÀI (TURN IN)</span>
+                </button>
+              </div>
+            </div>
+          </>
         )}
-
-        {/* Action Buttons */}
-        <div className="flex items-center justify-end space-x-3 pt-2">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isSubmitting}
-            className="px-5 py-2.5 bg-[#F5F2F9] hover:bg-[#E2DDEC] text-[#503A7A] font-extrabold text-xs rounded-xl border border-purple-200 transition cursor-pointer"
-          >
-            Keep Working
-          </button>
-
-          <button
-            type="button"
-            onClick={onConfirmSubmit}
-            disabled={isSubmitting}
-            className="px-6 py-2.5 bg-[#6B51A5] hover:bg-[#503A7A] text-white font-black text-xs rounded-xl shadow-md shadow-purple-950/20 transition flex items-center space-x-2 cursor-pointer disabled:opacity-50"
-          >
-            <Send className="w-3.5 h-3.5" />
-            <span>{isSubmitting ? 'Submitting...' : 'Confirm Final Submission'}</span>
-          </button>
-        </div>
       </div>
     </div>
   );

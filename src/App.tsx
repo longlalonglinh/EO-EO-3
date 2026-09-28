@@ -43,7 +43,7 @@ import {
 
 import { DEFAULT_API_URL, fetchExam, prefetchExam, submitExamPayload, clearExamCache, clearSessionTimers, fetchServerConfig, saveServerConfig } from './services/api';
 import { gradeExamAnswers } from './services/answerScoring';
-import { getCurrentAnswersFromIndexedDB, getWritingDraftFromIndexedDB, saveCurrentAnswersToIndexedDB, clearCurrentAnswersFromIndexedDB } from './services/indexedDb';
+import { getCurrentAnswersFromIndexedDB, getWritingDraftFromIndexedDB, saveWritingDraftToIndexedDB, saveCurrentAnswersToIndexedDB, clearCurrentAnswersFromIndexedDB } from './services/indexedDb';
 import { DEFAULT_EXAMS } from './data/defaultExams';
 import { DatabaseDiagnosticsModal } from './components/Common/DatabaseDiagnosticsModal';
 import { extractQuestionsFromRawResponse } from './services/dbDiagnostics';
@@ -1632,6 +1632,14 @@ function doPost(e) {
                       onConfirmSubmit={() => {
                         setIsConfirmSubmitOpen(false);
                         handleSubmitExam('STANDARD');
+                      }}
+                      onSaveDraft={async () => {
+                        await saveCurrentAnswersToIndexedDB(examCode, sbd, userAnswers);
+                        if (writingTask1 || writingTask2) {
+                          await saveWritingDraftToIndexedDB(examCode, sbd, { task1: writingTask1, task2: writingTask2 });
+                        }
+                        setSkillNotice('💾 Đã lưu nháp bài làm an toàn vào cơ sở dữ liệu IndexedDB!');
+                        setTimeout(() => setSkillNotice(null), 4000);
                       }}
                       isSubmitting={isSubmitting}
                       totalListening={examData.listening_questions?.length ?? 0}

@@ -10,7 +10,8 @@ import {
   Sparkles,
   ChevronRight,
   Info,
-  AlertCircle
+  AlertCircle,
+  Save
 } from 'lucide-react';
 import { CountdownTimer } from './CountdownTimer';
 import { IELTSQuestionCard } from './IELTSQuestionCard';
@@ -61,6 +62,19 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
   const maxAllowedTimeRef = useRef<number>(0);
   const lastSavedTimeRef = useRef<number>(0);
   const [audioError, setAudioError] = useState<string | null>(null);
+  const [autoSaveTime, setAutoSaveTime] = useState<string>('');
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (Object.keys(userAnswers).length > 0) {
+      setIsSaving(true);
+      const timer = setTimeout(() => {
+        setAutoSaveTime(new Date().toLocaleTimeString());
+        setIsSaving(false);
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [userAnswers]);
 
   // Group questions into IELTS Parts (Part 1, 2, 3, 4)
   const getPartForQuestion = (q: Question, idx: number): 1 | 2 | 3 | 4 => {
@@ -472,8 +486,17 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
           </div>
         </div>
 
-        {/* Answered Counter Pill */}
+        {/* Answered Counter Pill & Auto-Save Feedback */}
         <div className="flex items-center space-x-3 shrink-0">
+          <span className={`text-[11px] font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 border transition-all ${
+            isSaving 
+              ? 'bg-amber-50 text-amber-800 border-amber-200' 
+              : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+          }`}>
+            <Save className={`w-3.5 h-3.5 ${isSaving ? 'animate-spin text-amber-600' : 'text-emerald-700'}`} />
+            <span>{isSaving ? 'Đang lưu...' : autoSaveTime ? `Đã lưu (${autoSaveTime})` : 'Tự động lưu'}</span>
+          </span>
+
           <div className="text-xs text-[#7C68A5] font-medium flex items-center gap-2">
             <span>Answered:</span>
             <span className="px-3 py-1 bg-purple-100 border border-purple-200 rounded-full text-xs font-black text-[#503A7A] font-mono">

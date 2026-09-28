@@ -365,3 +365,5 @@ export function gradeExamAnswers(
     results
   };
 }
+
+export const scoreExam = gradeExamAnswers;

@@ -464,6 +464,60 @@ export async function submitExamPayload(
     ...(payload.reading_answers || {})
   };
 
+  // 0. Attempt Authoritative Server-Side Grading & Certified Submission first
+  try {
+    const serverGradeRes = await fetch('/api/submissions/grade-and-submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...payload,
+        answers: userAnswers,
+        submission_id: submissionId,
+        submission_type: submissionType
+      })
+    });
+    if (serverGradeRes.ok) {
+      const serverData = await serverGradeRes.json();
+      if (serverData.success && serverData.submission) {
+        const sub = serverData.submission;
+        
+        // Save authoritative submission to IndexedDB and LocalStorage
+        await saveSubmissionToIndexedDB(sub);
+        try {
+          const existing = localStorage.getItem('ielts_student_submissions');
+          const subsArr: SubmissionRecord[] = existing ? JSON.parse(existing) : [];
+          if (!subsArr.some(s => s.submission_id === sub.submission_id)) {
+            subsArr.unshift(sub);
+          }
+          localStorage.setItem('ielts_student_submissions', JSON.stringify(deduplicateSubmissions(subsArr)));
+        } catch (e) {}
+
+        return {
+          success: true,
+          submission_id: sub.submission_id,
+          sbd: sub.sbd,
+          exam_code: sub.exam_code,
+          submission_type: sub.submission_type,
+          listening_raw_score: sub.listening_raw_score,
+          listening_max_score: sub.listening_max_score,
+          listening_band: sub.listening_band,
+          reading_raw_score: sub.reading_raw_score,
+          reading_max_score: sub.reading_max_score,
+          reading_band: sub.reading_band,
+          overall_band: sub.overall_band,
+          detailed_results: sub.detailed_results,
+          writing_status: sub.writing_status || 'PENDING_TEACHER',
+          submitted_at: sub.submitted_at,
+          message: submissionType === 'TIMEOUT_FORCED' 
+            ? 'Exam automatically submitted and certified by server due to session timeout.'
+            : 'Exam officially submitted and graded authoritatively by server.'
+        };
+      }
+    }
+  } catch (serverErr) {
+    console.warn('[Server Authoritative Scoring unavailable, continuing with local vault]:', serverErr);
+  }
+
   let listeningRaw = 0;
   let readingRaw = 0;
   let listeningMax = 0;

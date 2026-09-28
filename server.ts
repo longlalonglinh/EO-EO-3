@@ -20,9 +20,41 @@ import {
 } from './server/storage';
 import { verifyAndOptimizeExam } from './src/services/examVerification';
 import { parseExamFromDocumentText } from './src/services/documentExamParser';
+import { scoreExam } from './src/services/answerScoring';
+import { GOOGLE_APPS_SCRIPT_CODE } from './src/data/gasScriptCode';
 import * as pdfParseModule from 'pdf-parse';
 
 const __dirname = process.cwd();
+
+/**
+ * Strips correct answers, explanations, and acceptable answers from exam data
+ * to completely eliminate client-side exam leaking during student examinations.
+ */
+function sanitizeExamForStudent(exam: any): any {
+  if (!exam) return exam;
+  const sanitizeQuestion = (q: any) => {
+    const { correct_answer, acceptable_answers, explanation, ...safeQ } = q;
+    return safeQ;
+  };
+
+  const copy = JSON.parse(JSON.stringify(exam));
+  if (Array.isArray(copy.questions)) {
+    copy.questions = copy.questions.map(sanitizeQuestion);
+  }
+  if (Array.isArray(copy.listening_questions)) {
+    copy.listening_questions = copy.listening_questions.map(sanitizeQuestion);
+  }
+  if (Array.isArray(copy.reading_questions)) {
+    copy.reading_questions = copy.reading_questions.map(sanitizeQuestion);
+  }
+  if (Array.isArray(copy.passages)) {
+    copy.passages = copy.passages.map((p: any) => ({
+      ...p,
+      questions: Array.isArray(p.questions) ? p.questions.map(sanitizeQuestion) : []
+    }));
+  }
+  return copy;
+}
 
 /**
  * Validates whether a Gemini API key format is acceptable.
@@ -802,9 +834,11 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
 
   app.get('/api/exams/:code', async (req, res) => {
     const code = req.params.code.trim().toUpperCase();
+    const isStudent = req.query.role === 'student' || req.query.for_student === 'true' || req.headers['x-client-role'] === 'student';
     const stored = getStoredExam(code);
     if (stored) {
-      return res.json({ success: true, exam: stored, source: 'server_db' });
+      const examToSend = isStudent ? sanitizeExamForStudent(stored) : stored;
+      return res.json({ success: true, exam: examToSend, source: 'server_db' });
     }
 
     // Bridge: If not found in local server storage, fetch from Google Apps Script in background
@@ -835,7 +869,8 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
             };
 
             saveStoredExam(bridgeExam);
-            return res.json({ success: true, exam: bridgeExam, source: 'gas_bridge' });
+            const examToSend = isStudent ? sanitizeExamForStudent(bridgeExam) : bridgeExam;
+            return res.json({ success: true, exam: examToSend, source: 'gas_bridge' });
           }
         }
       } catch (gasErr: any) {
@@ -902,6 +937,109 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
+  });
+
+  // Authoritative Server-Side Exam Scoring & Certified Submission
+  app.post('/api/submissions/grade-and-submit', (req, res) => {
+    try {
+      const payload = req.body;
+      const cleanCode = (payload.exam_code || '').trim().toUpperCase();
+      const storedExam = getStoredExam(cleanCode);
+
+      const userAnswers: Record<string, string> = {
+        ...(payload.answers || {}),
+        ...(payload.listening_answers || {}),
+        ...(payload.reading_answers || {})
+      };
+
+      let gradingResult: any;
+      if (storedExam) {
+        gradingResult = scoreExam(storedExam, userAnswers);
+      } else {
+        const listeningCount = Object.keys(payload.listening_answers || {}).length;
+        const readingCount = Object.keys(payload.reading_answers || {}).length;
+        gradingResult = {
+          listening_raw: 0,
+          listening_max: 40,
+          listening_band: 0,
+          reading_raw: 0,
+          reading_max: 40,
+          reading_band: 0,
+          total_raw: 0,
+          results: {}
+        };
+      }
+
+      const listeningMax = gradingResult.listening_max;
+      const readingMax = gradingResult.reading_max;
+      const listeningBand = gradingResult.listening_band;
+      const readingBand = gradingResult.reading_band;
+
+      let overallBand: number | undefined = undefined;
+      if (listeningMax > 0 && readingMax > 0) {
+        overallBand = Math.round(((listeningBand + readingBand) / 2) * 2) / 2;
+      } else if (readingMax > 0) {
+        overallBand = readingBand;
+      } else if (listeningMax > 0) {
+        overallBand = listeningBand;
+      }
+
+      const timestamp = new Date().toISOString();
+      const submissionId = payload.submission_id || `${payload.sbd}_${cleanCode}_${Date.now()}`;
+      const submissionType = payload.submission_type || 'STANDARD';
+
+      const submissionRecord = {
+        submission_id: submissionId,
+        sbd: payload.sbd,
+        exam_code: cleanCode,
+        test_mode: payload.test_mode || 'TEST',
+        submission_type: submissionType,
+        listening_answers: payload.listening_answers || userAnswers,
+        reading_answers: payload.reading_answers || userAnswers,
+        writing_task1_text: payload.writing_task1_text || payload.writing_task1 || '',
+        writing_task2_text: payload.writing_task2_text || payload.writing_task2 || '',
+        listening_raw_score: gradingResult.listening_raw,
+        listening_max_score: listeningMax,
+        listening_band: listeningBand,
+        reading_raw_score: gradingResult.reading_raw,
+        reading_max_score: readingMax,
+        reading_band: readingBand,
+        overall_band: overallBand,
+        detailed_results: gradingResult.results,
+        writing_status: 'PENDING_TEACHER',
+        submitted_at: timestamp,
+        violations_count: payload.violations_count || 0,
+        server_authoritative: true
+      };
+
+      const saved = saveStoredSubmission(submissionRecord);
+
+      // Asynchronously forward to Google Apps Script
+      const config = getStoredConfig();
+      if (config.gas_url && !config.gas_url.includes('AKfycbx_mock')) {
+        fetch(config.gas_url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'submit_exam', ...submissionRecord })
+        }).catch(err => console.warn('[GAS Async Submit Error]:', err.message));
+      }
+
+      return res.json({
+        success: true,
+        submission: saved,
+        grading_result: gradingResult,
+        server_authoritative: true,
+        message: 'Exam successfully graded and recorded authoritatively by server.'
+      });
+    } catch (err: any) {
+      console.error('[Grade and Submit Error]:', err);
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Admin GAS setup template code endpoint
+  app.get('/api/admin/gas-template', (req, res) => {
+    res.json({ success: true, code: GOOGLE_APPS_SCRIPT_CODE });
   });
 
   app.post('/api/submissions/grade-writing', (req, res) => {

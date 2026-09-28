@@ -34,12 +34,36 @@ export const GeminiAnalysisModal: React.FC<GeminiAnalysisModalProps> = ({
   const [activeTab, setActiveTab] = useState<'syntax' | 'word' | 'grammar' | 'examples' | 'qa'>('syntax');
   const [analysis, setAnalysis] = useState<SentenceAnalysisResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadStage, setLoadStage] = useState<number>(1);
+  const [loadProgress, setLoadProgress] = useState<number>(20);
   const [copied, setCopied] = useState(false);
 
   // Interactive Follow-up Question
   const [userQuery, setUserQuery] = useState('');
   const [isAskingFollowUp, setIsAskingFollowUp] = useState(false);
   const [followUpAnswers, setFollowUpAnswers] = useState<Array<{ q: string; a: string }>>([]);
+
+  useEffect(() => {
+    let t1: any, t2: any;
+    if (loading) {
+      setLoadStage(1);
+      setLoadProgress(30);
+      t1 = setTimeout(() => {
+        setLoadStage(2);
+        setLoadProgress(65);
+      }, 700);
+      t2 = setTimeout(() => {
+        setLoadStage(3);
+        setLoadProgress(92);
+      }, 1600);
+    } else {
+      setLoadProgress(100);
+    }
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [loading]);
 
   useEffect(() => {
     if (isOpen && sentence) {
@@ -149,11 +173,22 @@ export const GeminiAnalysisModal: React.FC<GeminiAnalysisModalProps> = ({
           </div>
         </div>
 
-        {/* Target Sentence Banner */}
-        <div className="p-4 bg-[#F5F2F9] border-b border-purple-100 shrink-0">
+        {/* Target Sentence Banner & System Model Clarification */}
+        <div className="p-4 bg-[#F5F2F9] border-b border-purple-100 shrink-0 space-y-2.5">
+          {/* Explicit System Model Badge to eliminate Gulf of Evaluation */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-lg text-[10px] font-bold text-amber-900">
+              <AlertCircle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+              <span>ĐÁNH GIÁ TẠM THỜI TỪ AI (PROVISIONAL AI EVALUATION) • Tham khảo học thuật</span>
+            </div>
+            <span className="text-[10px] text-[#7C68A5] font-semibold">
+              Định luật Hick: Thông tin được phân nhóm theo 4 tầng nhận thức
+            </span>
+          </div>
+
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-[#6B51A5] mb-1 block">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#6B51A5] mb-0.5 block">
                 Sentence to analyze:
               </span>
               <p className="text-sm md:text-base font-semibold text-[#3C2A63] leading-relaxed">
@@ -207,10 +242,38 @@ export const GeminiAnalysisModal: React.FC<GeminiAnalysisModalProps> = ({
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
           {loading ? (
-            <div className="py-16 text-center space-y-3">
-              <Loader2 className="w-8 h-8 text-[#6B51A5] animate-spin mx-auto" />
-              <p className="text-sm text-[#3C2A63] font-medium">Gemini 3.7 Flash is analyzing sentence structure...</p>
-              <p className="text-xs text-[#7C68A5]">Parsing S-V-O clauses, word families, and grammatical rules</p>
+            <div className="py-12 px-4 text-center space-y-4 max-w-md mx-auto">
+              <div className="relative w-12 h-12 mx-auto">
+                <Loader2 className="w-12 h-12 text-[#6B51A5] animate-spin" />
+                <Sparkles className="w-5 h-5 text-amber-500 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+              </div>
+
+              <div className="space-y-1.5">
+                <h4 className="text-sm font-black text-[#3C2A63]">
+                  {loadStage === 1 && 'Giai đoạn 1/3: Phân tích cú pháp & mệnh đề S-V-O...'}
+                  {loadStage === 2 && 'Giai đoạn 2/3: Tra cứu từ khóa, phiên âm IPA & Collocations...'}
+                  {loadStage === 3 && 'Giai đoạn 3/3: Đối chiếu các bẫy thường gặp & tạo ví dụ...'}
+                </h4>
+                <p className="text-xs text-[#7C68A5]">
+                  {loadStage === 1 && 'Nhận diện Subject, Main Verb, Object và các mệnh đề trạng ngữ phụ thuộc.'}
+                  {loadStage === 2 && 'Xác định từ loại, họ từ (Word Family) và cách kết hợp từ học thuật chuẩn IELTS.'}
+                  {loadStage === 3 && 'Hoàn thiện nhận xét sư phạm theo Định luật Hick để giảm tải nhận thức.'}
+                </p>
+              </div>
+
+              {/* MD3 Stepper Progress Bar */}
+              <div className="space-y-1.5 pt-2">
+                <div className="w-full bg-purple-100 rounded-full h-2 overflow-hidden">
+                  <div 
+                    className="bg-[#6B51A5] h-2 rounded-full transition-all duration-500 ease-out"
+                    style={{ width: `${loadProgress}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-[#7C68A5] font-bold">
+                  <span>Tiến độ phân tích: {loadProgress}%</span>
+                  <span>Đang xử lý</span>
+                </div>
+              </div>
             </div>
           ) : !analysis ? (
             <div className="py-12 text-center text-[#7C68A5]">

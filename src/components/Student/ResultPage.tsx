@@ -14,9 +14,12 @@ import {
   ChevronDown, 
   ChevronUp, 
   Filter, 
-  Check 
+  Check,
+  HelpCircle,
+  Lightbulb
 } from 'lucide-react';
 import { SubmissionResponse, ExamData } from '../../types';
+import { GeminiAnalysisModal } from './Practice/GeminiAnalysisModal';
 
 interface ResultPageProps {
   result: SubmissionResponse;
@@ -42,6 +45,10 @@ export const ResultPage: React.FC<ResultPageProps> = ({
   const [showDetailedReview, setShowDetailedReview] = useState(false);
   const [activeReviewTab, setActiveReviewTab] = useState<'listening' | 'reading' | 'writing'>('listening');
   const [reviewFilter, setReviewFilter] = useState<'all' | 'incorrect' | 'correct'>('all');
+
+  // AI Remediation Modal State
+  const [selectedSentenceForAI, setSelectedSentenceForAI] = useState<string | null>(null);
+  const [selectedWordForAI, setSelectedWordForAI] = useState<string | undefined>(undefined);
 
   const detailedResults = result.detailed_results || {};
 
@@ -90,22 +97,28 @@ export const ResultPage: React.FC<ResultPageProps> = ({
         </div>
 
         <div className="relative z-10 space-y-4">
-          <div className="inline-flex items-center space-x-2 px-4 py-1.5 bg-white/20 text-white rounded-full border border-white/30 text-xs font-extrabold uppercase tracking-wider backdrop-blur-md">
-            <Sparkles className="w-4 h-4 text-purple-200" />
-            <span>EXAMINATION SUBMISSION RESULT</span>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <div className="inline-flex items-center space-x-2 px-4 py-1.5 bg-emerald-500/90 text-white rounded-full border border-emerald-300 text-xs font-black uppercase tracking-wider backdrop-blur-md shadow-lg">
+              <CheckCircle2 className="w-4 h-4 text-white" />
+              <span>TRẠNG THÁI: ĐÃ NỘP BÀI (TURNED IN / SUBMITTED)</span>
+            </div>
+            <div className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white/20 text-white rounded-full border border-white/30 text-xs font-bold uppercase tracking-wider backdrop-blur-md">
+              <Sparkles className="w-3.5 h-3.5 text-purple-200" />
+              <span>SERVER AUTHORITATIVE GRADED</span>
+            </div>
           </div>
 
           <h1 className="text-3xl md:text-4xl font-black text-white">
-            EXAM COMPLETED SUCCESSFULLY!
+            BÀI THI ĐÃ NỘP &amp; CHẤM ĐIỂM THÀNH CÔNG
           </h1>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <p className="text-sm text-purple-100 font-medium">
-              Candidate: <strong className="text-white font-bold">{result.sbd || 'Candidate'}</strong> | Exam Code: <strong className="text-white font-bold">{result.exam_code}</strong>
+              Thí sinh: <strong className="text-white font-bold">{result.sbd || 'Candidate'}</strong> | Mã đề thi: <strong className="text-white font-bold">{result.exam_code}</strong> | Mã bài nộp: <span className="font-mono text-xs text-purple-200 bg-white/10 px-2 py-0.5 rounded">{result.submission_id}</span>
             </p>
             {result.submission_type === 'TIMEOUT_FORCED' && (
               <span className="px-3 py-1 bg-amber-400 text-amber-950 font-black text-xs rounded-full uppercase tracking-wider shadow-md flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5" />
-                <span>Auto-Submitted (Timeout Forced)</span>
+                <span>Tự động nộp khi hết giờ (Timeout Forced)</span>
               </span>
             )}
           </div>
@@ -359,57 +372,108 @@ export const ResultPage: React.FC<ResultPageProps> = ({
                     return (
                       <div
                         key={`${q.question_id}-${idx}`}
-                        className={`p-4 rounded-2xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-3 ${
+                        className={`p-5 rounded-3xl border transition-all space-y-3.5 ${
                           isCorrect
-                            ? 'bg-emerald-50/50 border-emerald-200'
-                            : 'bg-rose-50/50 border-rose-200'
+                            ? 'bg-emerald-50/40 border-emerald-200'
+                            : 'bg-rose-50/40 border-rose-200'
                         }`}
                       >
-                        <div className="flex items-start space-x-3">
-                          <span className={`w-7 h-7 rounded-xl flex items-center justify-center font-mono font-black text-xs shrink-0 ${
-                            isCorrect ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
-                          }`}>
-                            {q.question_number || idx + 1}
-                          </span>
-
-                          <div className="space-y-1">
-                            <p className="text-xs font-bold text-[#3C2A63]">
-                              {q.question_text || `Question ${q.question_number || idx + 1}`}
-                            </p>
-                            <div className="flex flex-wrap items-center gap-3 text-xs">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-[#7C68A5] font-medium">Your Answer:</span>
-                                <span className={`font-black font-mono px-2 py-0.5 rounded-md ${
-                                  isCorrect ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                                }`}>
-                                  {studentAns}
-                                </span>
-                              </div>
-
-                              {!isCorrect && (
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-[#7C68A5] font-medium">Acceptable Answers:</span>
-                                  <span className="font-black font-mono px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
-                                    {correctAnswers}
-                                  </span>
-                                </div>
-                              )}
+                        {/* Top: Question Number, Prompt & Result Badge */}
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start space-x-3">
+                            <span className={`w-7 h-7 rounded-xl flex items-center justify-center font-mono font-black text-xs shrink-0 shadow-xs ${
+                              isCorrect ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
+                            }`}>
+                              {q.question_number || idx + 1}
+                            </span>
+                            <div>
+                              <p className="text-xs md:text-sm font-bold text-[#3C2A63] leading-snug">
+                                {q.question_text || `Question ${q.question_number || idx + 1}`}
+                              </p>
                             </div>
+                          </div>
+
+                          <div className="shrink-0">
+                            {isCorrect ? (
+                              <span className="flex items-center space-x-1 text-xs font-black text-emerald-800 bg-emerald-100/90 border border-emerald-300 px-3 py-1 rounded-xl shadow-xs">
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Chính xác (+1)</span>
+                              </span>
+                            ) : (
+                              <span className="flex items-center space-x-1 text-xs font-black text-rose-800 bg-rose-100/90 border border-rose-300 px-3 py-1 rounded-xl shadow-xs">
+                                <XCircle className="w-3.5 h-3.5" />
+                                <span>Chưa đúng (0)</span>
+                              </span>
+                            )}
                           </div>
                         </div>
 
-                        <div className="flex items-center space-x-2 shrink-0 self-end md:self-auto">
-                          {isCorrect ? (
-                            <span className="flex items-center space-x-1 text-xs font-black text-emerald-700 bg-emerald-100 px-3 py-1 rounded-xl">
-                              <Check className="w-3.5 h-3.5" />
-                              <span>Correct (+1)</span>
+                        {/* Middle: Side-by-Side Direct Comparison (Recognition over Recall) */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                          {/* Student Answer */}
+                          <div className={`p-3 rounded-2xl border flex items-center justify-between gap-2 ${
+                            isCorrect 
+                              ? 'bg-white border-emerald-200' 
+                              : 'bg-white border-rose-200'
+                          }`}>
+                            <div className="text-xs">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-[#7C68A5] block">
+                                Câu trả lời của bạn:
+                              </span>
+                              <span className={`font-mono font-black text-xs md:text-sm ${
+                                isCorrect ? 'text-emerald-700' : 'text-rose-700'
+                              }`}>
+                                {studentAns || '(Bỏ trống)'}
+                              </span>
+                            </div>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${
+                              isCorrect ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                            }`}>
+                              {isCorrect ? 'Khớp đáp án' : 'Sai lệch'}
                             </span>
-                          ) : (
-                            <span className="flex items-center space-x-1 text-xs font-black text-rose-700 bg-rose-100 px-3 py-1 rounded-xl">
-                              <XCircle className="w-3.5 h-3.5" />
-                              <span>Incorrect (0)</span>
-                            </span>
-                          )}
+                          </div>
+
+                          {/* Acceptable Correct Answer */}
+                          <div className="p-3 rounded-2xl border bg-white border-emerald-200 flex items-center justify-between gap-2">
+                            <div className="text-xs">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 block">
+                                Đáp án chuẩn xác chấp nhận:
+                              </span>
+                              <span className="font-mono font-black text-xs md:text-sm text-emerald-700">
+                                {correctAnswers}
+                              </span>
+                            </div>
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                          </div>
+                        </div>
+
+                        {/* Explanation Box if available */}
+                        {q.explanation && (
+                          <div className="p-3.5 bg-purple-50/70 border border-purple-200 rounded-2xl space-y-1 text-xs">
+                            <div className="flex items-center gap-1.5 font-bold text-[#6B51A5]">
+                              <Lightbulb className="w-3.5 h-3.5" />
+                              <span>Dẫn chứng &amp; Lời giải thích học thuật:</span>
+                            </div>
+                            <p className="text-[#3C2A63] leading-relaxed italic">
+                              "{q.explanation}"
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Interactive AI Remediation: Ask Gemini */}
+                        <div className="flex items-center justify-end pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedSentenceForAI(q.question_text || `Question ${q.question_number || idx + 1}`);
+                              setSelectedWordForAI(q.correct_answer || undefined);
+                            }}
+                            className="px-3.5 py-1.5 bg-[#FAF8FE] hover:bg-purple-100 text-[#6B51A5] border border-purple-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                            title="Mở phân tích chuyên sâu về ngữ pháp, từ vựng và bẫy đề thi từ AI Gemini"
+                          >
+                            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                            <span>Phân tích &amp; Chữa lỗi với AI Gemini</span>
+                          </button>
                         </div>
                       </div>
                     );
@@ -496,6 +560,17 @@ export const ResultPage: React.FC<ResultPageProps> = ({
           </button>
         )}
       </div>
+
+      {/* Interactive AI Remediation Modal (Hick's law & Recognition over Recall) */}
+      <GeminiAnalysisModal
+        isOpen={Boolean(selectedSentenceForAI)}
+        onClose={() => {
+          setSelectedSentenceForAI(null);
+          setSelectedWordForAI(undefined);
+        }}
+        sentence={selectedSentenceForAI || ''}
+        targetWord={selectedWordForAI}
+      />
 
     </div>
   );
