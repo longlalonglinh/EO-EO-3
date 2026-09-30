@@ -41,7 +41,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 
-import { DEFAULT_API_URL, fetchExam, prefetchExam, submitExamPayload, clearExamCache, clearSessionTimers, fetchServerConfig, saveServerConfig } from './services/api';
+import { DEFAULT_API_URL, fetchExam, prefetchExam, submitExamPayload, syncPendingSubmissions, clearExamCache, clearSessionTimers, fetchServerConfig, saveServerConfig } from './services/api';
 import { gradeExamAnswers } from './services/answerScoring';
 import { getCurrentAnswersFromIndexedDB, getWritingDraftFromIndexedDB, saveWritingDraftToIndexedDB, saveCurrentAnswersToIndexedDB, clearCurrentAnswersFromIndexedDB } from './services/indexedDb';
 import { DEFAULT_EXAMS } from './data/defaultExams';
@@ -312,6 +312,11 @@ export default function App() {
   const [writingTask1, setWritingTask1] = useState('');
   const [writingTask2, setWritingTask2] = useState('');
   const [violationCount, setViolationCount] = useState(0);
+  const [proctoringMetrics, setProctoringMetrics] = useState({
+    violationCount: 0,
+    cumulativeOffScreenSeconds: 0,
+    rapidSwitchCount: 0
+  });
 
   const answeredListeningCount = Object.keys(userAnswers).filter(k => 
     (examData.listening_questions || []).some(q => q.question_id === k) && Boolean(userAnswers[k]?.trim())
@@ -649,6 +654,9 @@ export default function App() {
       writing_task2_text: currentTask2,
       cheat_logs: currentLogs,
       violation_logs: currentLogs,
+      violations_count: proctoringMetrics.violationCount || violationCount,
+      cumulative_off_screen_seconds: proctoringMetrics.cumulativeOffScreenSeconds,
+      switch_count: proctoringMetrics.rapidSwitchCount,
       submitted_at: new Date().toISOString()
     };
 
@@ -677,50 +685,36 @@ export default function App() {
     setCurrentModule('results');
   };
 
-  // Background Offline Retry Loop
+  // Background Offline Retry Loop via Central Sync Engine
   const triggerOfflineRetry = useCallback(async () => {
-    const pendingRaw = localStorage.getItem('ielts_pending_submissions');
-    if (!pendingRaw) return;
-    const pendingArr: SubmissionPayload[] = JSON.parse(pendingRaw);
-    if (pendingArr.length === 0) {
-      setOfflinePending(false);
-      return;
-    }
-
-    if (!gasUrl || gasUrl.includes('AKfycbx_mock')) return;
-
-    const remaining: SubmissionPayload[] = [];
-    for (const item of pendingArr) {
-      try {
-        const res = await fetch(gasUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify(item)
+    try {
+      const syncOutcome = await syncPendingSubmissions(gasUrl);
+      setOfflinePending(syncOutcome.remaining > 0);
+      if (syncOutcome.synced > 0 && syncOutcome.results.length > 0) {
+        setSubmitResult(prev => {
+          if (!prev) return prev;
+          const matched = syncOutcome.results.find(r => r.submission_id === prev.submission_id);
+          return matched || prev;
         });
-        if (res.ok) {
-          console.log('Successfully re-submitted offline item:', item.submission_id);
-        } else {
-          remaining.push(item);
-        }
-      } catch {
-        remaining.push(item);
       }
-    }
-
-    if (remaining.length === 0) {
-      localStorage.removeItem('ielts_pending_submissions');
-      setOfflinePending(false);
-    } else {
-      localStorage.setItem('ielts_pending_submissions', JSON.stringify(remaining));
-      setOfflinePending(true);
+    } catch (e) {
+      console.warn('Background sync error:', e);
     }
   }, [gasUrl]);
 
   useEffect(() => {
+    const handleOnline = () => {
+      console.log('Network online restored. Triggering background submission sync...');
+      triggerOfflineRetry();
+    };
+    window.addEventListener('online', handleOnline);
     const interval = setInterval(() => {
       triggerOfflineRetry();
     }, 10000);
-    return () => clearInterval(interval);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      clearInterval(interval);
+    };
   }, [triggerOfflineRetry]);
 
   // Complete GAS Code Script Template
@@ -1358,6 +1352,7 @@ function doPost(e) {
                   examCode={examCode}
                   testMode={testMode}
                   onViolationCountChange={(count) => setViolationCount(count)}
+                  onProctoringMetricsChange={(m) => setProctoringMetrics(m)}
                 />
 
                 {/* Skill Lock / Notice Banner */}
@@ -1663,6 +1658,7 @@ function doPost(e) {
                     userAnswers={userAnswers}
                     writingTask1={writingTask1}
                     writingTask2={writingTask2}
+                    onRetrySync={triggerOfflineRetry}
                     onReturnHome={() => {
                       clearSessionTimers();
                       setIsLoggedIn(false);

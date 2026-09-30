@@ -1,7 +1,11 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { ShieldAlert, Lock, Maximize2, Radio, Clock, ShieldCheck } from 'lucide-react';
 import { CheatLog } from '../../types';
-import { saveCheatLogToIndexedDB } from '../../services/indexedDb';
+import { 
+  saveCheatLogToIndexedDB, 
+  saveCumulativeProctoringData, 
+  getCumulativeProctoringData 
+} from '../../services/indexedDb';
 
 interface ProctoringMonitorProps {
   submissionId: string;
@@ -9,6 +13,7 @@ interface ProctoringMonitorProps {
   examCode: string;
   testMode: 'TEST' | 'PRACTICE';
   onViolationCountChange?: (count: number) => void;
+  onProctoringMetricsChange?: (metrics: { violationCount: number; cumulativeOffScreenSeconds: number; rapidSwitchCount: number }) => void;
 }
 
 export const ProctoringMonitor: React.FC<ProctoringMonitorProps> = ({
@@ -16,7 +21,8 @@ export const ProctoringMonitor: React.FC<ProctoringMonitorProps> = ({
   sbd,
   examCode,
   testMode,
-  onViolationCountChange
+  onViolationCountChange,
+  onProctoringMetricsChange
 }) => {
   const [violationCount, setViolationCount] = useState(0);
   const [isLocked30s, setIsLocked30s] = useState(false);
@@ -27,6 +33,20 @@ export const ProctoringMonitor: React.FC<ProctoringMonitorProps> = ({
   const lockTimerRef = useRef<NodeJS.Timeout | null>(null);
   const blurGraceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastBlurViolationTimeRef = useRef<number>(0);
+  const lastRapidSwitchWarningTimeRef = useRef<number>(0);
+  const lastCumulativeWarningTimeRef = useRef<number>(0);
+  const offScreenStartTimeRef = useRef<number>(0);
+  const cumulativeOffScreenMsRef = useRef<number>(0);
+  const rapidSwitchTimestampsRef = useRef<number[]>([]);
+
+  // Restore cumulative data from IndexedDB / Storage on mount
+  useEffect(() => {
+    getCumulativeProctoringData(examCode, sbd).then((data) => {
+      if (data && typeof data.totalOffScreenMs === 'number') {
+        cumulativeOffScreenMsRef.current = data.totalOffScreenMs;
+      }
+    }).catch(() => {});
+  }, [examCode, sbd]);
 
   // Monitor Fullscreen Status
   useEffect(() => {
@@ -176,18 +196,74 @@ export const ProctoringMonitor: React.FC<ProctoringMonitorProps> = ({
     };
 
     const handleWindowBlur = () => {
+      const now = Date.now();
+      if (offScreenStartTimeRef.current === 0) {
+        offScreenStartTimeRef.current = now;
+      }
+
+      // Track micro-switch timestamp in sliding 30-second window
+      rapidSwitchTimestampsRef.current = rapidSwitchTimestampsRef.current
+        .filter(t => now - t < 30000)
+        .concat(now);
+
+      // Rapid Micro-Switching Detection: >= 3 switches in 30 seconds
+      if (rapidSwitchTimestampsRef.current.length >= 3) {
+        if (now - lastRapidSwitchWarningTimeRef.current >= 8000) {
+          lastRapidSwitchWarningTimeRef.current = now;
+          recordViolation(`Phát hiện chuyển đổi tab vi mô liên tục (${rapidSwitchTimestampsRef.current.length} lần/30s)`);
+        }
+      }
+
+      if (onProctoringMetricsChange) {
+        onProctoringMetricsChange({
+          violationCount,
+          cumulativeOffScreenSeconds: Math.round(cumulativeOffScreenMsRef.current / 1000),
+          rapidSwitchCount: rapidSwitchTimestampsRef.current.length
+        });
+      }
+
       triggerBlurGracePeriod();
     };
 
     const handleWindowFocus = () => {
       cancelBlurGraceTimer();
+      const now = Date.now();
+      if (offScreenStartTimeRef.current > 0) {
+        const elapsed = now - offScreenStartTimeRef.current;
+        offScreenStartTimeRef.current = 0;
+        cumulativeOffScreenMsRef.current += elapsed;
+
+        // Persist cumulative data immediately
+        saveCumulativeProctoringData(examCode, sbd, {
+          totalOffScreenMs: cumulativeOffScreenMsRef.current,
+          rapidSwitchCount: rapidSwitchTimestampsRef.current.length,
+          lastUpdated: new Date().toISOString()
+        }).catch(() => {});
+
+        // Cumulative threshold check (6.0 seconds cumulative across the entire exam)
+        if (cumulativeOffScreenMsRef.current >= 6000) {
+          if (now - lastCumulativeWarningTimeRef.current >= 10000) {
+            lastCumulativeWarningTimeRef.current = now;
+            const totalSec = (cumulativeOffScreenMsRef.current / 1000).toFixed(1);
+            recordViolation(`Tổng thời gian tích lũy rời màn hình vượt giới hạn an toàn (${totalSec}s / 6s)`);
+          }
+        }
+
+        if (onProctoringMetricsChange) {
+          onProctoringMetricsChange({
+            violationCount,
+            cumulativeOffScreenSeconds: Math.round(cumulativeOffScreenMsRef.current / 1000),
+            rapidSwitchCount: rapidSwitchTimestampsRef.current.length
+          });
+        }
+      }
     };
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        triggerBlurGracePeriod();
+        handleWindowBlur();
       } else {
-        cancelBlurGraceTimer();
+        handleWindowFocus();
       }
     };
 

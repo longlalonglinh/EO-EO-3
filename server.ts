@@ -1009,6 +1009,10 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
         writing_status: 'PENDING_TEACHER',
         submitted_at: timestamp,
         violations_count: payload.violations_count || 0,
+        cumulative_off_screen_seconds: payload.cumulative_off_screen_seconds || 0,
+        switch_count: payload.switch_count || 0,
+        sealed_token: payload.sealed_token || '',
+        offline_receipt_code: payload.offline_receipt_code || '',
         server_authoritative: true
       };
 

@@ -16,7 +16,12 @@ import {
   Filter, 
   Check,
   HelpCircle,
-  Lightbulb
+  Lightbulb,
+  Download,
+  RefreshCw,
+  Wifi,
+  WifiOff,
+  ShieldCheck
 } from 'lucide-react';
 import { SubmissionResponse, ExamData } from '../../types';
 import { GeminiAnalysisModal } from './Practice/GeminiAnalysisModal';
@@ -30,6 +35,7 @@ interface ResultPageProps {
   writingTask2?: string;
   onRestartPractice?: () => void;
   onReturnHome?: () => void;
+  onRetrySync?: () => Promise<void>;
 }
 
 export const ResultPage: React.FC<ResultPageProps> = ({
@@ -40,7 +46,8 @@ export const ResultPage: React.FC<ResultPageProps> = ({
   writingTask1 = '',
   writingTask2 = '',
   onRestartPractice,
-  onReturnHome
+  onReturnHome,
+  onRetrySync
 }) => {
   const [showDetailedReview, setShowDetailedReview] = useState(false);
   const [activeReviewTab, setActiveReviewTab] = useState<'listening' | 'reading' | 'writing'>('listening');
@@ -49,6 +56,52 @@ export const ResultPage: React.FC<ResultPageProps> = ({
   // AI Remediation Modal State
   const [selectedSentenceForAI, setSelectedSentenceForAI] = useState<string | null>(null);
   const [selectedWordForAI, setSelectedWordForAI] = useState<string | undefined>(undefined);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
+
+  const isOffline = !!result.is_offline_pending || result.sync_status === 'QUEUED_OFFLINE';
+
+  const handleEmergencyExport = () => {
+    const exportData = {
+      submission_id: result.submission_id,
+      sbd: result.sbd,
+      exam_code: result.exam_code,
+      submitted_at: result.submitted_at || new Date().toISOString(),
+      sealed_token: result.sealed_token,
+      offline_receipt_code: result.offline_receipt_code,
+      sync_status: result.sync_status || 'QUEUED_OFFLINE',
+      user_answers: userAnswers,
+      writing_task1: writingTask1,
+      writing_task2: writingTask2,
+      raw_scores: {
+        listening: result.listening_raw_score,
+        reading: result.reading_raw_score
+      }
+    };
+
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `IELTS_SUBMISSION_${result.exam_code}_${result.sbd}_${result.submission_id}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    setSyncFeedback(null);
+    try {
+      if (onRetrySync) {
+        await onRetrySync();
+        setSyncFeedback('✅ Đã yêu cầu đồng bộ máy chủ thành công!');
+      }
+    } catch (e: any) {
+      setSyncFeedback('⚠️ Chưa thể kết nối máy chủ. Dữ liệu vẫn được bảo lưu an toàn ngoại tuyến.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const detailedResults = result.detailed_results || {};
 
@@ -98,18 +151,33 @@ export const ResultPage: React.FC<ResultPageProps> = ({
 
         <div className="relative z-10 space-y-4">
           <div className="flex flex-wrap items-center justify-center gap-2">
-            <div className="inline-flex items-center space-x-2 px-4 py-1.5 bg-emerald-500/90 text-white rounded-full border border-emerald-300 text-xs font-black uppercase tracking-wider backdrop-blur-md shadow-lg">
-              <CheckCircle2 className="w-4 h-4 text-white" />
-              <span>TRẠNG THÁI: ĐÃ NỘP BÀI (TURNED IN / SUBMITTED)</span>
-            </div>
-            <div className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white/20 text-white rounded-full border border-white/30 text-xs font-bold uppercase tracking-wider backdrop-blur-md">
-              <Sparkles className="w-3.5 h-3.5 text-purple-200" />
-              <span>SERVER AUTHORITATIVE GRADED</span>
-            </div>
+            {isOffline ? (
+              <>
+                <div className="inline-flex items-center space-x-2 px-4 py-1.5 bg-amber-500/90 text-white rounded-full border border-amber-300 text-xs font-black uppercase tracking-wider backdrop-blur-md shadow-lg">
+                  <ShieldCheck className="w-4 h-4 text-white" />
+                  <span>TRẠNG THÁI: ĐÃ NIÊM PHONG NGOẠI TUYẾN (SEALED OFFLINE)</span>
+                </div>
+                <div className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white/20 text-white rounded-full border border-white/30 text-xs font-bold uppercase tracking-wider backdrop-blur-md">
+                  <WifiOff className="w-3.5 h-3.5 text-amber-200" />
+                  <span>HÀNG ĐỢI ĐỒNG BỘ MÁY CHỦ (QUEUED)</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="inline-flex items-center space-x-2 px-4 py-1.5 bg-emerald-500/90 text-white rounded-full border border-emerald-300 text-xs font-black uppercase tracking-wider backdrop-blur-md shadow-lg">
+                  <CheckCircle2 className="w-4 h-4 text-white" />
+                  <span>TRẠNG THÁI: ĐÃ NỘP BÀI (TURNED IN / SUBMITTED)</span>
+                </div>
+                <div className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white/20 text-white rounded-full border border-white/30 text-xs font-bold uppercase tracking-wider backdrop-blur-md">
+                  <Sparkles className="w-3.5 h-3.5 text-purple-200" />
+                  <span>SERVER AUTHORITATIVE GRADED</span>
+                </div>
+              </>
+            )}
           </div>
 
           <h1 className="text-3xl md:text-4xl font-black text-white">
-            BÀI THI ĐÃ NỘP &amp; CHẤM ĐIỂM THÀNH CÔNG
+            {isOffline ? 'BÀI THI ĐÃ ĐƯỢC NIÊM PHONG AN TOÀN' : 'BÀI THI ĐÃ NỘP & CHẤM ĐIỂM THÀNH CÔNG'}
           </h1>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <p className="text-sm text-purple-100 font-medium">
@@ -124,6 +192,71 @@ export const ResultPage: React.FC<ResultPageProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Offline Sealed Receipt & Emergency Export Card */}
+      {isOffline && (
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-3xl p-6 shadow-xl space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-amber-700 shrink-0" />
+                <h3 className="text-base font-black text-amber-950">
+                  BÀI THI ĐÃ ĐƯỢC NIÊM PHONG NGOẠI TUYẾN VÀO INDEXEDDB
+                </h3>
+              </div>
+              <p className="text-xs text-amber-900 leading-relaxed max-w-2xl">
+                Do kết nối mạng máy trạm bị gián đoạn tại thời điểm nộp bài, hệ thống đã mã hóa và niêm phong toàn bộ dữ liệu bài làm vào kho lưu trữ IndexedDB an toàn. Ngay khi có mạng, hàng đợi Background Sync sẽ tự động đẩy bài thi lên máy chủ để cấp chứng chỉ chính thức.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+              <button
+                type="button"
+                onClick={handleManualSync}
+                disabled={isSyncing}
+                className="px-4 py-2 bg-amber-700 hover:bg-amber-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                <span>{isSyncing ? 'Đang đồng bộ...' : 'Thử đồng bộ lại ngay'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleEmergencyExport}
+                className="px-4 py-2 bg-white hover:bg-amber-100 text-amber-950 border border-amber-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm cursor-pointer"
+                title="Tải tệp JSON chứa toàn bộ bài làm và mã niêm phong"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Xuất tệp nộp bài khẩn cấp (.json)</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white/80 border border-amber-200 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-amber-900">Mã biên lai niêm phong:</span>
+              <code className="font-mono font-black text-amber-950 bg-amber-100 px-2 py-0.5 rounded">
+                {result.offline_receipt_code || 'SEALED-OFFLINE'}
+              </code>
+            </div>
+
+            {result.sealed_token && (
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-amber-900">Token bảo mật:</span>
+                <code className="font-mono text-[11px] text-amber-950 bg-amber-100 px-2 py-0.5 rounded max-w-[200px] truncate" title={result.sealed_token}>
+                  {result.sealed_token}
+                </code>
+              </div>
+            )}
+          </div>
+
+          {syncFeedback && (
+            <div className="text-xs font-bold p-2.5 rounded-xl bg-white border border-amber-200 text-amber-950 animate-fadeIn">
+              {syncFeedback}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Raw & Band Score Display Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">

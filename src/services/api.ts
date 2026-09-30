@@ -18,6 +18,9 @@ import {
   deleteExamFromIndexedDB,
   saveSubmissionToIndexedDB, 
   getAllSubmissionsFromIndexedDB, 
+  savePendingSubmissionToIndexedDB,
+  getPendingSubmissionsFromIndexedDB,
+  removePendingSubmissionFromIndexedDB,
   saveCheatLogToIndexedDB, 
   getAllCheatLogsFromIndexedDB,
   savePracticeDecksToIndexedDB,
@@ -464,6 +467,13 @@ export async function submitExamPayload(
     ...(payload.reading_answers || {})
   };
 
+  const answersCount = Object.keys(userAnswers).length;
+  const rawDigest = `${submissionId}:${payload.sbd}:${payload.exam_code}:${answersCount}:${timestamp}`;
+  const sealedToken = typeof btoa !== 'undefined'
+    ? `SEALED-IELTS-${btoa(rawDigest).replace(/[^a-zA-Z0-9]/g, '').slice(0, 24)}`
+    : `SEALED-IELTS-${Date.now().toString(36).toUpperCase()}`;
+  const receiptCode = `RCPT-${(payload.exam_code || 'EXAM').toUpperCase()}-${(payload.sbd || 'USER').toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
+
   // 0. Attempt Authoritative Server-Side Grading & Certified Submission first
   try {
     const serverGradeRes = await fetch('/api/submissions/grade-and-submit', {
@@ -473,7 +483,9 @@ export async function submitExamPayload(
         ...payload,
         answers: userAnswers,
         submission_id: submissionId,
-        submission_type: submissionType
+        submission_type: submissionType,
+        sealed_token: sealedToken,
+        offline_receipt_code: receiptCode
       })
     });
     if (serverGradeRes.ok) {
@@ -482,7 +494,17 @@ export async function submitExamPayload(
         const sub = serverData.submission;
         
         // Save authoritative submission to IndexedDB and LocalStorage
-        await saveSubmissionToIndexedDB(sub);
+        await saveSubmissionToIndexedDB({
+          ...sub,
+          is_offline_pending: false,
+          is_server_certified: true,
+          sync_status: 'CERTIFIED_ONLINE',
+          sealed_token: sub.sealed_token || sealedToken,
+          offline_receipt_code: sub.offline_receipt_code || receiptCode
+        });
+
+        await removePendingSubmissionFromIndexedDB(sub.submission_id);
+
         try {
           const existing = localStorage.getItem('ielts_student_submissions');
           const subsArr: SubmissionRecord[] = existing ? JSON.parse(existing) : [];
@@ -508,6 +530,11 @@ export async function submitExamPayload(
           detailed_results: sub.detailed_results,
           writing_status: sub.writing_status || 'PENDING_TEACHER',
           submitted_at: sub.submitted_at,
+          is_offline_pending: false,
+          is_server_certified: true,
+          sync_status: 'CERTIFIED_ONLINE',
+          sealed_token: sub.sealed_token || sealedToken,
+          offline_receipt_code: sub.offline_receipt_code || receiptCode,
           message: submissionType === 'TIMEOUT_FORCED' 
             ? 'Exam automatically submitted and certified by server due to session timeout.'
             : 'Exam officially submitted and graded authoritatively by server.'
@@ -580,9 +607,14 @@ export async function submitExamPayload(
     detailed_results: detailedResults,
     writing_status: 'PENDING_TEACHER',
     submitted_at: timestamp,
+    is_offline_pending: true,
+    is_server_certified: false,
+    sync_status: 'QUEUED_OFFLINE',
+    sealed_token: sealedToken,
+    offline_receipt_code: receiptCode,
     message: submissionType === 'TIMEOUT_FORCED' 
-      ? 'Exam automatically submitted due to session timeout.'
-      : 'Exam submitted successfully!'
+      ? 'Đã tự động niêm phong bài thi an toàn ngoại tuyến vào IndexedDB (Hết giờ). Đang chờ kết nối lại mạng để cấp chứng chỉ máy chủ.'
+      : 'Bài thi đã được niêm phong ngoại tuyến an toàn vào IndexedDB. Đang chờ kết nối lại mạng để tự động đồng bộ.'
   };
 
   const record: SubmissionRecord = {
@@ -605,11 +637,30 @@ export async function submitExamPayload(
     detailed_results: detailedResults,
     writing_status: 'PENDING_TEACHER',
     submitted_at: timestamp,
-    violations_count: payload.violations_count
+    violations_count: payload.violations_count,
+    cumulative_off_screen_seconds: payload.cumulative_off_screen_seconds,
+    switch_count: payload.switch_count,
+    is_offline_pending: true,
+    is_server_certified: false,
+    sync_status: 'QUEUED_OFFLINE',
+    sealed_token: sealedToken,
+    offline_receipt_code: receiptCode
   };
 
   // 1. Immediate persistence to IndexedDB
   await saveSubmissionToIndexedDB(record);
+
+  // 1.5. Queue to IndexedDB Background Sync Queue
+  await savePendingSubmissionToIndexedDB({
+    ...payload,
+    submission_id: submissionId,
+    submission_type: submissionType,
+    answers: userAnswers,
+    sealed_token: sealedToken,
+    offline_receipt_code: receiptCode,
+    is_offline_pending: true,
+    submitted_at: timestamp
+  });
 
   // 2. Persistence to LocalStorage
   try {
@@ -676,6 +727,112 @@ export async function submitExamPayload(
   }
 
   return responseObj;
+}
+
+/**
+ * Background Sync Queue Processor:
+ * Attempts to push any offline pending submissions to /api/submissions/grade-and-submit
+ * and sync to Google Apps Script. Updates local IndexedDB records when certified.
+ */
+export async function syncPendingSubmissions(gasUrl?: string): Promise<{
+  attempted: number;
+  synced: number;
+  remaining: number;
+  results: SubmissionResponse[];
+}> {
+  const pending = await getPendingSubmissionsFromIndexedDB();
+  if (!pending || pending.length === 0) {
+    return { attempted: 0, synced: 0, remaining: 0, results: [] };
+  }
+
+  const results: SubmissionResponse[] = [];
+  let syncedCount = 0;
+
+  for (const item of pending) {
+    try {
+      // 1. Try authoritative server certification first
+      const serverRes = await fetch('/api/submissions/grade-and-submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(item)
+      });
+
+      if (serverRes.ok) {
+        const data = await serverRes.json();
+        if (data.success && data.submission) {
+          const certifiedSub = data.submission;
+          await saveSubmissionToIndexedDB({
+            ...certifiedSub,
+            is_offline_pending: false,
+            is_server_certified: true,
+            sync_status: 'CERTIFIED_ONLINE'
+          });
+          if (item.submission_id) {
+            await removePendingSubmissionFromIndexedDB(item.submission_id);
+          }
+          syncedCount++;
+
+          // Update LocalStorage cache
+          try {
+            const existing = localStorage.getItem('ielts_student_submissions');
+            const subsArr: SubmissionRecord[] = existing ? JSON.parse(existing) : [];
+            const updated = subsArr.map(s => s.submission_id === certifiedSub.submission_id ? certifiedSub : s);
+            localStorage.setItem('ielts_student_submissions', JSON.stringify(deduplicateSubmissions(updated)));
+          } catch (e) {}
+
+          results.push({
+            success: true,
+            submission_id: certifiedSub.submission_id,
+            sbd: certifiedSub.sbd,
+            exam_code: certifiedSub.exam_code,
+            submission_type: certifiedSub.submission_type,
+            listening_raw_score: certifiedSub.listening_raw_score,
+            listening_max_score: certifiedSub.listening_max_score,
+            listening_band: certifiedSub.listening_band,
+            reading_raw_score: certifiedSub.reading_raw_score,
+            reading_max_score: certifiedSub.reading_max_score,
+            reading_band: certifiedSub.reading_band,
+            overall_band: certifiedSub.overall_band,
+            detailed_results: certifiedSub.detailed_results,
+            writing_status: certifiedSub.writing_status || 'PENDING_TEACHER',
+            submitted_at: certifiedSub.submitted_at,
+            is_offline_pending: false,
+            is_server_certified: true,
+            sync_status: 'CERTIFIED_ONLINE',
+            sealed_token: certifiedSub.sealed_token,
+            offline_receipt_code: certifiedSub.offline_receipt_code,
+            message: 'Đồng bộ bài thi lên máy chủ thành công!'
+          });
+          continue;
+        }
+      }
+
+      // 2. If server endpoint is unreachable, but GAS URL is provided, try direct GAS push
+      if (gasUrl && !gasUrl.includes('AKfycbx_mock') && !gasUrl.includes('mock_ielts')) {
+        const gasRes = await fetch(gasUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'submitExam', ...item })
+        });
+        if (gasRes.ok) {
+          if (item.submission_id) {
+            await removePendingSubmissionFromIndexedDB(item.submission_id);
+          }
+          syncedCount++;
+        }
+      }
+    } catch (e) {
+      console.warn('Background sync failed for item:', item.submission_id, e);
+    }
+  }
+
+  const remainingQueue = await getPendingSubmissionsFromIndexedDB();
+  return {
+    attempted: pending.length,
+    synced: syncedCount,
+    remaining: remainingQueue.length,
+    results
+  };
 }
 
 /**

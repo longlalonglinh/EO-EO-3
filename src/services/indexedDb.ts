@@ -1,4 +1,4 @@
-import { ExamData, SubmissionRecord, CheatLog } from '../types';
+import { ExamData, SubmissionRecord, CheatLog, SubmissionPayload } from '../types';
 import { CustomPracticeDeck } from '../types/practice';
 
 const DB_NAME = 'ielts_offline_vault_db';
@@ -468,4 +468,95 @@ export async function clearCurrentAnswersFromIndexedDB(
     });
   } catch (err) {}
 }
+
+/**
+ * Save pending offline submission to IndexedDB sync queue
+ */
+export async function savePendingSubmissionToIndexedDB(payload: SubmissionPayload): Promise<void> {
+  const queueKey = 'PENDING_SUBMISSIONS_SYNC_QUEUE';
+  const existing = await getKeyValue<SubmissionPayload[]>(queueKey) || [];
+  const filtered = existing.filter(item => item.submission_id !== payload.submission_id);
+  filtered.push(payload);
+  await saveKeyValue(queueKey, filtered);
+
+  // Dual redundancy with LocalStorage
+  try {
+    localStorage.setItem('ielts_pending_submissions', JSON.stringify(filtered));
+  } catch (e) {}
+}
+
+/**
+ * Retrieve all pending offline submissions from IndexedDB queue
+ */
+export async function getPendingSubmissionsFromIndexedDB(): Promise<SubmissionPayload[]> {
+  const queueKey = 'PENDING_SUBMISSIONS_SYNC_QUEUE';
+  const fromDb = await getKeyValue<SubmissionPayload[]>(queueKey);
+  if (Array.isArray(fromDb) && fromDb.length > 0) {
+    return fromDb;
+  }
+  try {
+    const raw = localStorage.getItem('ielts_pending_submissions');
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return [];
+}
+
+/**
+ * Remove a resolved submission from the pending queue
+ */
+export async function removePendingSubmissionFromIndexedDB(submissionId: string): Promise<void> {
+  const queueKey = 'PENDING_SUBMISSIONS_SYNC_QUEUE';
+  const existing = await getKeyValue<SubmissionPayload[]>(queueKey) || [];
+  const filtered = existing.filter(item => item.submission_id !== submissionId);
+  await saveKeyValue(queueKey, filtered);
+
+  try {
+    localStorage.setItem('ielts_pending_submissions', JSON.stringify(filtered));
+  } catch (e) {}
+}
+
+export interface CumulativeProctoringRecord {
+  totalOffScreenMs: number;
+  rapidSwitchCount: number;
+  lastUpdated: string;
+}
+
+export async function saveCumulativeProctoringData(
+  examCode: string,
+  candidateId: string,
+  data: CumulativeProctoringRecord
+): Promise<void> {
+  const cleanCode = (examCode || 'EXAM').toUpperCase().replace(/[^A-Z0-9]/g, '_');
+  const cleanId = (candidateId || 'CANDIDATE').toUpperCase().replace(/[^A-Z0-9]/g, '_');
+  const key = `PROCTOR_CUMULATIVE_${cleanCode}_${cleanId}`;
+
+  try {
+    sessionStorage.setItem(key, JSON.stringify(data));
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (e) {}
+
+  await saveKeyValue(key, data);
+}
+
+export async function getCumulativeProctoringData(
+  examCode: string,
+  candidateId: string
+): Promise<CumulativeProctoringRecord | null> {
+  const cleanCode = (examCode || 'EXAM').toUpperCase().replace(/[^A-Z0-9]/g, '_');
+  const cleanId = (candidateId || 'CANDIDATE').toUpperCase().replace(/[^A-Z0-9]/g, '_');
+  const key = `PROCTOR_CUMULATIVE_${cleanCode}_${cleanId}`;
+
+  const fromDb = await getKeyValue<CumulativeProctoringRecord>(key);
+  if (fromDb && typeof fromDb.totalOffScreenMs === 'number') {
+    return fromDb;
+  }
+
+  try {
+    const raw = sessionStorage.getItem(key) || localStorage.getItem(key);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+
+  return null;
+}
+
 

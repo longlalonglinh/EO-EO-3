@@ -280,6 +280,13 @@ export interface SubmissionRecord {
   created_at?: string;
   submission_time?: string;
   violations_count?: number;
+  cumulative_off_screen_seconds?: number;
+  switch_count?: number;
+  sealed_token?: string;
+  offline_receipt_code?: string;
+  is_offline_pending?: boolean;
+  is_server_certified?: boolean;
+  sync_status?: 'CERTIFIED_ONLINE' | 'QUEUED_OFFLINE' | 'SYNCING';
 }
 
 // Alias
@@ -299,6 +306,11 @@ export interface SubmissionPayload {
   writing_task1?: string;
   writing_task2?: string;
   violations_count?: number;
+  cumulative_off_screen_seconds?: number;
+  switch_count?: number;
+  sealed_token?: string;
+  offline_receipt_code?: string;
+  is_offline_pending?: boolean;
   violation_logs?: CheatLog[];
   cheat_logs?: CheatLog[];
   submitted_at?: string;
@@ -332,6 +344,11 @@ export interface SubmissionResponse {
   submitted_at?: string;
   created_at?: string;
   message?: string;
+  is_offline_pending?: boolean;
+  is_server_certified?: boolean;
+  sealed_token?: string;
+  offline_receipt_code?: string;
+  sync_status?: 'CERTIFIED_ONLINE' | 'QUEUED_OFFLINE' | 'SYNCING';
 }
 
 export interface CheatLog {

@@ -44,10 +44,15 @@ import {
   getAudioProgressFromIndexedDB,
   saveCurrentAnswersToIndexedDB,
   getCurrentAnswersFromIndexedDB,
+  savePendingSubmissionToIndexedDB,
+  getPendingSubmissionsFromIndexedDB,
+  removePendingSubmissionFromIndexedDB,
+  saveCumulativeProctoringData,
+  getCumulativeProctoringData,
   saveKeyValue,
   getKeyValue
 } from '../services/indexedDb';
-import { ExamData, SubmissionRecord, CheatLog } from '../types';
+import { ExamData, SubmissionRecord, CheatLog, SubmissionPayload } from '../types';
 
 describe('indexedDb.ts - Unit & Integration Tests', () => {
   beforeEach(async () => {
@@ -244,6 +249,53 @@ describe('indexedDb.ts - Unit & Integration Tests', () => {
       await saveKeyValue('test_key', { data: 'test_value' });
       const value = await getKeyValue<{ data: string }>('test_key');
       expect(value?.data).toBe('test_value');
+    });
+  });
+
+  describe('8. Offline Submission Sync Queue (Deadline Auto-Submit Resilience)', () => {
+    it('should queue pending offline submissions and support removal after certification', async () => {
+      const mockPayload: SubmissionPayload = {
+        submission_id: 'pending_sub_001',
+        sbd: 'CAND_OFFLINE_01',
+        exam_code: 'IELTS01',
+        test_mode: 'TEST',
+        submission_type: 'TIMEOUT_FORCED',
+        answers: { L1: 'APPLE', R1: 'TRUE' },
+        sealed_token: 'SEALED-IELTS-TOKEN-12345',
+        offline_receipt_code: 'RCPT-IELTS01-CAND_OFFLINE_01-ABCDE',
+        is_offline_pending: true,
+        submitted_at: new Date().toISOString()
+      };
+
+      await savePendingSubmissionToIndexedDB(mockPayload);
+      const pendingList = await getPendingSubmissionsFromIndexedDB();
+
+      expect(pendingList.length).toBeGreaterThanOrEqual(1);
+      const matched = pendingList.find(p => p.submission_id === 'pending_sub_001');
+      expect(matched).toBeDefined();
+      expect(matched?.offline_receipt_code).toBe('RCPT-IELTS01-CAND_OFFLINE_01-ABCDE');
+      expect(matched?.is_offline_pending).toBe(true);
+
+      // Now remove after server certification
+      await removePendingSubmissionFromIndexedDB('pending_sub_001');
+      const updatedList = await getPendingSubmissionsFromIndexedDB();
+      const afterRemoval = updatedList.find(p => p.submission_id === 'pending_sub_001');
+      expect(afterRemoval).toBeUndefined();
+    });
+  });
+
+  describe('9. Cumulative Proctoring Data Persistence (Grace Period Exploitation Resilience)', () => {
+    it('should persist and retrieve cumulative off-screen metrics across session restarts', async () => {
+      await saveCumulativeProctoringData('IELTS01', 'CAND_01', {
+        totalOffScreenMs: 4500,
+        rapidSwitchCount: 3,
+        lastUpdated: new Date().toISOString()
+      });
+
+      const metrics = await getCumulativeProctoringData('IELTS01', 'CAND_01');
+      expect(metrics).not.toBeNull();
+      expect(metrics?.totalOffScreenMs).toBe(4500);
+      expect(metrics?.rapidSwitchCount).toBe(3);
     });
   });
 });
