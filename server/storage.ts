@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import { DEFAULT_EXAMS } from '../src/data/defaultExams';
 
 const DATA_DIR = path.join(process.cwd(), 'server_data');
 
@@ -10,6 +9,7 @@ if (!fs.existsSync(DATA_DIR)) {
 }
 
 const EXAMS_FILE = path.join(DATA_DIR, 'exams.json');
+const STARTER_PACK_FILE = path.join(DATA_DIR, 'starter_pack.json');
 const SUBMISSIONS_FILE = path.join(DATA_DIR, 'submissions.json');
 const CHEAT_LOGS_FILE = path.join(DATA_DIR, 'cheat_logs.json');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
@@ -51,28 +51,28 @@ export function getStoredExams(): any[] {
   if (cachedExams) return cachedExams;
 
   const examsFromFile = safeReadJson<any[]>(EXAMS_FILE, []);
-  // Initialize with built-in exams if empty
-  if (!examsFromFile || examsFromFile.length === 0) {
-    cachedExams = [...DEFAULT_EXAMS];
-    safeWriteJson(EXAMS_FILE, cachedExams);
-  } else {
-    // Ensure all DEFAULT_EXAMS exist in the file
-    const existingCodes = new Set(examsFromFile.map((e: any) => (e.exam_code || '').toUpperCase()));
-    let updated = false;
-    DEFAULT_EXAMS.forEach((defExam) => {
-      const code = (defExam.exam_code || '').toUpperCase();
-      if (!existingCodes.has(code)) {
-        examsFromFile.push(defExam);
-        updated = true;
-      }
-    });
-    cachedExams = examsFromFile;
-    if (updated) {
-      safeWriteJson(EXAMS_FILE, cachedExams);
+  cachedExams = Array.isArray(examsFromFile) ? examsFromFile : [];
+  return cachedExams;
+}
+
+export function importStarterPack(): { imported: number; exams: any[] } {
+  const starter = safeReadJson<any[]>(STARTER_PACK_FILE, []);
+  if (!starter || starter.length === 0) return { imported: 0, exams: [] };
+
+  const current = getStoredExams();
+  const existingCodes = new Set(current.map((e: any) => (e.exam_code || '').toUpperCase()));
+  let count = 0;
+  for (const ex of starter) {
+    const code = (ex.exam_code || '').toUpperCase();
+    if (code && !existingCodes.has(code)) {
+      current.push(ex);
+      existingCodes.add(code);
+      count++;
     }
   }
-
-  return cachedExams;
+  cachedExams = current;
+  safeWriteJson(EXAMS_FILE, current);
+  return { imported: count, exams: current };
 }
 
 export function getStoredExam(examCode: string): any | null {

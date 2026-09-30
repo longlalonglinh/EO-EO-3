@@ -8,6 +8,7 @@ import {
   getStoredExam, 
   saveStoredExam, 
   deleteStoredExam,
+  importStarterPack,
   getStoredSubmissions, 
   saveStoredSubmission, 
   updateStoredWritingScore,
@@ -909,8 +910,23 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
   });
 
   app.delete('/api/exams/:code', (req, res) => {
-    const success = deleteStoredExam(req.params.code);
-    res.json({ success });
+    const code = req.params.code;
+    const success = deleteStoredExam(code);
+    if (success) {
+      return res.json({ success: true, message: `Exam [${code}] deleted successfully from server storage.` });
+    } else {
+      return res.status(404).json({ success: false, error: `Exam [${code}] not found to delete.` });
+    }
+  });
+
+  // Admin seed starter pack on demand
+  app.post('/api/admin/seed-starter', (req, res) => {
+    try {
+      const outcome = importStarterPack();
+      res.json({ success: true, imported: outcome.imported, count: outcome.exams.length });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
   });
 
   // Centralized Submissions API

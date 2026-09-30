@@ -16,8 +16,7 @@ import {
   RotateCcw,
   Sparkles
 } from 'lucide-react';
-import { ExamData, Question, ReadingPassageItem, QuestionType, IELTSQuestionType, canonicalizeQuestionType } from '../../types';
-import { DEFAULT_EXAMS } from '../../data/defaultExams';
+import { ExamData, Question, ReadingPassageItem, QuestionType, IELTSQuestionType, canonicalizeQuestionType, SkillType, ExamType } from '../../types';
 import { saveExamToIndexedDB } from '../../services/indexedDb';
 import { Task1ImageUploader } from './Task1ImageUploader';
 import { QuestionEditorItem } from './QuestionEditorItem';
@@ -55,6 +54,8 @@ export const examZodSchema = z.object({
   exam_code: z.string().min(1, 'Please enter exam code (e.g. READ01, TEST01)').max(30),
   title: z.string().min(2, 'Test title must have at least 2 characters'),
   test_type: z.enum(['TEST', 'PRACTICE']),
+  exam_type: z.enum(['one_skill', 'two_skills', 'full_test']).optional().default('full_test'),
+  skills: z.array(z.enum(['listening', 'reading', 'writing'])).optional().default(['listening', 'reading', 'writing']),
   duration_mins: z.number().min(1, 'Minimum duration is 1 minute').max(360),
   listening_duration_mins: z.number().min(0).max(120).optional().default(35),
   reading_duration_mins: z.number().min(0).max(120).optional().default(60),
@@ -123,10 +124,26 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
       };
     });
 
+    const hasL = allListeningQs.length > 0;
+    const hasR = allReadingQs.length > 0;
+    const hasW = Boolean(data.writing_task1_prompt || data.writing_task2_prompt);
+    let detectedSkills: SkillType[] = data.skills || [];
+    if (detectedSkills.length === 0) {
+      if (hasL) detectedSkills.push('listening');
+      if (hasR) detectedSkills.push('reading');
+      if (hasW) detectedSkills.push('writing');
+      if (detectedSkills.length === 0) detectedSkills = ['listening', 'reading', 'writing'];
+    }
+    const detectedExamType: ExamType = data.exam_type || (
+      detectedSkills.length === 1 ? 'one_skill' : detectedSkills.length === 2 ? 'two_skills' : 'full_test'
+    );
+
     return {
       exam_code: data.exam_code || 'TEST01',
       title: data.title || 'IELTS Mock Test',
       test_type: data.test_type || 'TEST',
+      exam_type: detectedExamType,
+      skills: detectedSkills,
       duration_mins: data.duration_mins || 150,
       listening_duration_mins: data.listening_duration_mins || 35,
       reading_duration_mins: data.reading_duration_mins || 60,
@@ -239,15 +256,18 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
       return;
     }
 
-    const includedSkills: string[] = [];
-    if (hasListening) includedSkills.push('Listening');
-    if (hasReading) includedSkills.push('Reading');
-    if (hasWriting) includedSkills.push('Writing');
+    const detectedSkills: SkillType[] = [];
+    if (hasListening) detectedSkills.push('listening');
+    if (hasReading) detectedSkills.push('reading');
+    if (hasWriting) detectedSkills.push('writing');
+    const detectedExamType: ExamType = detectedSkills.length === 1 ? 'one_skill' : detectedSkills.length === 2 ? 'two_skills' : 'full_test';
 
     const completeExam: ExamData = {
       exam_code: formData.exam_code.trim().toUpperCase(),
       title: formData.title,
       test_type: formData.test_type,
+      exam_type: formData.exam_type || detectedExamType,
+      skills: formData.skills && formData.skills.length > 0 ? formData.skills : detectedSkills,
       duration_mins: formData.duration_mins,
       listening_duration_mins: formData.listening_duration_mins,
       reading_duration_mins: formData.reading_duration_mins,
@@ -287,7 +307,8 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
     // 3. Callback to parent
     onSaveExam(completeExam);
 
-    setSaveSuccessMessage(`Successfully saved exam ${completeExam.exam_code} [${includedSkills.join(' + ')}]!`);
+    const skillsLabel = completeExam.skills?.join(' + ') || 'IELTS Test';
+    setSaveSuccessMessage(`Successfully saved exam ${completeExam.exam_code} [${skillsLabel}]!`);
     setTimeout(() => setSaveSuccessMessage(null), 4500);
   };
 
@@ -344,6 +365,8 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
     exam_code: examCode,
     title: 'New IELTS Test',
     test_type: 'TEST',
+    exam_type: 'full_test',
+    skills: ['listening', 'reading', 'writing'],
     duration_mins: 150,
     listening_duration_mins: 35,
     reading_duration_mins: 60,
@@ -487,49 +510,99 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-black text-purple-700 uppercase mr-1">One Skill:</span>
             <button
               type="button"
               onClick={() => {
+                setValue('exam_type', 'one_skill');
+                setValue('skills', ['reading']);
+                setValue('duration_mins', 60);
                 setActiveSection('reading');
-                setValue('duration_mins', 60);
               }}
               className="px-2.5 py-1 text-[11px] font-bold bg-white text-[#503A7A] hover:bg-purple-100 rounded-lg border border-purple-200 transition cursor-pointer shadow-2xs"
             >
-              📖 Reading Only (60m)
+              📖 Reading (60m)
             </button>
             <button
               type="button"
               onClick={() => {
-                setActiveSection('listening');
+                setValue('exam_type', 'one_skill');
+                setValue('skills', ['listening']);
                 setValue('duration_mins', 35);
+                setActiveSection('listening');
               }}
               className="px-2.5 py-1 text-[11px] font-bold bg-white text-[#503A7A] hover:bg-purple-100 rounded-lg border border-purple-200 transition cursor-pointer shadow-2xs"
             >
-              🎧 Listening Only (35m)
+              🎧 Listening (35m)
             </button>
             <button
               type="button"
               onClick={() => {
-                setActiveSection('writing');
+                setValue('exam_type', 'one_skill');
+                setValue('skills', ['writing']);
                 setValue('duration_mins', 60);
+                setActiveSection('writing');
               }}
               className="px-2.5 py-1 text-[11px] font-bold bg-white text-[#503A7A] hover:bg-purple-100 rounded-lg border border-purple-200 transition cursor-pointer shadow-2xs"
             >
-              ✍️ Writing Only (60m)
+              ✍️ Writing (60m)
+            </button>
+
+            <span className="text-[10px] font-black text-indigo-700 uppercase ml-2 mr-1">Two Skills:</span>
+            <button
+              type="button"
+              onClick={() => {
+                setValue('exam_type', 'two_skills');
+                setValue('skills', ['listening', 'reading']);
+                setValue('duration_mins', 95);
+                setActiveSection('listening');
+              }}
+              className="px-2.5 py-1 text-[11px] font-bold bg-indigo-50 text-indigo-900 hover:bg-indigo-100 rounded-lg border border-indigo-200 transition cursor-pointer shadow-2xs"
+            >
+              🎧+📖 Nghe &amp; Đọc (95m)
             </button>
             <button
               type="button"
               onClick={() => {
+                setValue('exam_type', 'two_skills');
+                setValue('skills', ['reading', 'writing']);
+                setValue('duration_mins', 120);
+                setActiveSection('reading');
+              }}
+              className="px-2.5 py-1 text-[11px] font-bold bg-indigo-50 text-indigo-900 hover:bg-indigo-100 rounded-lg border border-indigo-200 transition cursor-pointer shadow-2xs"
+            >
+              📖+✍️ Đọc &amp; Viết (120m)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setValue('exam_type', 'two_skills');
+                setValue('skills', ['listening', 'writing']);
+                setValue('duration_mins', 95);
+                setActiveSection('listening');
+              }}
+              className="px-2.5 py-1 text-[11px] font-bold bg-indigo-50 text-indigo-900 hover:bg-indigo-100 rounded-lg border border-indigo-200 transition cursor-pointer shadow-2xs"
+            >
+              🎧+✍️ Nghe &amp; Viết (95m)
+            </button>
+
+            <span className="text-[10px] font-black text-purple-900 uppercase ml-2 mr-1">Full:</span>
+            <button
+              type="button"
+              onClick={() => {
+                setValue('exam_type', 'full_test');
+                setValue('skills', ['listening', 'reading', 'writing']);
                 setValue('duration_mins', 155);
+                setActiveSection('reading');
               }}
               className="px-2.5 py-1 text-[11px] font-bold bg-purple-100 text-[#3C2A63] hover:bg-purple-200 rounded-lg border border-purple-300 transition cursor-pointer shadow-2xs"
             >
-              ✨ Full 3 Skills
+              ✨ Full 3 Kỹ Năng (155m)
             </button>
           </div>
         </div>
         <p className="text-[11px] text-[#6E5B8E] font-medium leading-relaxed">
-          💡 Teachers can create tests for individual skills or combine them freely. You can leave 1 or 2 skills blank, or create shorter tests with fewer questions.
+          💡 Hệ thống hỗ trợ bài thi linh hoạt: <strong>One Skill</strong> (chỉ Nghe, Đọc hoặc Viết), <strong>Two Skills</strong> (combo 2 kỹ năng chuyển tiếp có 60s nghỉ), hoặc <strong>Full Test</strong> (cả 3 kỹ năng chuẩn).
         </p>
       </div>
 

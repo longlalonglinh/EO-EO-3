@@ -145,6 +145,28 @@ export interface TableRow {
   cells: TableCell[];
 }
 
+export type SkillType = 'listening' | 'reading' | 'writing';
+export type ExamType = 'one_skill' | 'two_skills' | 'full_test';
+
+export interface WritingTask {
+  task_number: 1 | 2;
+  title?: string;
+  prompt: string;
+  image_url?: string;
+  min_words?: number;
+}
+
+export interface ExamSkillSection {
+  skill: SkillType;
+  title: string;
+  durationMinutes: number;
+  audioUrl?: string; // Required for listening
+  instruction?: string;
+  passages?: ReadingPassageItem[]; // For reading
+  tasks?: WritingTask[]; // For writing
+  questions?: Question[];
+}
+
 export interface TableData {
   title?: string;
   headers: string[]; // Column headers
@@ -182,6 +204,7 @@ export interface Question {
   acceptable_answers?: string[]; // Multiple accepted alternatives
   correct_answers_multi?: string[]; // e.g. ["B", "D"] for choose 2 out of 5
   explanation?: string;
+  evidence_quote?: string;
   max_score: number;
   image_url?: string;
 
@@ -201,8 +224,12 @@ export interface ReadingPassageItem {
 }
 
 export interface ExamData {
+  id?: string;
   exam_code: string;
   title: string;
+  exam_type?: ExamType; // 'one_skill' | 'two_skills' | 'full_test'
+  skills?: SkillType[]; // ['reading'] hoặc ['listening', 'reading'] hoặc ['listening', 'reading', 'writing']
+  sections?: ExamSkillSection[];
   test_type?: 'TEST' | 'PRACTICE';
   duration_mins?: number; // Total exam duration in minutes (default 120 or 150)
   listening_duration_mins?: number; // Default 30-40 mins

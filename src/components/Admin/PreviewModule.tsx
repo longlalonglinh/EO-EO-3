@@ -15,10 +15,21 @@ import {
   Image as ImageIcon,
   Sliders
 } from 'lucide-react';
-import { DEFAULT_EXAMS } from '../../data/defaultExams';
 import { VisualExamBuilder } from './VisualExamBuilder';
 import { saveExamToIndexedDB } from '../../services/indexedDb';
 import { saveExamToServerDb } from '../../services/api';
+
+const BLANK_TEMPLATE: ExamData = {
+  exam_code: 'NEW_EXAM',
+  title: 'New IELTS Test Paper',
+  exam_type: 'full_test',
+  skills: ['listening', 'reading', 'writing'],
+  duration_mins: 150,
+  passages: [
+    { passage_index: 1, title: 'Passage 1', text: '', questions: [] }
+  ],
+  questions: []
+};
 
 interface PreviewModuleProps {
   initialExamData?: ExamData;
@@ -31,7 +42,7 @@ export const PreviewModule: React.FC<PreviewModuleProps> = ({
   onSaveToGas,
   gasUrl
 }) => {
-  const currentInitial = initialExamData || (DEFAULT_EXAMS[0] as unknown as ExamData);
+  const currentInitial = initialExamData || BLANK_TEMPLATE;
   const [exam, setExam] = useState<ExamData>(currentInitial);
   const [activeTab, setActiveTab] = useState<'builder' | 'preview'>('builder');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');

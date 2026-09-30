@@ -9,7 +9,6 @@ import {
   Question
 } from '../types';
 import { extractQuestionsFromRawResponse } from './dbDiagnostics';
-import { DEFAULT_EXAMS } from '../data/defaultExams';
 import { CustomPracticeDeck, StudentProgressRecord } from '../types/practice';
 import { 
   saveExamToIndexedDB, 
@@ -939,16 +938,6 @@ export function standardizeExamData(rawExam: any, cleanCode: string): ExamData {
 export const examMemoryCache = new Map<string, ExamData>();
 const inFlightExamFetches = new Map<string, Promise<{ success: boolean; exam?: ExamData }>>();
 
-// Seed memory cache immediately with built-in default exams
-try {
-  DEFAULT_EXAMS.forEach((ex) => {
-    if (ex && ex.exam_code) {
-      const code = ex.exam_code.trim().toUpperCase();
-      examMemoryCache.set(code, standardizeExamData(ex, code));
-    }
-  });
-} catch (e) {}
-
 // Populate memory cache asynchronously from IndexedDB and LocalStorage in the background
 if (typeof window !== 'undefined') {
   setTimeout(async () => {
@@ -1101,17 +1090,6 @@ export function prefetchExam(
         }
       }
     } catch (e) {}
-
-    // 3. Check built-in default (STRICT exact code match only)
-    const foundDefault = DEFAULT_EXAMS.find(
-      (ex) => ex.exam_code.trim().toUpperCase() === cleanCode
-    );
-    if (foundDefault) {
-      const standardized = standardizeExamData(foundDefault, cleanCode);
-      examMemoryCache.set(cleanCode, standardized);
-      saveExamToIndexedDB(standardized).catch(() => {});
-      return { success: true, exam: standardized };
-    }
 
     // 4. Background fetch from GAS
     if (apiUrl && !apiUrl.includes('mock_ielts_exam_system_gas_url') && !apiUrl.includes('AKfycbx_mock')) {
@@ -1305,18 +1283,6 @@ export async function fetchExam(
     } catch (e) {
       console.warn('Error reading from localStorage:', e);
     }
-  }
-
-  // Tier 5: Built-In Default Exams Repository (~0.1ms) - STRICT EXACT MATCH ONLY
-  const foundDefault = DEFAULT_EXAMS.find(
-    (ex) => ex.exam_code.trim().toUpperCase() === cleanCode
-  );
-  if (foundDefault) {
-    const standardized = standardizeExamData(foundDefault, cleanCode);
-    examMemoryCache.set(cleanCode, standardized);
-    saveExamToIndexedDB(standardized).catch(() => {});
-    triggerBackgroundRevalidation(apiUrl, cleanCode);
-    return { success: true, exam: standardized, source: 'default' };
   }
 
   // Tier 6: Cache Miss or forceFresh - Direct targeted GAS Fetch (Single request, 4.5s timeout)
@@ -1683,6 +1649,73 @@ export async function syncServerWithGas(gasUrl?: string): Promise<{ success: boo
     return { success: data.success, message: data.message || data.error || 'Sync completed' };
   } catch (err: any) {
     return { success: false, message: 'Sync error: ' + err.message };
+  }
+}
+
+/**
+ * Delete an exam from both Server Database and Client IndexedDB / Local Cache
+ */
+export async function deleteExam(examCode: string): Promise<boolean> {
+  const cleanCode = (examCode || '').trim().toUpperCase();
+  if (!cleanCode) return false;
+
+  // 1. Remove from in-memory cache
+  examMemoryCache.delete(cleanCode);
+
+  // 2. Remove from IndexedDB
+  await deleteExamFromIndexedDB(cleanCode);
+
+  // 3. Remove from LocalStorage
+  try {
+    const raw = localStorage.getItem('ielts_saved_exams');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const filtered = parsed.filter((e: any) => (e.exam_code || '').trim().toUpperCase() !== cleanCode);
+        localStorage.setItem('ielts_saved_exams', JSON.stringify(filtered));
+      }
+    }
+  } catch (e) {}
+
+  // 4. Delete on server
+  try {
+    const res = await fetch(`/api/exams/${encodeURIComponent(cleanCode)}`, {
+      method: 'DELETE'
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn(`Could not delete exam [${cleanCode}] from server:`, e);
+    return false;
+  }
+}
+
+/**
+ * Direct lookup for an exam by code: returns exam if found, or null
+ */
+export async function getExamByCode(examCode: string): Promise<ExamData | null> {
+  const result = await fetchExam(DEFAULT_API_URL, examCode);
+  if (result.success && result.exam) {
+    return result.exam;
+  }
+  return null;
+}
+
+/**
+ * Admin utility: seed default starter pack into server database
+ */
+export async function seedStarterPack(): Promise<{ success: boolean; imported?: number; error?: string }> {
+  try {
+    const res = await fetch('/api/admin/seed-starter', {
+      method: 'POST'
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return { success: true, imported: data.imported };
+    }
+    const err = await res.json();
+    return { success: false, error: err.error || 'Failed to seed starter pack' };
+  } catch (e: any) {
+    return { success: false, error: e.message };
   }
 }
 

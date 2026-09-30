@@ -1,5 +1,4 @@
 import { ExamData, Question, QuestionType } from '../types';
-import { DEFAULT_EXAMS } from '../data/defaultExams';
 import { DEFAULT_API_URL } from './api';
 
 export interface DiagnosticStepResult {
@@ -332,14 +331,14 @@ export async function runDatabaseDiagnostics(
       parsedExamData = {
         exam_code: cleanCode,
         title: meta.title || `IELTS Academic Examination - ${cleanCode}`,
-        audio_url: meta.audio_url || DEFAULT_EXAMS[0].audio_url,
+        audio_url: meta.audio_url || '',
         listening_questions: questions.filter(q => q.section === 'listening'),
-        passage_title: meta.passage_title || meta.reading_passage_title || DEFAULT_EXAMS[0].passages?.[0]?.title || 'Reading Passage',
-        passage_text: meta.passage_text || meta.reading_passage || DEFAULT_EXAMS[0].passages?.[0]?.text || '',
-        passages: meta.passages || DEFAULT_EXAMS[0].passages,
+        passage_title: meta.passage_title || meta.reading_passage_title || 'Reading Passage',
+        passage_text: meta.passage_text || meta.reading_passage || '',
+        passages: meta.passages || [],
         reading_questions: questions.filter(q => q.section === 'reading'),
-        writing_task1_prompt: meta.writing_task1_prompt || DEFAULT_EXAMS[0].writing_task1_prompt,
-        writing_task2_prompt: meta.writing_task2_prompt || DEFAULT_EXAMS[0].writing_task2_prompt
+        writing_task1_prompt: meta.writing_task1_prompt || '',
+        writing_task2_prompt: meta.writing_task2_prompt || ''
       };
     } else {
       // 0 questions found! Let's diagnose why!
@@ -353,8 +352,7 @@ export async function runDatabaseDiagnostics(
       });
 
       fixes.push(`Check the 'QUESTIONS' tab in your Google Sheet: Does Column A (EXAM_CODE) contain rows with code '${cleanCode}'?`);
-      fixes.push(`Verify the tab name is uppercase 'QUESTIONS' or click "Seed Sample Exam to Google Sheets" to automatically populate standard test data.`);
-      fixes.push(`The testing engine will automatically engage the authentic built-in IELTS examination (${DEFAULT_EXAMS[0].exam_code}) as a safe offline fallback.`);
+      fixes.push(`Verify the tab name is uppercase 'QUESTIONS' or create an exam in Admin Visual Builder / Upload Module.`);
     }
   } else if (reachable) {
     steps.push({
@@ -370,17 +368,14 @@ export async function runDatabaseDiagnostics(
 
   // STEP 4: Fallback & Offline Resilience Readiness
   const s4Start = Date.now();
-  const fallbackExam = DEFAULT_EXAMS.find(e => e.exam_code.toUpperCase() === cleanCode) || DEFAULT_EXAMS[0];
-  if (fallbackExam) {
-    steps.push({
-      id: 'step_fallback',
-      name: 'Offline Fallback System Resilience',
-      status: 'SUCCESS',
-      title: 'Standard IELTS Fallback Bank Ready',
-      message: `Preloaded ${fallbackExam.questions.length} authentic questions across 3 skills (Listening, Reading, Writing) for code [${fallbackExam.exam_code}]. Candidates can always take exams even without network access.`,
-      durationMs: Date.now() - s4Start
-    });
-  }
+  steps.push({
+    id: 'step_fallback',
+    name: 'Storage & Resilience Readiness',
+    status: 'SUCCESS',
+    title: 'IndexedDB & Server Storage Ready',
+    message: `System operates on persistent storage (Server exams.json and Client IndexedDB). If exam code exists, candidates can securely take the test.`,
+    durationMs: Date.now() - s4Start
+  });
 
   // Calculate Overall Status
   let overallStatus: 'OPTIMAL' | 'DEGRADED' | 'FAILED' = 'OPTIMAL';
@@ -429,18 +424,14 @@ export async function seedExamToGoogleSheets(
     };
   }
 
-  const exam = examToSeed || {
-    exam_code: 'TEST01',
-    title: DEFAULT_EXAMS[0].title,
-    audio_url: DEFAULT_EXAMS[0].audio_url,
-    listening_questions: DEFAULT_EXAMS[0].questions.filter(q => q.section === 'listening'),
-    passage_title: DEFAULT_EXAMS[0].passages?.[0]?.title || 'Passage 1',
-    passage_text: DEFAULT_EXAMS[0].passages?.[0]?.text || '',
-    passages: DEFAULT_EXAMS[0].passages,
-    reading_questions: DEFAULT_EXAMS[0].questions.filter(q => q.section === 'reading'),
-    writing_task1_prompt: DEFAULT_EXAMS[0].writing_task1_prompt,
-    writing_task2_prompt: DEFAULT_EXAMS[0].writing_task2_prompt
-  };
+  if (!examToSeed) {
+    return {
+      success: false,
+      message: 'Please provide an exam to seed, or select an exam from your library.'
+    };
+  }
+
+  const exam = examToSeed;
 
   try {
     const payload = {
