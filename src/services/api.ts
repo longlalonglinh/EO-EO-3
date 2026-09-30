@@ -26,6 +26,7 @@ import {
   getPracticeDecksFromIndexedDB
 } from './indexedDb';
 import { gradeExamAnswers } from './answerScoring';
+import { DEFAULT_EXAMS } from '../data/defaultExams';
 
 export const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbySNk5foVr4UMC5ZVP1YTlxjxT9qFgdI85cH5nyQ63ffqXdYVZ7SJKbmD0B3xNO3DEe/exec";
 
@@ -590,11 +591,39 @@ export async function submitExamPayload(
     overallBand = listeningBand;
   }
 
+  const isRetake = Boolean(payload.retakeMode || examData?.retakeMode || (examData?.exam_type === 'one_skill' && examData?.skills?.length === 1));
+  const retakeSkill = payload.targetSkill || examData?.targetSkill || (examData?.skills?.length === 1 ? examData.skills[0] : undefined);
+
+  // If this is a Writing One-Skill Retake session, skipped receptive skills are excluded from scoring
+  if (isRetake && retakeSkill === 'writing') {
+    listeningRaw = 0;
+    readingRaw = 0;
+    listeningMax = 0;
+    readingMax = 0;
+    listeningBand = 0;
+    readingBand = 0;
+    detailedResults = {};
+    overallBand = undefined;
+  } else if (isRetake && retakeSkill === 'listening') {
+    readingRaw = 0;
+    readingMax = 0;
+    readingBand = 0;
+    overallBand = listeningBand;
+  } else if (isRetake && retakeSkill === 'reading') {
+    listeningRaw = 0;
+    listeningMax = 0;
+    listeningBand = 0;
+    overallBand = readingBand;
+  }
+
   const responseObj: SubmissionResponse = {
     success: true,
     submission_id: submissionId,
     sbd: payload.sbd,
     exam_code: payload.exam_code,
+    test_mode: payload.test_mode,
+    retakeMode: isRetake,
+    targetSkill: retakeSkill,
     submission_type: submissionType,
     listening_raw_score: listeningRaw,
     listening_max_score: listeningMax,
@@ -621,6 +650,8 @@ export async function submitExamPayload(
     sbd: payload.sbd,
     exam_code: payload.exam_code,
     test_mode: payload.test_mode,
+    retakeMode: isRetake,
+    targetSkill: retakeSkill,
     submission_type: submissionType,
     listening_answers: payload.listening_answers || userAnswers,
     reading_answers: payload.reading_answers || userAnswers,
@@ -1440,6 +1471,15 @@ export async function fetchExam(
       }
     }
   } catch (e) {}
+
+  // Tier 6.8: Check standard built-in exam package (DEFAULT_EXAMS)
+  const foundDefault = DEFAULT_EXAMS.find(e => (e.exam_code || '').toUpperCase() === cleanCode);
+  if (foundDefault) {
+    const standardized = standardizeExamData(foundDefault, cleanCode);
+    examMemoryCache.set(cleanCode, standardized);
+    saveExamToIndexedDB(standardized).catch(() => {});
+    return { success: true, exam: standardized, source: 'default' };
+  }
 
   // Tier 7: Invalidate cache for this code so failed state doesn't block later attempts
   examMemoryCache.delete(cleanCode);

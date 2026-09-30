@@ -29,6 +29,8 @@ interface SubmitConfirmationModalProps {
   hasWriting: boolean;
   writingTask1Words: number;
   writingTask2Words: number;
+  retakeMode?: boolean;
+  targetSkill?: 'listening' | 'reading' | 'writing';
 }
 
 export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = ({
@@ -45,7 +47,9 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
   hasReading,
   hasWriting,
   writingTask1Words,
-  writingTask2Words
+  writingTask2Words,
+  retakeMode = false,
+  targetSkill
 }) => {
   const [submissionStage, setSubmissionStage] = useState<1 | 2 | 3>(1);
   const [draftSavedToast, setDraftSavedToast] = useState(false);
@@ -67,11 +71,15 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
 
   if (!isOpen) return null;
 
-  const totalQuestions = (hasListening ? totalListening : 0) + (hasReading ? totalReading : 0);
-  const totalAnswered = (hasListening ? answeredListening : 0) + (hasReading ? answeredReading : 0);
+  const effectiveHasListening = retakeMode ? targetSkill === 'listening' : hasListening;
+  const effectiveHasReading = retakeMode ? targetSkill === 'reading' : hasReading;
+  const effectiveHasWriting = retakeMode ? targetSkill === 'writing' : hasWriting;
+
+  const totalQuestions = (effectiveHasListening ? totalListening : 0) + (effectiveHasReading ? totalReading : 0);
+  const totalAnswered = (effectiveHasListening ? answeredListening : 0) + (effectiveHasReading ? answeredReading : 0);
   const unansweredCount = Math.max(0, totalQuestions - totalAnswered);
 
-  const hasWritingWarnings = hasWriting && (
+  const hasWritingWarnings = effectiveHasWriting && (
     (writingTask1Words > 0 && writingTask1Words < 150) || 
     (writingTask2Words > 0 && writingTask2Words < 250) ||
     (writingTask1Words === 0 && writingTask2Words === 0)
@@ -116,9 +124,15 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
               <h3 className="text-lg font-black text-[#3C2A63]">
                 Xác nhận Nộp bài thi
               </h3>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-[#6B51A5] font-extrabold uppercase tracking-wider">
-                Official Exam
-              </span>
+              {retakeMode ? (
+                <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-extrabold uppercase tracking-wider border border-emerald-200">
+                  One Skill Retake: {targetSkill?.toUpperCase() || 'SINGLE SKILL'}
+                </span>
+              ) : (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-[#6B51A5] font-extrabold uppercase tracking-wider">
+                  Official Exam
+                </span>
+              )}
             </div>
             <p className="text-xs text-[#7C68A5] font-medium">
               Kiểm tra kỹ lưỡng câu trả lời trước khi chuyển giao quyền chấm điểm
@@ -174,7 +188,7 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
           <>
             {/* Completion Progress Cards */}
             <div className="space-y-3">
-              {hasListening && (
+              {effectiveHasListening && (
                 <div className="p-3.5 bg-[#FAF8FE] border border-purple-100 rounded-2xl flex items-center justify-between">
                   <div className="flex items-center space-x-2.5">
                     <Headphones className="w-4 h-4 text-[#6B51A5]" />
@@ -195,7 +209,7 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
                 </div>
               )}
 
-              {hasReading && (
+              {effectiveHasReading && (
                 <div className="p-3.5 bg-[#FAF8FE] border border-purple-100 rounded-2xl flex items-center justify-between">
                   <div className="flex items-center space-x-2.5">
                     <BookOpen className="w-4 h-4 text-[#6B51A5]" />
@@ -216,7 +230,7 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
                 </div>
               )}
 
-              {hasWriting && (
+              {effectiveHasWriting && (
                 <div className="p-3.5 bg-[#FAF8FE] border border-purple-100 rounded-2xl space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2.5">

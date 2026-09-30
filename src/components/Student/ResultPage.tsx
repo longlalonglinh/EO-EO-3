@@ -50,7 +50,41 @@ export const ResultPage: React.FC<ResultPageProps> = ({
   onRetrySync
 }) => {
   const [showDetailedReview, setShowDetailedReview] = useState(false);
-  const [activeReviewTab, setActiveReviewTab] = useState<'listening' | 'reading' | 'writing'>('listening');
+
+  // Extract listening and reading questions from examData
+  const listeningQuestions = examData?.listening_questions || (examData?.questions || []).filter(q => q.section === 'listening');
+  
+  const readingQuestions: any[] = [];
+  if (examData?.passages && examData.passages.length > 0) {
+    examData.passages.forEach(p => {
+      if (p.questions) readingQuestions.push(...p.questions);
+    });
+  }
+  if (readingQuestions.length === 0) {
+    readingQuestions.push(...(examData?.reading_questions || (examData?.questions || []).filter(q => q.section === 'reading')));
+  }
+
+  const hasListeningQuestions = listeningQuestions.length > 0;
+  const hasReadingQuestions = readingQuestions.length > 0;
+  const hasWritingSubmitted = Boolean(writingTask1 || writingTask2 || examData?.writing_task1_prompt || examData?.writing_task2_prompt);
+
+  const isWritingRetake = Boolean(
+    (result.retakeMode && result.targetSkill === 'writing') ||
+    (examData?.retakeMode && examData?.targetSkill === 'writing') ||
+    (result.targetSkill === 'writing') ||
+    (examData?.targetSkill === 'writing') ||
+    (examData?.exam_type === 'one_skill' && examData?.skills?.length === 1 && examData.skills[0] === 'writing')
+  );
+
+  const initialTab: 'listening' | 'reading' | 'writing' = isWritingRetake 
+    ? 'writing' 
+    : hasListeningQuestions 
+    ? 'listening' 
+    : hasReadingQuestions 
+    ? 'reading' 
+    : 'writing';
+
+  const [activeReviewTab, setActiveReviewTab] = useState<'listening' | 'reading' | 'writing'>(initialTab);
   const [reviewFilter, setReviewFilter] = useState<'all' | 'incorrect' | 'correct'>('all');
 
   // AI Remediation Modal State
@@ -105,25 +139,10 @@ export const ResultPage: React.FC<ResultPageProps> = ({
 
   const detailedResults = result.detailed_results || {};
 
-  // Extract listening and reading questions from examData
-  const listeningQuestions = examData?.listening_questions || (examData?.questions || []).filter(q => q.section === 'listening');
-  
-  const readingQuestions: any[] = [];
-  if (examData?.passages && examData.passages.length > 0) {
-    examData.passages.forEach(p => {
-      if (p.questions) readingQuestions.push(...p.questions);
-    });
-  }
-  if (readingQuestions.length === 0) {
-    readingQuestions.push(...(examData?.reading_questions || (examData?.questions || []).filter(q => q.section === 'reading')));
-  }
-
-  const hasListeningQuestions = listeningQuestions.length > 0;
-  const hasReadingQuestions = readingQuestions.length > 0;
-  const hasWritingSubmitted = Boolean(writingTask1 || writingTask2 || examData?.writing_task1_prompt || examData?.writing_task2_prompt);
-
-  // Overall Band calculation fallback if not already provided
-  const overallBand = result.overall_band !== undefined 
+  // Overall Band calculation fallback if not already provided (respects One Skill Retake: Writing has no estimated overall before teacher grading)
+  const overallBand = isWritingRetake 
+    ? undefined 
+    : result.overall_band !== undefined 
     ? result.overall_band 
     : (result.listening_band !== undefined && result.reading_band !== undefined)
       ? Math.round(((result.listening_band + result.reading_band) / 2) * 2) / 2

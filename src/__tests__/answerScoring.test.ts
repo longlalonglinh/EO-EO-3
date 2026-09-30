@@ -224,5 +224,72 @@ describe('answerScoring.ts - Unit Tests', () => {
       expect(summary.results['l1'].is_correct).toBe(false);
       expect(summary.results['l1'].score_awarded).toBe(0);
     });
+
+    it('should handle One Skill Retake for Writing when listening and reading data are completely empty', () => {
+      const writingRetakeExam: ExamData = {
+        exam_code: 'WT1004',
+        title: 'IELTS Academic Writing One Skill Retake',
+        exam_type: 'one_skill',
+        skills: ['writing'],
+        retakeMode: true,
+        targetSkill: 'writing',
+        writing_duration_mins: 60,
+        writing_task1_prompt: 'Summarise the Japanese tourist market chart.',
+        writing_task2_prompt: 'Discuss benefits of international tourism.',
+        listening_questions: [],
+        reading_questions: [],
+        passages: [],
+        questions: []
+      };
+
+      // Completely empty student answers for listening & reading
+      const studentAnswers = {};
+
+      const summary = gradeExamAnswers(writingRetakeExam, studentAnswers);
+
+      expect(summary.listening_raw).toBe(0);
+      expect(summary.listening_max).toBe(0);
+      expect(summary.listening_band).toBe(0);
+      expect(summary.reading_raw).toBe(0);
+      expect(summary.reading_max).toBe(0);
+      expect(summary.reading_band).toBe(0);
+      expect(summary.total_raw).toBe(0);
+      expect(Object.keys(summary.results).length).toBe(0);
+    });
+
+    it('should handle One Skill Retake for Reading when listening data is completely omitted', () => {
+      const readingRetakeExam: ExamData = {
+        exam_code: 'RT1001',
+        title: 'IELTS Academic Reading One Skill Retake',
+        exam_type: 'one_skill',
+        skills: ['reading'],
+        retakeMode: true,
+        targetSkill: 'reading',
+        reading_duration_mins: 60,
+        reading_questions: [
+          {
+            question_id: 'r1',
+            section: 'reading',
+            question_text: 'Renewable energy accounted for 30%.',
+            question_type: 'true_false_not_given',
+            correct_answer: 'TRUE',
+            max_score: 1
+          }
+        ],
+        listening_questions: [],
+        passages: [],
+        questions: []
+      };
+
+      const summary = gradeExamAnswers(readingRetakeExam, { r1: 'True' });
+
+      expect(summary.listening_raw).toBe(0);
+      expect(summary.listening_max).toBe(0);
+      expect(summary.listening_band).toBe(0);
+      expect(summary.reading_raw).toBe(1);
+      expect(summary.reading_max).toBe(1);
+      expect(summary.reading_band).toBeGreaterThan(0);
+      expect(summary.results['r1'].is_correct).toBe(true);
+    });
   });
 });

@@ -67,10 +67,21 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
   
   // Extract task image using full property fallback cascade
   const task1FromList = tasks?.find(t => t.task_number === 1) || tasks?.[0];
-  const rawImage = task1Image || imageUrl || image_url || task1FromList?.image_url || task1FromList?.imageUrl || (task1FromList as any)?.image;
-  const cleanTask1Image = (rawImage && typeof rawImage === 'string' && rawImage.trim().length > 0)
-    ? normalizeGoogleDriveImageUrl(rawImage.trim())
-    : null;
+  const detectedImage = task1Image || imageUrl || image_url || task1FromList?.image_url || task1FromList?.imageUrl || (task1FromList as any)?.image;
+
+  // Persist image in local state so re-renders (keystrokes, autosave, timer ticks) never clear it
+  const [cachedImage, setCachedImage] = useState<string>(() => {
+    return normalizeGoogleDriveImageUrl(detectedImage) || '';
+  });
+
+  useEffect(() => {
+    const fresh = normalizeGoogleDriveImageUrl(detectedImage);
+    if (fresh && fresh !== cachedImage) {
+      setCachedImage(fresh);
+    }
+  }, [detectedImage]);
+
+  const cleanTask1Image = cachedImage || normalizeGoogleDriveImageUrl(detectedImage) || null;
 
   // Split-view and small screen responsive states
   const [splitRatio, setSplitRatio] = useState<number>(45); // 45% left (prompt), 55% right (editor)

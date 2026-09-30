@@ -1253,6 +1253,26 @@ Designing transparent explainable AI (XAI) frameworks is therefore not merely a 
     writing_task1_image: 'https://images.unsplash.com/photo-1497435334941-8c899ee9e8e9?w=800&auto=format&fit=crop&q=60',
     writing_task2_prompt: 'Some people think that universities should provide graduates with the knowledge and skills needed in the workplace. Others think that the true function of a university should be to give access to knowledge for its own sake, regardless of whether the course is useful to an employer. What, in your opinion, should be the main function of a university? Write at least 250 words.',
     questions: []
+  },
+  {
+    exam_code: 'WT1004',
+    title: 'IELTS Academic Writing One-Skill Retake (Set WT1004)',
+    test_type: 'PRACTICE',
+    exam_type: 'one_skill',
+    skills: ['writing'],
+    retakeMode: true,
+    targetSkill: 'writing',
+    duration_mins: 60,
+    listening_duration_mins: 0,
+    reading_duration_mins: 0,
+    writing_duration_mins: 60,
+    passages: [],
+    writing_task1_prompt: "The charts below show the number of Japanese tourists travelling abroad between 1985 and 1995 and Australia's share of the Japanese tourist market.\n\nSummarise the information by selecting and reporting the main features, and make comparisons where relevant.\n\nWrite at least 150 words.",
+    writing_task1_image: 'https://images.unsplash.com/photo-1543269865-cbf427effbad?w=800&auto=format&fit=crop&q=60',
+    writing_task1_image_url: 'https://images.unsplash.com/photo-1543269865-cbf427effbad?w=800&auto=format&fit=crop&q=60',
+    writing_task1_imageUrl: 'https://images.unsplash.com/photo-1543269865-cbf427effbad?w=800&auto=format&fit=crop&q=60',
+    writing_task2_prompt: 'Some people believe that international tourism brings only positive benefits to host countries, while others argue that it causes environmental and cultural harm. Discuss both views and give your own opinion.\n\nWrite at least 250 words.',
+    questions: []
   }
 ];
 
@@ -1274,12 +1294,85 @@ export const DEFAULT_EXAMS: Exam[] = RAW_DEFAULT_EXAMS.map(exam => {
   const listeningQs = allQs.filter((q: any) => q.section === 'listening');
   const readingQs = allQs.filter((q: any) => q.section === 'reading');
 
+  const resolvedT1Img = exam.writing_task1_image || 
+    (exam as any).writing_task1_image_url || 
+    (exam as any).writing_task1_imageUrl || 
+    (exam as any).image_url || 
+    (exam as any).imageUrl || 
+    '';
+
+  const sections: any[] = [];
+  if (listeningQs.length > 0 || exam.audio_url) {
+    sections.push({
+      skill: 'listening',
+      title: 'IELTS Listening Section',
+      durationMinutes: exam.listening_duration_mins || 35,
+      audioUrl: exam.audio_url || '',
+      questions: listeningQs
+    });
+  }
+
+  if (readingQs.length > 0 || passages.length > 0) {
+    sections.push({
+      skill: 'reading',
+      title: 'IELTS Reading Section',
+      durationMinutes: exam.reading_duration_mins || 60,
+      passages: passages,
+      questions: readingQs
+    });
+  }
+
+  if (exam.writing_task1_prompt || exam.writing_task2_prompt || resolvedT1Img) {
+    sections.push({
+      skill: 'writing',
+      title: 'IELTS Academic Writing Section',
+      durationMinutes: exam.writing_duration_mins || 60,
+      tasks: [
+        {
+          id: 'task-1',
+          task_number: 1,
+          title: 'Writing Task 1 (Report)',
+          prompt: exam.writing_task1_prompt || '',
+          image_url: resolvedT1Img,
+          imageUrl: resolvedT1Img,
+          min_words: 150,
+          suggested_time_minutes: 20
+        },
+        {
+          id: 'task-2',
+          task_number: 2,
+          title: 'Writing Task 2 (Essay)',
+          prompt: exam.writing_task2_prompt || '',
+          min_words: 250,
+          suggested_time_minutes: 40
+        }
+      ]
+    });
+  }
+
+  const detectedSkills = [];
+  if (listeningQs.length > 0 || exam.audio_url) detectedSkills.push('listening');
+  if (readingQs.length > 0 || passages.length > 0) detectedSkills.push('reading');
+  if (exam.writing_task1_prompt || exam.writing_task2_prompt) detectedSkills.push('writing');
+
+  const isOneSkill = (exam as any).exam_type === 'one_skill' || (exam as any).retakeMode || detectedSkills.length === 1;
+
   return {
     ...exam,
+    exam_type: (exam as any).exam_type || (detectedSkills.length === 1 ? 'one_skill' : detectedSkills.length === 2 ? 'two_skills' : 'full_test'),
+    skills: (exam as any).skills || detectedSkills,
+    retakeMode: (exam as any).retakeMode ?? (isOneSkill && detectedSkills.includes('writing')),
+    targetSkill: (exam as any).targetSkill || (isOneSkill ? detectedSkills[0] : undefined),
     passages,
     listening_questions: listeningQs,
     reading_questions: readingQs,
-    questions: allQs
+    questions: allQs,
+    sections,
+    writing_task1_image: resolvedT1Img,
+    writing_task1_image_url: resolvedT1Img,
+    writing_task1_imageUrl: resolvedT1Img,
+    image_url: resolvedT1Img,
+    imageUrl: resolvedT1Img
   } as Exam;
 });
 

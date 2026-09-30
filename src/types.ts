@@ -232,6 +232,8 @@ export interface ExamData {
   title: string;
   exam_type?: ExamType; // 'one_skill' | 'two_skills' | 'full_test'
   skills?: SkillType[]; // ['reading'] hoặc ['listening', 'reading'] hoặc ['listening', 'reading', 'writing']
+  retakeMode?: boolean;
+  targetSkill?: SkillType;
   sections?: ExamSkillSection[];
   test_type?: 'TEST' | 'PRACTICE';
   duration_mins?: number; // Total exam duration in minutes (default 120 or 150)
@@ -282,6 +284,8 @@ export interface SubmissionRecord {
   sbd: string;
   exam_code: string;
   test_mode?: 'TEST' | 'PRACTICE';
+  retakeMode?: boolean;
+  targetSkill?: SkillType;
   submission_type?: 'STANDARD' | 'TIMEOUT_FORCED';
   listening_answers?: Record<string, string>;
   reading_answers?: Record<string, string>;
@@ -330,6 +334,8 @@ export interface SubmissionPayload {
   sbd: string;
   exam_code: string;
   test_mode?: 'TEST' | 'PRACTICE';
+  retakeMode?: boolean;
+  targetSkill?: SkillType;
   submission_type?: 'STANDARD' | 'TIMEOUT_FORCED';
   listening_answers?: Record<string, string>;
   reading_answers?: Record<string, string>;
@@ -354,6 +360,9 @@ export interface SubmissionResponse {
   submission_id: string;
   sbd: string;
   exam_code: string;
+  test_mode?: 'TEST' | 'PRACTICE';
+  retakeMode?: boolean;
+  targetSkill?: SkillType;
   submission_type?: 'STANDARD' | 'TIMEOUT_FORCED';
   listening_raw_score?: number;
   listening_max_score?: number;
@@ -398,6 +407,8 @@ export interface StudentSession {
   sbd: string;
   exam_code: string;
   test_mode: 'TEST' | 'PRACTICE';
+  retakeMode?: boolean;
+  targetSkill?: SkillType;
   is_review: boolean;
   review_submission_id?: string;
 }

@@ -1011,9 +1011,28 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
         ...(payload.reading_answers || {})
       };
 
+      const isRetake = Boolean(payload.retakeMode || payload.retake_mode || storedExam?.retakeMode || (storedExam?.exam_type === 'one_skill' && storedExam?.skills?.length === 1));
+      const targetSkill = payload.targetSkill || payload.target_skill || storedExam?.targetSkill || (storedExam?.skills?.length === 1 ? storedExam.skills[0] : undefined);
+
       let gradingResult: any;
       if (storedExam) {
-        gradingResult = scoreExam(storedExam, userAnswers);
+        const examToScore = {
+          ...storedExam,
+          retakeMode: isRetake,
+          targetSkill: targetSkill
+        };
+        gradingResult = scoreExam(examToScore, userAnswers);
+      } else if (isRetake && targetSkill === 'writing') {
+        gradingResult = {
+          listening_raw: 0,
+          listening_max: 0,
+          listening_band: 0,
+          reading_raw: 0,
+          reading_max: 0,
+          reading_band: 0,
+          total_raw: 0,
+          results: {}
+        };
       } else {
         const listeningCount = Object.keys(payload.listening_answers || {}).length;
         const readingCount = Object.keys(payload.reading_answers || {}).length;
@@ -1035,7 +1054,9 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
       const readingBand = gradingResult.reading_band;
 
       let overallBand: number | undefined = undefined;
-      if (listeningMax > 0 && readingMax > 0) {
+      if (isRetake && targetSkill === 'writing') {
+        overallBand = undefined;
+      } else if (listeningMax > 0 && readingMax > 0) {
         overallBand = Math.round(((listeningBand + readingBand) / 2) * 2) / 2;
       } else if (readingMax > 0) {
         overallBand = readingBand;
@@ -1052,6 +1073,10 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
         sbd: payload.sbd,
         exam_code: cleanCode,
         test_mode: payload.test_mode || 'TEST',
+        retakeMode: isRetake,
+        retake_mode: isRetake,
+        targetSkill: targetSkill,
+        target_skill: targetSkill,
         submission_type: submissionType,
         listening_answers: payload.listening_answers || userAnswers,
         reading_answers: payload.reading_answers || userAnswers,

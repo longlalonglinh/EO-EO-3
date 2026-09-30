@@ -62,8 +62,11 @@ const SAMPLE_EXAM: ExamData = {
   passage_text: defaultTemplate.passages?.[0]?.text || '',
   passages: defaultTemplate.passages,
   reading_questions: defaultTemplate.questions.filter(q => q.section === 'reading'),
+  sections: defaultTemplate.sections,
   writing_task1_prompt: defaultTemplate.writing_task1_prompt,
   writing_task1_image: defaultTemplate.writing_task1_image,
+  writing_task1_image_url: defaultTemplate.writing_task1_image,
+  writing_task1_imageUrl: defaultTemplate.writing_task1_image,
   writing_task2_prompt: defaultTemplate.writing_task2_prompt
 };
 
@@ -149,11 +152,18 @@ export default function App() {
 
   // Exam Data State
   const [examData, setExamData] = useState<ExamData>(SAMPLE_EXAM);
+  const [retakeMode, setRetakeMode] = useState<boolean>(false);
+  const [targetSkill, setTargetSkill] = useState<'listening' | 'reading' | 'writing' | undefined>(undefined);
 
-  // Dynamic skill presence flags
-  const hasListening = (examData.listening_questions?.length ?? 0) > 0;
-  const hasReading = (examData.reading_questions?.length ?? 0) > 0 || ((examData.passages?.length ?? 0) > 0);
-  const hasWriting = Boolean(examData.writing_task1_prompt || examData.writing_task2_prompt);
+  // Dynamic skill presence flags (aware of One Skill Retake & single skill exams)
+  const isRetake = Boolean(retakeMode || examData.retakeMode || examData.exam_type === 'one_skill' || (examData.skills && examData.skills.length === 1));
+  const activeTargetSkill: 'listening' | 'reading' | 'writing' | undefined = targetSkill || examData.targetSkill || 
+    (examData.skills && examData.skills.length === 1 ? (examData.skills[0] as 'listening' | 'reading' | 'writing') : undefined) ||
+    ((examData.exam_code || '').toUpperCase().startsWith('WT') ? 'writing' : undefined);
+
+  const hasListening = isRetake ? activeTargetSkill === 'listening' : ((examData.listening_questions?.length ?? 0) > 0);
+  const hasReading = isRetake ? activeTargetSkill === 'reading' : (((examData.reading_questions?.length ?? 0) > 0) || ((examData.passages?.length ?? 0) > 0));
+  const hasWriting = isRetake ? activeTargetSkill === 'writing' : Boolean(examData.writing_task1_prompt || examData.writing_task2_prompt);
 
   // Submit confirmation dialog state
   const [isConfirmSubmitOpen, setIsConfirmSubmitOpen] = useState<boolean>(false);
@@ -293,12 +303,41 @@ export default function App() {
     setUserAnswers({});
     setWritingTask1('');
     setWritingTask2('');
-    setCompletedSkills({ listening: false, reading: false, writing: false });
-    const initialMod = (exam.listening_questions && exam.listening_questions.length > 0)
-      ? 'listening'
-      : ((exam.reading_questions && exam.reading_questions.length > 0) || (exam.passages && exam.passages.length > 0))
-      ? 'reading'
-      : 'writing';
+
+    const examIsRetake = Boolean(
+      exam.retakeMode || 
+      exam.exam_type === 'one_skill' || 
+      (exam.skills && exam.skills.length === 1) ||
+      (exam.exam_code || '').toUpperCase().startsWith('WT')
+    );
+    const examTargetSkill: 'listening' | 'reading' | 'writing' | undefined = exam.targetSkill || 
+      (exam.skills && exam.skills.length === 1 ? (exam.skills[0] as 'listening' | 'reading' | 'writing') : undefined) ||
+      ((exam.exam_code || '').toUpperCase().startsWith('WT') ? 'writing' : undefined);
+
+    setRetakeMode(examIsRetake);
+    setTargetSkill(examTargetSkill);
+
+    let initialMod: 'listening' | 'reading' | 'writing' = 'listening';
+    if (examIsRetake && examTargetSkill === 'writing') {
+      initialMod = 'writing';
+      setCompletedSkills({ listening: true, reading: true, writing: false });
+    } else if (examIsRetake && examTargetSkill === 'reading') {
+      initialMod = 'reading';
+      setCompletedSkills({ listening: true, reading: false, writing: true });
+    } else if (examIsRetake && examTargetSkill === 'listening') {
+      initialMod = 'listening';
+      setCompletedSkills({ listening: false, reading: true, writing: true });
+    } else if (exam.listening_questions && exam.listening_questions.length > 0) {
+      initialMod = 'listening';
+      setCompletedSkills({ listening: false, reading: false, writing: false });
+    } else if ((exam.reading_questions && exam.reading_questions.length > 0) || (exam.passages && exam.passages.length > 0)) {
+      initialMod = 'reading';
+      setCompletedSkills({ listening: true, reading: false, writing: false });
+    } else {
+      initialMod = 'writing';
+      setCompletedSkills({ listening: true, reading: true, writing: false });
+    }
+
     setCurrentModule(initialMod);
     setIsLoggedIn(true);
     setActiveView('student');
@@ -508,6 +547,20 @@ export default function App() {
     setIsLoadingExam(false);
     setIsLoggedIn(true);
 
+    // Synchronize One Skill Retake flags from finalExamData
+    const isRetakeExam = Boolean(
+      finalExamData.retakeMode || 
+      finalExamData.exam_type === 'one_skill' || 
+      (finalExamData.skills && finalExamData.skills.length === 1) ||
+      cleanCode.startsWith('WT')
+    );
+    const resolvedTargetSkill: 'listening' | 'reading' | 'writing' | undefined = finalExamData.targetSkill || 
+      (finalExamData.skills && finalExamData.skills.length === 1 ? (finalExamData.skills[0] as 'listening' | 'reading' | 'writing') : undefined) ||
+      (cleanCode.startsWith('WT') ? 'writing' : undefined);
+
+    setRetakeMode(isRetakeExam);
+    setTargetSkill(resolvedTargetSkill);
+
     // Check if reviewing previous submission in Practice Mode
     if (mode === 'PRACTICE' && reviewPrevious) {
       const existingSubs = localStorage.getItem('ielts_student_submissions');
@@ -543,11 +596,21 @@ export default function App() {
       }
     } catch (e) {}
 
-    // Intelligently route to Listening, Reading, or Writing depending on available questions/tasks
+    // Intelligently route to Listening, Reading, or Writing depending on retakeMode & available questions/tasks
     const examHasReading = (finalExamData.reading_questions && finalExamData.reading_questions.length > 0) ||
       (finalExamData.passages && finalExamData.passages.some(p => (p.questions?.length ?? 0) > 0));
 
-    if (finalExamData.listening_questions && finalExamData.listening_questions.length > 0) {
+    if (isRetakeExam && resolvedTargetSkill === 'writing') {
+      // One Skill Retake for Writing: SKIP Listening and Reading modules completely
+      setCurrentModule('writing');
+      setCompletedSkills({ listening: true, reading: true, writing: false });
+    } else if (isRetakeExam && resolvedTargetSkill === 'reading') {
+      setCurrentModule('reading');
+      setCompletedSkills({ listening: true, reading: false, writing: true });
+    } else if (isRetakeExam && resolvedTargetSkill === 'listening') {
+      setCurrentModule('listening');
+      setCompletedSkills({ listening: false, reading: true, writing: true });
+    } else if (finalExamData.listening_questions && finalExamData.listening_questions.length > 0) {
       setCurrentModule('listening');
     } else if (examHasReading) {
       setCurrentModule('reading');
@@ -644,6 +707,8 @@ export default function App() {
       sbd,
       exam_code: examCode,
       test_mode: testMode,
+      retakeMode: isRetake,
+      targetSkill: activeTargetSkill,
       submission_type: submissionType,
       answers: latestAnswers,
       listening_answers: latestAnswers,
@@ -1643,34 +1708,6 @@ function doPost(e) {
                         )}
                       </button>
                     </div>
-
-                    {/* Final Submission Pre-flight Confirmation Modal */}
-                    <SubmitConfirmationModal
-                      isOpen={isConfirmSubmitOpen}
-                      onClose={() => setIsConfirmSubmitOpen(false)}
-                      onConfirmSubmit={() => {
-                        setIsConfirmSubmitOpen(false);
-                        handleSubmitExam('STANDARD');
-                      }}
-                      onSaveDraft={async () => {
-                        await saveCurrentAnswersToIndexedDB(examCode, sbd, userAnswers);
-                        if (writingTask1 || writingTask2) {
-                          await saveWritingDraftToIndexedDB(examCode, sbd, { task1: writingTask1, task2: writingTask2 });
-                        }
-                        setSkillNotice('💾 Đã lưu nháp bài làm an toàn vào cơ sở dữ liệu IndexedDB!');
-                        setTimeout(() => setSkillNotice(null), 4000);
-                      }}
-                      isSubmitting={isSubmitting}
-                      totalListening={examData.listening_questions?.length ?? 0}
-                      answeredListening={answeredListeningCount}
-                      totalReading={readingQuestionsCount}
-                      answeredReading={answeredReadingCount}
-                      hasListening={hasListening}
-                      hasReading={hasReading}
-                      hasWriting={hasWriting}
-                      writingTask1Words={writingTask1.trim().split(/\s+/).filter(Boolean).length}
-                      writingTask2Words={writingTask2.trim().split(/\s+/).filter(Boolean).length}
-                    />
                   </div>
                 )}
 
@@ -1707,6 +1744,36 @@ function doPost(e) {
                     }}
                   />
                 )}
+
+                {/* Final Submission Pre-flight Confirmation Modal (rendered for all modules) */}
+                <SubmitConfirmationModal
+                  isOpen={isConfirmSubmitOpen}
+                  onClose={() => setIsConfirmSubmitOpen(false)}
+                  onConfirmSubmit={() => {
+                    setIsConfirmSubmitOpen(false);
+                    handleSubmitExam('STANDARD');
+                  }}
+                  onSaveDraft={async () => {
+                    await saveCurrentAnswersToIndexedDB(examCode, sbd, userAnswers);
+                    if (writingTask1 || writingTask2) {
+                      await saveWritingDraftToIndexedDB(examCode, sbd, { task1: writingTask1, task2: writingTask2 });
+                    }
+                    setSkillNotice('💾 Đã lưu nháp bài làm an toàn vào cơ sở dữ liệu IndexedDB!');
+                    setTimeout(() => setSkillNotice(null), 4000);
+                  }}
+                  isSubmitting={isSubmitting}
+                  totalListening={examData.listening_questions?.length ?? 0}
+                  answeredListening={answeredListeningCount}
+                  totalReading={readingQuestionsCount}
+                  answeredReading={answeredReadingCount}
+                  hasListening={hasListening}
+                  hasReading={hasReading}
+                  hasWriting={hasWriting}
+                  retakeMode={isRetake}
+                  targetSkill={activeTargetSkill}
+                  writingTask1Words={writingTask1.trim().split(/\s+/).filter(Boolean).length}
+                  writingTask2Words={writingTask2.trim().split(/\s+/).filter(Boolean).length}
+                />
 
               </div>
             )}

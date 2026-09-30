@@ -295,19 +295,54 @@ export function gradeExamAnswers(
   exam: ExamData,
   userAnswers: Record<string, string>
 ): ExamGradingSummary {
-  const allListeningQuestions = exam.listening_questions || (exam.questions || []).filter(q => q.section === 'listening');
+  const isWritingRetake = Boolean(
+    (exam.retakeMode && exam.targetSkill === 'writing') ||
+    (exam.targetSkill === 'writing') ||
+    (exam.exam_type === 'one_skill' && exam.skills?.length === 1 && exam.skills[0] === 'writing')
+  );
+
+  const isReadingRetake = Boolean(
+    (exam.retakeMode && exam.targetSkill === 'reading') ||
+    (exam.targetSkill === 'reading') ||
+    (exam.exam_type === 'one_skill' && exam.skills?.length === 1 && exam.skills[0] === 'reading')
+  );
+
+  const isListeningRetake = Boolean(
+    (exam.retakeMode && exam.targetSkill === 'listening') ||
+    (exam.targetSkill === 'listening') ||
+    (exam.exam_type === 'one_skill' && exam.skills?.length === 1 && exam.skills[0] === 'listening')
+  );
+
+  if (isWritingRetake) {
+    return {
+      listening_raw: 0,
+      listening_max: 0,
+      listening_band: 0,
+      reading_raw: 0,
+      reading_max: 0,
+      reading_band: 0,
+      total_raw: 0,
+      results: {}
+    };
+  }
+
+  const allListeningQuestions = isReadingRetake 
+    ? [] 
+    : (exam.listening_questions || (exam.questions || []).filter(q => q.section === 'listening'));
   
   // Collect reading questions directly from standardized passages first
   let allReadingQuestions: Question[] = [];
-  if (exam.passages && exam.passages.length > 0) {
-    exam.passages.forEach(p => {
-      if (p.questions && p.questions.length > 0) {
-        allReadingQuestions.push(...p.questions);
-      }
-    });
-  }
-  if (allReadingQuestions.length === 0) {
-    allReadingQuestions = exam.reading_questions || (exam.questions || []).filter(q => q.section === 'reading');
+  if (!isListeningRetake) {
+    if (exam.passages && exam.passages.length > 0) {
+      exam.passages.forEach(p => {
+        if (p.questions && p.questions.length > 0) {
+          allReadingQuestions.push(...p.questions);
+        }
+      });
+    }
+    if (allReadingQuestions.length === 0) {
+      allReadingQuestions = exam.reading_questions || (exam.questions || []).filter(q => q.section === 'reading');
+    }
   }
 
   let listeningRaw = 0;

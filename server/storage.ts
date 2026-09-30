@@ -233,10 +233,16 @@ export function updateStoredWritingScore(
   // Re-calculate overall band if listening and reading bands exist
   const lBand = Number(sub.listening_band) || 0;
   const rBand = Number(sub.reading_band) || 0;
-  if (lBand > 0 || rBand > 0) {
+  const isOneSkillRetake = Boolean(sub.retakeMode || sub.retake_mode || (sub.targetSkill === 'writing' || sub.target_skill === 'writing'));
+  
+  if (isOneSkillRetake && lBand === 0 && rBand === 0) {
+    sub.overall_band = overallWriting;
+  } else if (lBand > 0 || rBand > 0) {
     const activeBands = [lBand, rBand, overallWriting].filter(b => b > 0);
     const avg = activeBands.reduce((a, b) => a + b, 0) / activeBands.length;
     sub.overall_band = Math.round(avg * 2) / 2;
+  } else {
+    sub.overall_band = overallWriting;
   }
 
   cachedSubmissions = submissions;
