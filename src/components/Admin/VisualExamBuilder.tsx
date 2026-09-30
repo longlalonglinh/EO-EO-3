@@ -124,9 +124,25 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
       };
     });
 
+    const writingSection = data.sections?.find(s => s.skill === 'writing');
+    const task1Obj = writingSection?.tasks?.find(t => t.task_number === 1) || writingSection?.tasks?.[0];
+    const task2Obj = writingSection?.tasks?.find(t => t.task_number === 2) || writingSection?.tasks?.[1];
+
+    const initialTask1Prompt = data.writing_task1_prompt || task1Obj?.prompt || '';
+    const initialTask1Image = data.writing_task1_image || 
+      data.writing_task1_image_url || 
+      data.writing_task1_imageUrl || 
+      task1Obj?.image_url || 
+      task1Obj?.imageUrl || 
+      (task1Obj as any)?.image || 
+      data.image_url || 
+      (data as any).imageUrl || 
+      '';
+    const initialTask2Prompt = data.writing_task2_prompt || task2Obj?.prompt || '';
+
     const hasL = allListeningQs.length > 0;
     const hasR = allReadingQs.length > 0;
-    const hasW = Boolean(data.writing_task1_prompt || data.writing_task2_prompt);
+    const hasW = Boolean(initialTask1Prompt || initialTask2Prompt || initialTask1Image);
     let detectedSkills: SkillType[] = data.skills || [];
     if (detectedSkills.length === 0) {
       if (hasL) detectedSkills.push('listening');
@@ -170,9 +186,9 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
         nb_condition: q.nb_condition,
         multi_select_count: q.multi_select_count || 2
       })),
-      writing_task1_prompt: data.writing_task1_prompt || '',
-      writing_task1_image: data.writing_task1_image || '',
-      writing_task2_prompt: data.writing_task2_prompt || ''
+      writing_task1_prompt: initialTask1Prompt,
+      writing_task1_image: initialTask1Image,
+      writing_task2_prompt: initialTask2Prompt
     };
   };
 
@@ -262,12 +278,63 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
     if (hasWriting) detectedSkills.push('writing');
     const detectedExamType: ExamType = detectedSkills.length === 1 ? 'one_skill' : detectedSkills.length === 2 ? 'two_skills' : 'full_test';
 
+    const task1Img = formData.writing_task1_image?.trim() || '';
+
+    // Standardize sections array for dynamic modular multi-skill engine
+    const sections: any[] = [];
+    if (hasListening) {
+      sections.push({
+        skill: 'listening',
+        title: 'IELTS Listening Section',
+        durationMinutes: formData.listening_duration_mins || 35,
+        audioUrl: formData.audio_url?.trim() || '',
+        questions: flatListeningQuestions
+      });
+    }
+    if (hasReading) {
+      sections.push({
+        skill: 'reading',
+        title: 'IELTS Reading Section',
+        durationMinutes: formData.reading_duration_mins || 60,
+        passages: standardizedPassages,
+        questions: flatReadingQuestions
+      });
+    }
+    if (hasWriting) {
+      sections.push({
+        skill: 'writing',
+        title: 'IELTS Writing Section',
+        durationMinutes: formData.writing_duration_mins || 60,
+        tasks: [
+          {
+            id: 'task-1',
+            task_number: 1,
+            title: 'Writing Task 1 (Report)',
+            prompt: formData.writing_task1_prompt?.trim() || '',
+            image_url: task1Img,
+            imageUrl: task1Img,
+            min_words: 150,
+            suggested_time_minutes: 20
+          },
+          {
+            id: 'task-2',
+            task_number: 2,
+            title: 'Writing Task 2 (Essay)',
+            prompt: formData.writing_task2_prompt?.trim() || '',
+            min_words: 250,
+            suggested_time_minutes: 40
+          }
+        ]
+      });
+    }
+
     const completeExam: ExamData = {
       exam_code: formData.exam_code.trim().toUpperCase(),
       title: formData.title,
       test_type: formData.test_type,
       exam_type: formData.exam_type || detectedExamType,
       skills: formData.skills && formData.skills.length > 0 ? formData.skills : detectedSkills,
+      sections,
       duration_mins: formData.duration_mins,
       listening_duration_mins: formData.listening_duration_mins,
       reading_duration_mins: formData.reading_duration_mins,
@@ -279,7 +346,9 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
       listening_questions: flatListeningQuestions,
       questions: [...flatListeningQuestions, ...flatReadingQuestions],
       writing_task1_prompt: formData.writing_task1_prompt?.trim() || '',
-      writing_task1_image: formData.writing_task1_image?.trim() || '',
+      writing_task1_image: task1Img,
+      writing_task1_image_url: task1Img,
+      writing_task1_imageUrl: task1Img,
       writing_task2_prompt: formData.writing_task2_prompt?.trim() || '',
       created_at: new Date().toISOString()
     };

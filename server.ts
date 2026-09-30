@@ -54,6 +54,49 @@ function sanitizeExamForStudent(exam: any): any {
       questions: Array.isArray(p.questions) ? p.questions.map(sanitizeQuestion) : []
     }));
   }
+
+  // Extract task 1 image across all naming conventions
+  const rootTask1Img = copy.writing_task1_image || copy.writing_task1_image_url || copy.writing_task1_imageUrl || copy.image_url || copy.imageUrl || '';
+  let resolvedTask1Image = rootTask1Img;
+
+  if (Array.isArray(copy.sections)) {
+    copy.sections = copy.sections.map((section: any) => {
+      const sanitizedSec = { ...section };
+      if (section.skill === 'writing' && Array.isArray(section.tasks)) {
+        sanitizedSec.tasks = section.tasks.map((task: any) => {
+          const tImg = task.image_url || task.imageUrl || (task.task_number === 1 ? resolvedTask1Image : undefined) || '';
+          if (task.task_number === 1 && !resolvedTask1Image && tImg) {
+            resolvedTask1Image = tImg;
+          }
+          return {
+            id: task.id || `task-${task.task_number}`,
+            task_number: task.task_number,
+            title: task.title,
+            prompt: task.prompt,
+            image_url: tImg,
+            imageUrl: tImg,
+            min_words: task.min_words,
+            suggested_time_minutes: task.suggested_time_minutes
+          };
+        });
+      } else if (Array.isArray(section.questions)) {
+        sanitizedSec.questions = section.questions.map(sanitizeQuestion);
+      }
+      if (Array.isArray(section.passages)) {
+        sanitizedSec.passages = section.passages.map((p: any) => ({
+          ...p,
+          questions: Array.isArray(p.questions) ? p.questions.map(sanitizeQuestion) : []
+        }));
+      }
+      return sanitizedSec;
+    });
+  }
+
+  // Ensure root-level graphic fields are strictly preserved
+  copy.writing_task1_image = resolvedTask1Image;
+  copy.writing_task1_image_url = resolvedTask1Image;
+  copy.writing_task1_imageUrl = resolvedTask1Image;
+
   return copy;
 }
 

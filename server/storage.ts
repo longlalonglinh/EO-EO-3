@@ -80,7 +80,28 @@ export function getStoredExam(examCode: string): any | null {
   if (!cleanCode) return null;
 
   const exams = getStoredExams();
-  return exams.find((e: any) => (e.exam_code || '').toUpperCase() === cleanCode) || null;
+  const found = exams.find((e: any) => (e.exam_code || '').toUpperCase() === cleanCode) || null;
+  if (!found) return null;
+
+  const writingSection = found.sections?.find((s: any) => s.skill === 'writing');
+  const task1Obj = writingSection?.tasks?.find((t: any) => t.task_number === 1) || writingSection?.tasks?.[0];
+
+  const resolvedT1Img = found.writing_task1_image || 
+    found.writing_task1_image_url || 
+    found.writing_task1_imageUrl || 
+    task1Obj?.image_url || 
+    task1Obj?.imageUrl || 
+    found.image_url || 
+    found.imageUrl || 
+    '';
+
+  if (resolvedT1Img) {
+    found.writing_task1_image = resolvedT1Img;
+    found.writing_task1_image_url = resolvedT1Img;
+    found.writing_task1_imageUrl = resolvedT1Img;
+  }
+
+  return found;
 }
 
 export function saveStoredExam(examData: any): any {
@@ -89,9 +110,48 @@ export function saveStoredExam(examData: any): any {
   }
 
   const cleanCode = String(examData.exam_code).trim().toUpperCase();
+
+  const writingSection = examData.sections?.find((s: any) => s.skill === 'writing');
+  const task1Obj = writingSection?.tasks?.find((t: any) => t.task_number === 1) || writingSection?.tasks?.[0];
+
+  const resolvedT1Img = examData.writing_task1_image || 
+    examData.writing_task1_image_url || 
+    examData.writing_task1_imageUrl || 
+    task1Obj?.image_url || 
+    task1Obj?.imageUrl || 
+    examData.image_url || 
+    examData.imageUrl || 
+    '';
+
+  let sections = examData.sections;
+  if (Array.isArray(sections)) {
+    sections = sections.map((sec: any) => {
+      if (sec.skill === 'writing' && Array.isArray(sec.tasks)) {
+        return {
+          ...sec,
+          tasks: sec.tasks.map((t: any) => {
+            if (t.task_number === 1 || t.id === 'task-1') {
+              return {
+                ...t,
+                image_url: t.image_url || t.imageUrl || resolvedT1Img,
+                imageUrl: t.imageUrl || t.image_url || resolvedT1Img
+              };
+            }
+            return t;
+          })
+        };
+      }
+      return sec;
+    });
+  }
+
   const standardizedExam = {
     ...examData,
     exam_code: cleanCode,
+    sections,
+    writing_task1_image: resolvedT1Img,
+    writing_task1_image_url: resolvedT1Img,
+    writing_task1_imageUrl: resolvedT1Img,
     updated_at: new Date().toISOString()
   };
 

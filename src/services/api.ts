@@ -921,6 +921,52 @@ export function standardizeExamData(rawExam: any, cleanCode: string): ExamData {
     });
   }
 
+  const writingSection = rawExam.sections?.find((s: any) => s.skill === 'writing');
+  const writingTask1 = writingSection?.tasks?.find((t: any) => t.task_number === 1) || writingSection?.tasks?.[0];
+  const writingTask2 = writingSection?.tasks?.find((t: any) => t.task_number === 2) || writingSection?.tasks?.[1];
+
+  const resolvedTask1Prompt = rawExam.writing_task1_prompt || writingTask1?.prompt || '';
+  const resolvedTask1Image = rawExam.writing_task1_image || 
+    rawExam.writing_task1_image_url || 
+    rawExam.writing_task1_imageUrl || 
+    writingTask1?.image_url || 
+    writingTask1?.imageUrl || 
+    (writingTask1 as any)?.image || 
+    rawExam.image_url || 
+    rawExam.imageUrl || 
+    '';
+  const resolvedTask2Prompt = rawExam.writing_task2_prompt || writingTask2?.prompt || '';
+
+  // Synchronize sections array if present or create if writing skill is declared
+  let standardizedSections = rawExam.sections;
+  if (Array.isArray(standardizedSections)) {
+    standardizedSections = standardizedSections.map((sec: any) => {
+      if (sec.skill === 'writing' && Array.isArray(sec.tasks)) {
+        return {
+          ...sec,
+          tasks: sec.tasks.map((t: any) => {
+            if (t.task_number === 1 || t.id === 'task-1') {
+              return {
+                ...t,
+                prompt: t.prompt || resolvedTask1Prompt,
+                image_url: t.image_url || t.imageUrl || resolvedTask1Image,
+                imageUrl: t.imageUrl || t.image_url || resolvedTask1Image
+              };
+            }
+            if (t.task_number === 2 || t.id === 'task-2') {
+              return {
+                ...t,
+                prompt: t.prompt || resolvedTask2Prompt
+              };
+            }
+            return t;
+          })
+        };
+      }
+      return sec;
+    });
+  }
+
   return {
     ...rawExam,
     exam_code: cleanCode,
@@ -928,7 +974,13 @@ export function standardizeExamData(rawExam: any, cleanCode: string): ExamData {
     passages: standardizedPassages,
     listening_questions: listeningQs,
     reading_questions: readingQs,
-    questions: allQs.length > 0 ? allQs : [...listeningQs, ...readingQs]
+    questions: allQs.length > 0 ? allQs : [...listeningQs, ...readingQs],
+    sections: standardizedSections,
+    writing_task1_prompt: resolvedTask1Prompt,
+    writing_task1_image: resolvedTask1Image,
+    writing_task1_image_url: resolvedTask1Image,
+    writing_task1_imageUrl: resolvedTask1Image,
+    writing_task2_prompt: resolvedTask2Prompt
   };
 }
 
@@ -1004,14 +1056,24 @@ export function triggerBackgroundRevalidation(apiUrl: string, cleanCode: string)
         );
 
         if (hasQuestions || hasWritingPrompts) {
+          const rawTask1Image = meta.writing_task1_image || meta.writing_task1_image_url || meta.writing_task1_imageUrl || 
+            raw.writing_task1_image || raw.writing_task1_image_url || raw.writing_task1_imageUrl || 
+            raw.exam?.writing_task1_image || raw.exam?.writing_task1_image_url || raw.exam?.writing_task1_imageUrl || 
+            meta.imageUrl || meta.image_url || raw.imageUrl || raw.image_url || 
+            raw.sections?.find((s: any) => s.skill === 'writing')?.tasks?.[0]?.image_url || 
+            raw.sections?.find((s: any) => s.skill === 'writing')?.tasks?.[0]?.imageUrl || '';
+
           const rawExamObj: ExamData = {
             exam_code: cleanCode,
             title: meta.title || raw.title || raw.exam?.title || `IELTS Examination - ${cleanCode}`,
             audio_url: meta.audio_url || raw.audio_url || raw.exam?.audio_url || '',
             passages: meta.passages || raw.passages || raw.exam?.passages || [],
             questions: extracted.questions || [],
+            sections: raw.sections,
             writing_task1_prompt: meta.writing_task1_prompt || raw.writing_task1_prompt || raw.exam?.writing_task1_prompt || '',
-            writing_task1_image: meta.writing_task1_image || raw.writing_task1_image || raw.exam?.writing_task1_image || '',
+            writing_task1_image: rawTask1Image,
+            writing_task1_image_url: rawTask1Image,
+            writing_task1_imageUrl: rawTask1Image,
             writing_task2_prompt: meta.writing_task2_prompt || raw.writing_task2_prompt || raw.exam?.writing_task2_prompt || ''
           };
 
@@ -1116,14 +1178,24 @@ export function prefetchExam(
           );
 
           if (hasQuestions || hasWritingPrompts) {
+            const rawTask1Image = meta.writing_task1_image || meta.writing_task1_image_url || meta.writing_task1_imageUrl || 
+              raw.writing_task1_image || raw.writing_task1_image_url || raw.writing_task1_imageUrl || 
+              raw.exam?.writing_task1_image || raw.exam?.writing_task1_image_url || raw.exam?.writing_task1_imageUrl || 
+              meta.imageUrl || meta.image_url || raw.imageUrl || raw.image_url || 
+              raw.sections?.find((s: any) => s.skill === 'writing')?.tasks?.[0]?.image_url || 
+              raw.sections?.find((s: any) => s.skill === 'writing')?.tasks?.[0]?.imageUrl || '';
+
             const rawExamObj: ExamData = {
               exam_code: cleanCode,
               title: meta.title || raw.title || raw.exam?.title || `IELTS Examination - ${cleanCode}`,
               audio_url: meta.audio_url || raw.audio_url || raw.exam?.audio_url || '',
               passages: meta.passages || raw.passages || raw.exam?.passages || [],
               questions: extracted.questions || [],
+              sections: raw.sections,
               writing_task1_prompt: meta.writing_task1_prompt || raw.writing_task1_prompt || raw.exam?.writing_task1_prompt || '',
-              writing_task1_image: meta.writing_task1_image || raw.writing_task1_image || raw.exam?.writing_task1_image || '',
+              writing_task1_image: rawTask1Image,
+              writing_task1_image_url: rawTask1Image,
+              writing_task1_imageUrl: rawTask1Image,
               writing_task2_prompt: meta.writing_task2_prompt || raw.writing_task2_prompt || raw.exam?.writing_task2_prompt || ''
             };
             const standardized = standardizeExamData(rawExamObj, cleanCode);
@@ -1315,14 +1387,24 @@ export async function fetchExam(
           );
 
           if (hasQuestions || hasWritingPrompts) {
+            const rawTask1Image = meta.writing_task1_image || meta.writing_task1_image_url || meta.writing_task1_imageUrl || 
+              raw.writing_task1_image || raw.writing_task1_image_url || raw.writing_task1_imageUrl || 
+              raw.exam?.writing_task1_image || raw.exam?.writing_task1_image_url || raw.exam?.writing_task1_imageUrl || 
+              meta.imageUrl || meta.image_url || raw.imageUrl || raw.image_url || 
+              raw.sections?.find((s: any) => s.skill === 'writing')?.tasks?.[0]?.image_url || 
+              raw.sections?.find((s: any) => s.skill === 'writing')?.tasks?.[0]?.imageUrl || '';
+
             const rawExamObj: ExamData = {
               exam_code: cleanCode,
               title: meta.title || raw.title || raw.exam?.title || `IELTS Examination - ${cleanCode}`,
               audio_url: meta.audio_url || raw.audio_url || raw.exam?.audio_url || '',
               passages: meta.passages || raw.passages || raw.exam?.passages || [],
               questions: extracted.questions || [],
+              sections: raw.sections,
               writing_task1_prompt: meta.writing_task1_prompt || raw.writing_task1_prompt || raw.exam?.writing_task1_prompt || '',
-              writing_task1_image: meta.writing_task1_image || raw.writing_task1_image || raw.exam?.writing_task1_image || '',
+              writing_task1_image: rawTask1Image,
+              writing_task1_image_url: rawTask1Image,
+              writing_task1_imageUrl: rawTask1Image,
               writing_task2_prompt: meta.writing_task2_prompt || raw.writing_task2_prompt || raw.exam?.writing_task2_prompt || ''
             };
 

@@ -808,6 +808,12 @@ export function parseExamFromDocumentText(rawText: string): ParsedDocumentResult
     reading_questions: allReadingQuestions.length > 0 ? allReadingQuestions : undefined,
     questions: allQuestions.length > 0 ? allQuestions : undefined,
     writing_task1_prompt: task1,
+    writing_task1_image: (() => {
+      if (!task1) return undefined;
+      const imgMdMatch = task1.match(/!\[.*?\]\((https?:\/\/[^\s\)]+|data:image\/[^\s\)]+)\)/i);
+      const imgTagMatch = task1.match(/\[(?:Image|Chart|Graphic|Biểu\s*đồ)\s*[:\-]\s*(https?:\/\/[^\s\]]+|data:image\/[^\s\]]+)\]/i);
+      return imgMdMatch ? imgMdMatch[1] : (imgTagMatch ? imgTagMatch[1] : undefined);
+    })(),
     writing_task2_prompt: task2,
     created_at: new Date().toISOString()
   };

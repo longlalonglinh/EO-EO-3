@@ -378,11 +378,29 @@ export function verifyAndOptimizeExam(raw: Partial<ExamData>): { exam: ExamData;
     }
   ];
 
+  const rawSections = raw.sections;
+  const writingSection = rawSections?.find((s: any) => s.skill === 'writing');
+  const task1Obj = writingSection?.tasks?.find((t: any) => t.task_number === 1) || writingSection?.tasks?.[0];
+
+  const resolvedTask1Prompt = task1Prompt || (task1Obj?.prompt ? String(task1Obj.prompt).trim() : undefined);
+  const resolvedTask1Image = raw.writing_task1_image || 
+    raw.writing_task1_image_url || 
+    raw.writing_task1_imageUrl || 
+    task1Obj?.image_url || 
+    task1Obj?.imageUrl || 
+    (task1Obj as any)?.image || 
+    raw.image_url || 
+    raw.imageUrl || 
+    undefined;
+
   // Final Compiled Exam
   const verifiedExam: ExamData = {
     exam_code: cleanCode,
     title: cleanTitle,
     test_type: testType,
+    exam_type: raw.exam_type,
+    skills: raw.skills,
+    sections: rawSections,
     duration_mins: durationMins,
     audio_url: audioUrl,
     audio_title: 'IELTS Official Academic Audio Section',
@@ -394,7 +412,10 @@ export function verifyAndOptimizeExam(raw: Partial<ExamData>): { exam: ExamData;
     listening_questions: cleanListeningQuestions,
     reading_questions: cleanReadingQuestions,
     questions: allVerifiedQuestions,
-    writing_task1_prompt: task1Prompt,
+    writing_task1_prompt: resolvedTask1Prompt,
+    writing_task1_image: resolvedTask1Image,
+    writing_task1_image_url: resolvedTask1Image,
+    writing_task1_imageUrl: resolvedTask1Image,
     writing_task2_prompt: task2Prompt,
     created_at: raw.created_at || new Date().toISOString()
   };

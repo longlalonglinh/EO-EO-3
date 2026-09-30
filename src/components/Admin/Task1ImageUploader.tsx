@@ -10,6 +10,7 @@ import {
   FileImage,
   ZoomIn
 } from 'lucide-react';
+import { normalizeGoogleDriveImageUrl } from '../../utils/imageUrl';
 
 interface Task1ImageUploaderProps {
   value?: string;
@@ -255,7 +256,8 @@ export const Task1ImageUploader: React.FC<Task1ImageUploaderProps> = ({
 
   const handleApplyUrl = () => {
     if (!urlDraft.trim()) return;
-    onChange(urlDraft.trim());
+    const normalized = normalizeGoogleDriveImageUrl(urlDraft.trim());
+    onChange(normalized);
     setFileName('Online URL Image');
     setOriginalSizeStr(null);
     setCompressedSizeStr(null);
@@ -352,10 +354,13 @@ export const Task1ImageUploader: React.FC<Task1ImageUploaderProps> = ({
           <div className="relative group rounded-xl overflow-hidden border border-purple-100 bg-white max-h-72 flex items-center justify-center p-2">
             {value && value.trim() ? (
               <img
-                src={value.trim()}
+                src={normalizeGoogleDriveImageUrl(value.trim())}
                 alt="Task 1 Diagram Preview"
                 className="max-h-64 w-auto object-contain rounded-lg"
                 referrerPolicy="no-referrer"
+                onError={() => {
+                  console.error('Could not load image from URL:', value);
+                }}
               />
             ) : null}
             <button
@@ -478,10 +483,13 @@ export const Task1ImageUploader: React.FC<Task1ImageUploaderProps> = ({
             <div className="overflow-auto flex items-center justify-center max-h-[75vh]">
               {value && value.trim() ? (
                 <img
-                  src={value.trim()}
+                  src={normalizeGoogleDriveImageUrl(value.trim())}
                   alt="Full Diagram Preview"
                   className="max-w-full h-auto object-contain rounded-xl"
                   referrerPolicy="no-referrer"
+                  onError={() => {
+                    console.error('Could not load full size image from URL:', value);
+                  }}
                 />
               ) : null}
             </div>

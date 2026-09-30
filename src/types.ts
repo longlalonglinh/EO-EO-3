@@ -149,11 +149,14 @@ export type SkillType = 'listening' | 'reading' | 'writing';
 export type ExamType = 'one_skill' | 'two_skills' | 'full_test';
 
 export interface WritingTask {
+  id?: string;
   task_number: 1 | 2;
   title?: string;
   prompt: string;
   image_url?: string;
+  imageUrl?: string;
   min_words?: number;
+  suggested_time_minutes?: number;
 }
 
 export interface ExamSkillSection {
@@ -238,6 +241,7 @@ export interface ExamData {
   audio_url?: string;
   audio_title?: string;
   image_url?: string;
+  imageUrl?: string;
   listening_questions?: Question[];
   passage_title?: string;
   reading_passage_title?: string;
@@ -248,6 +252,8 @@ export interface ExamData {
   questions?: Question[];
   writing_task1_prompt?: string;
   writing_task1_image?: string;
+  writing_task1_image_url?: string;
+  writing_task1_imageUrl?: string;
   writing_task2_prompt?: string;
   created_at?: string;
 }

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { verifyAndOptimizeExam } from '../services/examVerification';
 import { isAnswerCorrect } from '../services/answerScoring';
+import { normalizeGoogleDriveImageUrl } from '../utils/imageUrl';
 
 describe('AI Exam Generator - Pre-Flight Verification & Optimization Suite', () => {
 
@@ -210,6 +211,84 @@ Nevertheless, the intermittency of wind velocity poses substantial challenges to
     const q3 = exam.questions!.find(q => q.question_id === 'R3')!;
     expect(isAnswerCorrect('cholesterol', q3.correct_answer, q3.acceptable_answers, q3.question_type)).toBe(true);
     expect(isAnswerCorrect(' Cholesterol  ', q3.correct_answer, q3.acceptable_answers, q3.question_type)).toBe(true);
+  });
+
+  it('strictly preserves Task 1 image across all naming variants (image_url, imageUrl, writing_task1_image) in one-skill and multi-skill modes', () => {
+    const oneSkillWritingExam = {
+      exam_code: 'WT1004',
+      title: 'IELTS Academic Writing One-Skill Drill',
+      test_type: 'TEST' as const,
+      exam_type: 'one_skill' as const,
+      skills: ['writing' as const],
+      duration_mins: 60,
+      writing_duration_mins: 60,
+      sections: [
+        {
+          skill: 'writing' as const,
+          title: 'IELTS Writing Section',
+          durationMinutes: 60,
+          tasks: [
+            {
+              id: 'task-1',
+              task_number: 1 as const,
+              title: 'Academic Writing Task 1',
+              prompt: 'The charts below show the number of Japanese tourists travelling abroad between 1985 and 1995.',
+              imageUrl: 'data:image/jpeg;base64,mockJapaneseTouristsChartData1234567890==',
+              min_words: 150,
+              suggested_time_minutes: 20
+            },
+            {
+              id: 'task-2',
+              task_number: 2 as const,
+              title: 'Academic Writing Task 2',
+              prompt: 'Discuss advantages and disadvantages of international tourism.',
+              min_words: 250,
+              suggested_time_minutes: 40
+            }
+          ]
+        }
+      ]
+    };
+
+    const { exam, report } = verifyAndOptimizeExam(oneSkillWritingExam);
+
+    expect(report.passed).toBe(true);
+    expect(exam.writing_task1_image).toBe('data:image/jpeg;base64,mockJapaneseTouristsChartData1234567890==');
+    expect(exam.writing_task1_image_url).toBe('data:image/jpeg;base64,mockJapaneseTouristsChartData1234567890==');
+    expect(exam.writing_task1_imageUrl).toBe('data:image/jpeg;base64,mockJapaneseTouristsChartData1234567890==');
+    expect(exam.exam_type).toBe('one_skill');
+    expect(exam.skills).toContain('writing');
+  });
+
+  it('normalizes Google Drive sharing URLs to direct high-resolution thumbnail URLs', () => {
+    const driveFileId = '1AbCdEfGhIjKlMnOpQrStUvWxYz012345';
+    
+    // File view link
+    const viewUrl = `https://drive.google.com/file/d/${driveFileId}/view?usp=sharing`;
+    expect(normalizeGoogleDriveImageUrl(viewUrl)).toBe(`https://drive.google.com/thumbnail?id=${driveFileId}&sz=w1600`);
+
+    // Open link
+    const openUrl = `https://drive.google.com/open?id=${driveFileId}`;
+    expect(normalizeGoogleDriveImageUrl(openUrl)).toBe(`https://drive.google.com/thumbnail?id=${driveFileId}&sz=w1600`);
+
+    // Direct uc link
+    const ucUrl = `https://drive.google.com/uc?id=${driveFileId}&export=download`;
+    expect(normalizeGoogleDriveImageUrl(ucUrl)).toBe(`https://drive.google.com/thumbnail?id=${driveFileId}&sz=w1600`);
+
+    // lh3 usercontent link
+    const lh3Url = `https://lh3.googleusercontent.com/d/${driveFileId}`;
+    expect(normalizeGoogleDriveImageUrl(lh3Url)).toBe(`https://drive.google.com/thumbnail?id=${driveFileId}&sz=w1600`);
+
+    // Non-Drive URLs should remain unchanged
+    const directCdnUrl = 'https://images.unsplash.com/photo-1543269865-cbf427effbad';
+    expect(normalizeGoogleDriveImageUrl(directCdnUrl)).toBe(directCdnUrl);
+
+    // Data URLs should remain untouched
+    const base64Data = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    expect(normalizeGoogleDriveImageUrl(base64Data)).toBe(base64Data);
+
+    // Empty input returns empty string
+    expect(normalizeGoogleDriveImageUrl('')).toBe('');
   });
 
 });

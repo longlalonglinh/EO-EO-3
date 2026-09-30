@@ -14,11 +14,16 @@ import {
   saveWritingDraftToIndexedDB, 
   getWritingDraftFromIndexedDB 
 } from '../../services/indexedDb';
+import { WritingTask } from '../../types';
 import { CountdownTimer } from './CountdownTimer';
+import { normalizeGoogleDriveImageUrl } from '../../utils/imageUrl';
 
 interface WritingModuleProps {
   task1Prompt?: string;
   task1Image?: string;
+  image_url?: string;
+  imageUrl?: string;
+  tasks?: WritingTask[];
   onTask1ImageChange?: (image: string) => void;
   task2Prompt?: string;
   task1Text: string;
@@ -36,6 +41,9 @@ interface WritingModuleProps {
 export const WritingModule: React.FC<WritingModuleProps> = ({
   task1Prompt,
   task1Image,
+  image_url,
+  imageUrl,
+  tasks,
   task2Prompt,
   task1Text,
   task2Text,
@@ -56,7 +64,13 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
   
   // Image zoom modal
   const [isZoomOpen, setIsZoomOpen] = useState(false);
-  const cleanTask1Image = (task1Image && typeof task1Image === 'string' && task1Image.trim().length > 0) ? task1Image.trim() : null;
+  
+  // Extract task image using full property fallback cascade
+  const task1FromList = tasks?.find(t => t.task_number === 1) || tasks?.[0];
+  const rawImage = task1Image || imageUrl || image_url || task1FromList?.image_url || task1FromList?.imageUrl || (task1FromList as any)?.image;
+  const cleanTask1Image = (rawImage && typeof rawImage === 'string' && rawImage.trim().length > 0)
+    ? normalizeGoogleDriveImageUrl(rawImage.trim())
+    : null;
 
   // Split-view and small screen responsive states
   const [splitRatio, setSplitRatio] = useState<number>(45); // 45% left (prompt), 55% right (editor)
@@ -406,14 +420,18 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
 
               {/* Task 1 Graphic / Chart Image Display */}
               {cleanTask1Image && (
-                <div className="space-y-2">
-                  <div className="relative group rounded-2xl overflow-hidden border border-purple-200/80 bg-white shadow-sm">
+                <div className="my-4 rounded-xl overflow-hidden border border-slate-200 bg-white p-2 shadow-sm">
+                  <div className="relative group rounded-lg overflow-hidden bg-white">
                     <img
                       src={cleanTask1Image}
-                      alt="IELTS Writing Task 1 Diagram / Chart"
-                      className="w-full max-h-80 object-contain bg-white cursor-pointer transition duration-200 group-hover:scale-[1.01]"
+                      alt="Task 1 Graphic / Chart"
+                      className="w-full h-auto max-h-[420px] object-contain mx-auto bg-white cursor-pointer transition duration-200 group-hover:scale-[1.01]"
                       onClick={() => setIsZoomOpen(true)}
+                      loading="lazy"
                       referrerPolicy="no-referrer"
+                      onError={() => {
+                        console.error('Cannot load Task 1 image from URL:', cleanTask1Image);
+                      }}
                     />
                     
                     {/* Overlay button to zoom */}
@@ -543,6 +561,9 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
               alt="Full Task 1 Diagram"
               className="max-w-full max-h-[75vh] object-contain rounded-xl"
               referrerPolicy="no-referrer"
+              onError={() => {
+                console.error('Cannot load full zoom Task 1 image from URL:', cleanTask1Image);
+              }}
             />
           </div>
         </div>

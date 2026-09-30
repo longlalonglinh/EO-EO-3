@@ -1572,21 +1572,45 @@ function doPost(e) {
 
                 {currentModule === 'writing' && (
                   <div className="space-y-4">
-                    <WritingModule
-                      task1Prompt={examData.writing_task1_prompt}
-                      task1Image={examData.writing_task1_image}
-                      task2Prompt={examData.writing_task2_prompt}
-                      task1Text={writingTask1}
-                      task2Text={writingTask2}
-                      onTask1Change={setWritingTask1}
-                      onTask2Change={setWritingTask2}
-                      submissionId={submissionId}
-                      examCode={examCode}
-                      candidateId={sbd}
-                      testMode={testMode}
-                      durationMins={examData.writing_duration_mins || 60}
-                      onTimeExpire={() => handleSubmitExam('TIMEOUT_FORCED')}
-                    />
+                    {(() => {
+                      const writingSection = examData.sections?.find(s => s.skill === 'writing');
+                      const wTasks = writingSection?.tasks;
+                      const task1Obj = wTasks?.find(t => t.task_number === 1) || wTasks?.[0];
+                      const task2Obj = wTasks?.find(t => t.task_number === 2) || wTasks?.[1];
+
+                      const resolvedTask1Prompt = examData.writing_task1_prompt || task1Obj?.prompt;
+                      const resolvedTask1Image = examData.writing_task1_image || 
+                        examData.writing_task1_image_url || 
+                        examData.writing_task1_imageUrl || 
+                        task1Obj?.image_url || 
+                        task1Obj?.imageUrl || 
+                        (task1Obj as any)?.image || 
+                        examData.image_url || 
+                        (examData as any).imageUrl || 
+                        '';
+                      const resolvedTask2Prompt = examData.writing_task2_prompt || task2Obj?.prompt;
+
+                      return (
+                        <WritingModule
+                          task1Prompt={resolvedTask1Prompt}
+                          task1Image={resolvedTask1Image}
+                          image_url={resolvedTask1Image}
+                          imageUrl={resolvedTask1Image}
+                          tasks={wTasks}
+                          task2Prompt={resolvedTask2Prompt}
+                          task1Text={writingTask1}
+                          task2Text={writingTask2}
+                          onTask1Change={setWritingTask1}
+                          onTask2Change={setWritingTask2}
+                          submissionId={submissionId}
+                          examCode={examCode}
+                          candidateId={sbd}
+                          testMode={testMode}
+                          durationMins={examData.writing_duration_mins || 60}
+                          onTimeExpire={() => handleSubmitExam('TIMEOUT_FORCED')}
+                        />
+                      );
+                    })()}
 
                     {/* Section Progression Footer */}
                     <div className="bg-white border border-purple-100/80 rounded-3xl p-5 shadow-xl shadow-purple-950/5 flex flex-col sm:flex-row items-center justify-between gap-4">
