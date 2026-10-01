@@ -210,7 +210,7 @@ export const ProctoringMonitor: React.FC<ProctoringMonitorProps> = ({
       if (rapidSwitchTimestampsRef.current.length >= 3) {
         if (now - lastRapidSwitchWarningTimeRef.current >= 8000) {
           lastRapidSwitchWarningTimeRef.current = now;
-          recordViolation(`Phát hiện chuyển đổi tab vi mô liên tục (${rapidSwitchTimestampsRef.current.length} lần/30s)`);
+          recordViolation(`Repeated micro-tab switching detected (${rapidSwitchTimestampsRef.current.length} times / 30s)`);
         }
       }
 
@@ -245,7 +245,7 @@ export const ProctoringMonitor: React.FC<ProctoringMonitorProps> = ({
           if (now - lastCumulativeWarningTimeRef.current >= 10000) {
             lastCumulativeWarningTimeRef.current = now;
             const totalSec = (cumulativeOffScreenMsRef.current / 1000).toFixed(1);
-            recordViolation(`Tổng thời gian tích lũy rời màn hình vượt giới hạn an toàn (${totalSec}s / 6s)`);
+            recordViolation(`Cumulative time off-screen exceeded safe threshold (${totalSec}s / 6s)`);
           }
         }
 
@@ -292,13 +292,13 @@ export const ProctoringMonitor: React.FC<ProctoringMonitorProps> = ({
         <div className="flex items-center space-x-3">
           <span className="flex items-center gap-1.5 font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200">
             <ShieldCheck className="w-3.5 h-3.5 text-slate-500" />
-            <span>Phòng thi tiêu chuẩn • Bảo mật kích hoạt</span>
+            <span>Official Examination Session • Proctoring Active</span>
           </span>
           <span className="hidden sm:inline border-l border-purple-200 pl-3 text-slate-600 font-medium">
-            Số báo danh: <strong className="text-[#3C2A63] font-bold">{sbd}</strong>
+            Candidate ID: <strong className="text-[#3C2A63] font-bold">{sbd}</strong>
           </span>
           <span className="hidden sm:inline border-l border-purple-200 pl-3 text-slate-600 font-medium">
-            Mã đề: <strong className="text-[#6B51A5] font-bold">{examCode}</strong>
+            Exam Code: <strong className="text-[#6B51A5] font-bold">{examCode}</strong>
           </span>
         </div>
 
@@ -310,14 +310,14 @@ export const ProctoringMonitor: React.FC<ProctoringMonitorProps> = ({
               className="px-3 py-1 bg-[#6B51A5] hover:bg-[#503A7A] text-white rounded-xl font-bold flex items-center gap-1 transition shadow-xs cursor-pointer"
             >
               <Maximize2 className="w-3 h-3" />
-              Toàn màn hình
+              Fullscreen
             </button>
           )}
 
           {/* Neutral Status Pill */}
           <span className="px-2.5 py-1 rounded-xl font-semibold text-[11px] bg-slate-50 text-slate-600 border border-slate-200 flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span>Tiến trình ổn định</span>
+            <span>Connection Stable</span>
           </span>
         </div>
       </div>

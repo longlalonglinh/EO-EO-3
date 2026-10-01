@@ -1836,7 +1836,7 @@ function doPost(e) {
                     if (writingTask1 || writingTask2) {
                       await saveWritingDraftToIndexedDB(examCode, sbd, { task1: writingTask1, task2: writingTask2 });
                     }
-                    setSkillNotice('💾 Đã lưu nháp bài làm an toàn vào cơ sở dữ liệu IndexedDB!');
+                    setSkillNotice('💾 Draft responses safely saved to IndexedDB storage!');
                     setTimeout(() => setSkillNotice(null), 4000);
                   }}
                   isSubmitting={isSubmitting}

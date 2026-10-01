@@ -162,11 +162,15 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
   // Track initial hydration to prevent overwriting stored draft with empty props
   const hasHydratedRef = useRef(false);
 
-  // Requirement 5: Realtime Word Counter using regex \b\S+\b
+  // TC-CAND-02 Defensive Implementation: ReDoS & Unicode Zero-Width Protection
   const countWords = (str: string): number => {
-    if (!str) return 0;
-    const matches = str.match(/\b\S+\b/g);
-    return matches ? matches.length : 0;
+    if (!str || typeof str !== 'string') return 0;
+    // Strip zero-width spaces, invisible characters, and non-printable control chars linearly
+    const sanitized = str.replace(/[\u200B-\u200D\uFEFF\u0000-\u001F\u007F-\u009F]/g, '');
+    const trimmed = sanitized.trim();
+    if (!trimmed) return 0;
+    // Linear whitespace tokenization without regex backtracking
+    return trimmed.split(/\s+/).filter(token => token.length > 0 && /\w/.test(token)).length;
   };
 
   const task1WordCount = countWords(task1Text);
@@ -414,7 +418,7 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
               }`}
             >
               <FileText className="w-4 h-4" />
-              <span>✍️ Khu vực Viết ({activeTab === 'task1' ? task1WordCount : task2WordCount} từ)</span>
+              <span>✍️ Writing Editor ({activeTab === 'task1' ? task1WordCount : task2WordCount} words)</span>
             </button>
             <button
               type="button"
@@ -424,7 +428,7 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
               }`}
             >
               <ImageIcon className="w-4 h-4" />
-              <span>📊 Đề bài {activeTab === 'task1' ? '& Biểu đồ' : ''}</span>
+              <span>📊 Prompt {activeTab === 'task1' ? '& Diagram' : ''}</span>
             </button>
           </div>
         </div>

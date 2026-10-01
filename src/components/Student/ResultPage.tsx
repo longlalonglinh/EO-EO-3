@@ -128,10 +128,10 @@ export const ResultPage: React.FC<ResultPageProps> = ({
     try {
       if (onRetrySync) {
         await onRetrySync();
-        setSyncFeedback('✅ Đã yêu cầu đồng bộ máy chủ thành công!');
+        setSyncFeedback('✅ Server synchronization requested successfully!');
       }
     } catch (e: any) {
-      setSyncFeedback('⚠️ Chưa thể kết nối máy chủ. Dữ liệu vẫn được bảo lưu an toàn ngoại tuyến.');
+      setSyncFeedback('⚠️ Server temporarily unreachable. Data remains safely secured offline.');
     } finally {
       setIsSyncing(false);
     }
@@ -174,18 +174,18 @@ export const ResultPage: React.FC<ResultPageProps> = ({
               <>
                 <div className="inline-flex items-center space-x-2 px-4 py-1.5 bg-amber-500/90 text-white rounded-full border border-amber-300 text-xs font-black uppercase tracking-wider backdrop-blur-md shadow-lg">
                   <ShieldCheck className="w-4 h-4 text-white" />
-                  <span>TRẠNG THÁI: ĐÃ NIÊM PHONG NGOẠI TUYẾN (SEALED OFFLINE)</span>
+                  <span>STATUS: SEALED OFFLINE</span>
                 </div>
                 <div className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white/20 text-white rounded-full border border-white/30 text-xs font-bold uppercase tracking-wider backdrop-blur-md">
                   <WifiOff className="w-3.5 h-3.5 text-amber-200" />
-                  <span>HÀNG ĐỢI ĐỒNG BỘ MÁY CHỦ (QUEUED)</span>
+                  <span>SERVER SYNC QUEUE ACTIVE</span>
                 </div>
               </>
             ) : (
               <>
                 <div className="inline-flex items-center space-x-2 px-4 py-1.5 bg-emerald-500/90 text-white rounded-full border border-emerald-300 text-xs font-black uppercase tracking-wider backdrop-blur-md shadow-lg">
                   <CheckCircle2 className="w-4 h-4 text-white" />
-                  <span>TRẠNG THÁI: ĐÃ NỘP BÀI (TURNED IN / SUBMITTED)</span>
+                  <span>STATUS: SUBMITTED &amp; GRADED</span>
                 </div>
                 <div className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white/20 text-white rounded-full border border-white/30 text-xs font-bold uppercase tracking-wider backdrop-blur-md">
                   <Sparkles className="w-3.5 h-3.5 text-purple-200" />
@@ -196,16 +196,16 @@ export const ResultPage: React.FC<ResultPageProps> = ({
           </div>
 
           <h1 className="text-3xl md:text-4xl font-black text-white">
-            {isOffline ? 'BÀI THI ĐÃ ĐƯỢC NIÊM PHONG AN TOÀN' : 'BÀI THI ĐÃ NỘP & CHẤM ĐIỂM THÀNH CÔNG'}
+            {isOffline ? 'TEST RESPONSES SAFELY SEALED' : 'EXAMINATION COMPLETED & GRADED'}
           </h1>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <p className="text-sm text-purple-100 font-medium">
-              Thí sinh: <strong className="text-white font-bold">{result.sbd || 'Candidate'}</strong> | Mã đề thi: <strong className="text-white font-bold">{result.exam_code}</strong> | Mã bài nộp: <span className="font-mono text-xs text-purple-200 bg-white/10 px-2 py-0.5 rounded">{result.submission_id}</span>
+              Candidate: <strong className="text-white font-bold">{result.sbd || 'Candidate'}</strong> | Exam Code: <strong className="text-white font-bold">{result.exam_code}</strong> | Submission ID: <span className="font-mono text-xs text-purple-200 bg-white/10 px-2 py-0.5 rounded">{result.submission_id}</span>
             </p>
             {result.submission_type === 'TIMEOUT_FORCED' && (
               <span className="px-3 py-1 bg-amber-400 text-amber-950 font-black text-xs rounded-full uppercase tracking-wider shadow-md flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5" />
-                <span>Tự động nộp khi hết giờ (Timeout Forced)</span>
+                <span>Auto-Submitted on Time Limit (Timeout Forced)</span>
               </span>
             )}
           </div>
@@ -220,11 +220,11 @@ export const ResultPage: React.FC<ResultPageProps> = ({
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-5 h-5 text-amber-700 shrink-0" />
                 <h3 className="text-base font-black text-amber-950">
-                  BÀI THI ĐÃ ĐƯỢC NIÊM PHONG NGOẠI TUYẾN VÀO INDEXEDDB
+                  TEST RESPONSES SEALED LOCALLY IN INDEXEDDB
                 </h3>
               </div>
               <p className="text-xs text-amber-900 leading-relaxed max-w-2xl">
-                Do kết nối mạng máy trạm bị gián đoạn tại thời điểm nộp bài, hệ thống đã mã hóa và niêm phong toàn bộ dữ liệu bài làm vào kho lưu trữ IndexedDB an toàn. Ngay khi có mạng, hàng đợi Background Sync sẽ tự động đẩy bài thi lên máy chủ để cấp chứng chỉ chính thức.
+                Because local workstation connectivity was interrupted at submission time, the system encrypted and cryptographically sealed your responses in secure IndexedDB storage. As soon as connectivity returns, Background Sync will push your submission to the grading server.
               </p>
             </div>
 
@@ -236,24 +236,24 @@ export const ResultPage: React.FC<ResultPageProps> = ({
                 className="px-4 py-2 bg-amber-700 hover:bg-amber-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm cursor-pointer disabled:opacity-50"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                <span>{isSyncing ? 'Đang đồng bộ...' : 'Thử đồng bộ lại ngay'}</span>
+                <span>{isSyncing ? 'Syncing...' : 'Retry Server Sync'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleEmergencyExport}
                 className="px-4 py-2 bg-white hover:bg-amber-100 text-amber-950 border border-amber-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm cursor-pointer"
-                title="Tải tệp JSON chứa toàn bộ bài làm và mã niêm phong"
+                title="Download JSON file containing full response receipt and cryptographic seal"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Xuất tệp nộp bài khẩn cấp (.json)</span>
+                <span>Export Emergency Receipt (.json)</span>
               </button>
             </div>
           </div>
 
           <div className="bg-white/80 border border-amber-200 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
             <div className="flex items-center gap-2">
-              <span className="font-bold text-amber-900">Mã biên lai niêm phong:</span>
+              <span className="font-bold text-amber-900">Sealed Receipt Hash:</span>
               <code className="font-mono font-black text-amber-950 bg-amber-100 px-2 py-0.5 rounded">
                 {result.offline_receipt_code || 'SEALED-OFFLINE'}
               </code>
@@ -261,7 +261,7 @@ export const ResultPage: React.FC<ResultPageProps> = ({
 
             {result.sealed_token && (
               <div className="flex items-center gap-2">
-                <span className="font-bold text-amber-900">Token bảo mật:</span>
+                <span className="font-bold text-amber-900">Security Token:</span>
                 <code className="font-mono text-[11px] text-amber-950 bg-amber-100 px-2 py-0.5 rounded max-w-[200px] truncate" title={result.sealed_token}>
                   {result.sealed_token}
                 </code>
@@ -549,12 +549,12 @@ export const ResultPage: React.FC<ResultPageProps> = ({
                             {isCorrect ? (
                               <span className="flex items-center space-x-1 text-xs font-black text-emerald-800 bg-emerald-100/90 border border-emerald-300 px-3 py-1 rounded-xl shadow-xs">
                                 <Check className="w-3.5 h-3.5" />
-                                <span>Chính xác (+1)</span>
+                                <span>Correct (+1)</span>
                               </span>
                             ) : (
                               <span className="flex items-center space-x-1 text-xs font-black text-rose-800 bg-rose-100/90 border border-rose-300 px-3 py-1 rounded-xl shadow-xs">
                                 <XCircle className="w-3.5 h-3.5" />
-                                <span>Chưa đúng (0)</span>
+                                <span>Incorrect (0)</span>
                               </span>
                             )}
                           </div>
@@ -570,18 +570,18 @@ export const ResultPage: React.FC<ResultPageProps> = ({
                           }`}>
                             <div className="text-xs">
                               <span className="text-[10px] font-bold uppercase tracking-wider text-[#7C68A5] block">
-                                Câu trả lời của bạn:
+                                Your Response:
                               </span>
                               <span className={`font-mono font-black text-xs md:text-sm ${
                                 isCorrect ? 'text-emerald-700' : 'text-rose-700'
                               }`}>
-                                {studentAns || '(Bỏ trống)'}
+                                {studentAns || '(Unanswered)'}
                               </span>
                             </div>
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${
                               isCorrect ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
                             }`}>
-                              {isCorrect ? 'Khớp đáp án' : 'Sai lệch'}
+                              {isCorrect ? 'Matched Key' : 'Incorrect'}
                             </span>
                           </div>
 
@@ -589,7 +589,7 @@ export const ResultPage: React.FC<ResultPageProps> = ({
                           <div className="p-3 rounded-2xl border bg-white border-emerald-200 flex items-center justify-between gap-2">
                             <div className="text-xs">
                               <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 block">
-                                Đáp án chuẩn xác chấp nhận:
+                                Accepted Correct Answer(s):
                               </span>
                               <span className="font-mono font-black text-xs md:text-sm text-emerald-700">
                                 {correctAnswers}
@@ -604,7 +604,7 @@ export const ResultPage: React.FC<ResultPageProps> = ({
                           <div className="p-3.5 bg-purple-50/70 border border-purple-200 rounded-2xl space-y-1 text-xs">
                             <div className="flex items-center gap-1.5 font-bold text-[#6B51A5]">
                               <Lightbulb className="w-3.5 h-3.5" />
-                              <span>Dẫn chứng &amp; Lời giải thích học thuật:</span>
+                              <span>Academic Evidence &amp; Explanation:</span>
                             </div>
                             <p className="text-[#3C2A63] leading-relaxed italic">
                               "{q.explanation}"
@@ -621,10 +621,10 @@ export const ResultPage: React.FC<ResultPageProps> = ({
                               setSelectedWordForAI(q.correct_answer || undefined);
                             }}
                             className="px-3.5 py-1.5 bg-[#FAF8FE] hover:bg-purple-100 text-[#6B51A5] border border-purple-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-                            title="Mở phân tích chuyên sâu về ngữ pháp, từ vựng và bẫy đề thi từ AI Gemini"
+                            title="Open in-depth grammar, vocabulary, and exam strategy analysis with Gemini AI"
                           >
                             <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                            <span>Phân tích &amp; Chữa lỗi với AI Gemini</span>
+                            <span>Analyze with Gemini AI</span>
                           </button>
                         </div>
                       </div>

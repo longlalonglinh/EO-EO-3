@@ -179,10 +179,10 @@ export const GeminiAnalysisModal: React.FC<GeminiAnalysisModalProps> = ({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-lg text-[10px] font-bold text-amber-900">
               <AlertCircle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-              <span>ĐÁNH GIÁ TẠM THỜI TỪ AI (PROVISIONAL AI EVALUATION) • Tham khảo học thuật</span>
+              <span>PROVISIONAL AI EVALUATION • Academic Reference Only</span>
             </div>
             <span className="text-[10px] text-[#7C68A5] font-semibold">
-              Định luật Hick: Thông tin được phân nhóm theo 4 tầng nhận thức
+              Hick's Law: 4-tier structured cognitive breakdown
             </span>
           </div>
 
@@ -250,14 +250,14 @@ export const GeminiAnalysisModal: React.FC<GeminiAnalysisModalProps> = ({
 
               <div className="space-y-1.5">
                 <h4 className="text-sm font-black text-[#3C2A63]">
-                  {loadStage === 1 && 'Giai đoạn 1/3: Phân tích cú pháp & mệnh đề S-V-O...'}
-                  {loadStage === 2 && 'Giai đoạn 2/3: Tra cứu từ khóa, phiên âm IPA & Collocations...'}
-                  {loadStage === 3 && 'Giai đoạn 3/3: Đối chiếu các bẫy thường gặp & tạo ví dụ...'}
+                  {loadStage === 1 && 'Phase 1/3: Analyzing syntax & S-V-O clauses...'}
+                  {loadStage === 2 && 'Phase 2/3: Extracting keywords, IPA phonetics & collocations...'}
+                  {loadStage === 3 && 'Phase 3/3: Evaluating common traps & synthesizing examples...'}
                 </h4>
                 <p className="text-xs text-[#7C68A5]">
-                  {loadStage === 1 && 'Nhận diện Subject, Main Verb, Object và các mệnh đề trạng ngữ phụ thuộc.'}
-                  {loadStage === 2 && 'Xác định từ loại, họ từ (Word Family) và cách kết hợp từ học thuật chuẩn IELTS.'}
-                  {loadStage === 3 && 'Hoàn thiện nhận xét sư phạm theo Định luật Hick để giảm tải nhận thức.'}
+                  {loadStage === 1 && 'Identifying Subject, Main Verb, Object, and dependent clauses.'}
+                  {loadStage === 2 && 'Classifying part of speech, word families, and academic collocations.'}
+                  {loadStage === 3 && 'Generating pedagogical feedback structured to minimize cognitive load.'}
                 </p>
               </div>
 
@@ -270,8 +270,8 @@ export const GeminiAnalysisModal: React.FC<GeminiAnalysisModalProps> = ({
                   />
                 </div>
                 <div className="flex items-center justify-between text-[10px] text-[#7C68A5] font-bold">
-                  <span>Tiến độ phân tích: {loadProgress}%</span>
-                  <span>Đang xử lý</span>
+                  <span>Analysis Progress: {loadProgress}%</span>
+                  <span>Processing</span>
                 </div>
               </div>
             </div>

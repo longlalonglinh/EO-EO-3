@@ -190,16 +190,34 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
       }
     };
 
+    // TC-CAND-03: Handle peripheral output change / headphone disconnection without losing timestamp
+    const onPause = () => {
+      if (testMode === 'TEST' && !audio.ended && maxAllowedTimeRef.current < (audio.duration || 9999) - 2) {
+        setIsPlaying(false);
+        // Attempt seamless resume on new audio output device without seeking back
+        audio.play().then(() => {
+          setIsPlaying(true);
+          setAudioError(null);
+        }).catch(() => {
+          setAudioError('Audio device changed or paused. Click "Resume Audio" to continue uninterrupted.');
+        });
+      } else {
+        setIsPlaying(false);
+      }
+    };
+
     audio.addEventListener('timeupdate', updateTime);
     audio.addEventListener('loadedmetadata', updateDuration);
     audio.addEventListener('ended', onEnded);
     audio.addEventListener('seeking', onSeeking);
+    audio.addEventListener('pause', onPause);
 
     return () => {
       audio.removeEventListener('timeupdate', updateTime);
       audio.removeEventListener('loadedmetadata', updateDuration);
       audio.removeEventListener('ended', onEnded);
       audio.removeEventListener('seeking', onSeeking);
+      audio.removeEventListener('pause', onPause);
     };
   }, [testMode, examCode, candidateId, cleanAudioUrl]);
 
@@ -494,7 +512,7 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
               : 'bg-emerald-50 text-emerald-800 border-emerald-200'
           }`}>
             <Save className={`w-3.5 h-3.5 ${isSaving ? 'animate-spin text-amber-600' : 'text-emerald-700'}`} />
-            <span>{isSaving ? 'Đang lưu...' : autoSaveTime ? `Đã lưu (${autoSaveTime})` : 'Tự động lưu'}</span>
+            <span>{isSaving ? 'Saving...' : autoSaveTime ? `Saved (${autoSaveTime})` : 'Auto-Saved'}</span>
           </span>
 
           <div className="text-xs text-[#7C68A5] font-medium flex items-center gap-2">

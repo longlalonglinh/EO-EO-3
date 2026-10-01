@@ -122,7 +122,7 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
           <div>
             <div className="flex items-center space-x-2">
               <h3 className="text-lg font-black text-[#3C2A63]">
-                Xác nhận Nộp bài thi
+                Confirm Final Submission
               </h3>
               {retakeMode ? (
                 <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-extrabold uppercase tracking-wider border border-emerald-200">
@@ -135,7 +135,7 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
               )}
             </div>
             <p className="text-xs text-[#7C68A5] font-medium">
-              Kiểm tra kỹ lưỡng câu trả lời trước khi chuyển giao quyền chấm điểm
+              Review your responses carefully before finalizing submission and grading
             </p>
           </div>
         </div>
@@ -152,14 +152,14 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
 
             <div className="space-y-1">
               <h4 className="text-sm font-black text-[#3C2A63]">
-                {submissionStage === 1 && 'Giai đoạn 1: Đóng gói và mã hóa bài làm...'}
-                {submissionStage === 2 && 'Giai đoạn 2: Máy chủ đang chấm điểm bảo mật...'}
-                {submissionStage === 3 && 'Giai đoạn 3: Hoàn tất & cấp biên lai điểm số chính thức...'}
+                {submissionStage === 1 && 'Phase 1: Sealing & encrypting test responses...'}
+                {submissionStage === 2 && 'Phase 2: Secure backend scoring in progress...'}
+                {submissionStage === 3 && 'Phase 3: Finalizing official score receipt...'}
               </h4>
               <p className="text-xs text-[#7C68A5]">
-                {submissionStage === 1 && 'Kiểm tra tính toàn vẹn của các đáp án Listening, Reading và Writing.'}
-                {submissionStage === 2 && 'Chấm điểm độc lập tại máy chủ backend để bảo vệ kết quả bài thi.'}
-                {submissionStage === 3 && 'Đang đồng bộ hóa biên lai lên Google Sheets và cơ sở dữ liệu.'}
+                {submissionStage === 1 && 'Verifying response integrity for Listening, Reading, and Writing.'}
+                {submissionStage === 2 && 'Executing authoritative server scoring and proctoring validation.'}
+                {submissionStage === 3 && 'Synchronizing receipt records to central database and Google Sheets.'}
               </p>
             </div>
 
@@ -181,7 +181,7 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
 
             <div className="text-[11px] text-emerald-800 font-bold bg-emerald-50 py-1.5 px-3 rounded-xl border border-emerald-200 flex items-center justify-center gap-1.5">
               <Lock className="w-3.5 h-3.5" />
-              <span>Tiến trình an toàn: Không tắt trình duyệt hoặc tải lại trang lúc này.</span>
+              <span>Session Protected: Do not close browser or reload page during submission.</span>
             </div>
           </div>
         ) : (
@@ -196,13 +196,13 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
                   </div>
                   <div className="flex items-center space-x-2">
                     <span className="text-xs font-extrabold text-[#503A7A] font-mono">
-                      {answeredListening} / {totalListening} đã làm
+                      {answeredListening} / {totalListening} answered
                     </span>
                     {answeredListening === totalListening ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                     ) : (
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold">
-                        còn {totalListening - answeredListening} câu
+                        {totalListening - answeredListening} remaining
                       </span>
                     )}
                   </div>
@@ -217,13 +217,13 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
                   </div>
                   <div className="flex items-center space-x-2">
                     <span className="text-xs font-extrabold text-[#503A7A] font-mono">
-                      {answeredReading} / {totalReading} đã làm
+                      {answeredReading} / {totalReading} answered
                     </span>
                     {answeredReading === totalReading ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                     ) : (
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold">
-                        còn {totalReading - answeredReading} câu
+                        {totalReading - answeredReading} remaining
                       </span>
                     )}
                   </div>
@@ -262,9 +262,9 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
               <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-start space-x-2.5 text-xs text-amber-900">
                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-bold">Bạn còn {unansweredCount} câu hỏi chưa điền đáp án.</p>
+                  <p className="font-bold">You have {unansweredCount} unanswered questions.</p>
                   <p className="text-[11px] text-amber-700 mt-0.5">
-                    Trong kỳ thi IELTS, câu trả lời sai không bị trừ điểm. Khuyến khích bạn đoán và điền đầy đủ tất cả câu hỏi trước khi nộp.
+                    In the IELTS test, incorrect answers are not penalized. You are strongly advised to answer all questions before submitting.
                   </p>
                 </div>
               </div>
@@ -275,9 +275,9 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
               <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-start space-x-2.5 text-xs text-rose-900">
                 <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-bold">Bài viết Writing chưa đạt số lượng từ tối thiểu.</p>
+                  <p className="font-bold">Writing responses have not met the minimum word counts.</p>
                   <p className="text-[11px] text-rose-700 mt-0.5">
-                    Đảm bảo cả Task 1 (tối thiểu 150 từ) và Task 2 (tối thiểu 250 từ) để tránh bị trừ điểm tiêu chí Task Achievement.
+                    Ensure Task 1 has at least 150 words and Task 2 has at least 250 words to avoid Task Achievement penalties.
                   </p>
                 </div>
               </div>
@@ -287,7 +287,7 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
             {draftSavedToast && (
               <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-xs text-emerald-800 font-bold flex items-center gap-2 animate-bounce">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                <span>Đã lưu bản nháp an toàn vào IndexedDB &amp; LocalStorage!</span>
+                <span>Draft successfully secured to IndexedDB &amp; LocalStorage!</span>
               </div>
             )}
 
@@ -297,10 +297,10 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
                 type="button"
                 onClick={handleSaveDraftClick}
                 className="w-full sm:w-auto px-4 py-2.5 bg-white hover:bg-purple-50 text-[#503A7A] font-extrabold text-xs rounded-xl border border-purple-200 transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
-                title="Lưu nháp và tiếp tục làm sau"
+                title="Save draft and resume later"
               >
                 <Save className="w-3.5 h-3.5 text-[#6B51A5]" />
-                <span>LƯU BẢN NHÁP (SAVE DRAFT)</span>
+                <span>SAVE DRAFT</span>
               </button>
 
               <div className="flex items-center space-x-2 w-full sm:w-auto justify-end">
@@ -309,7 +309,7 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
                   onClick={onClose}
                   className="px-4 py-2.5 bg-[#F5F2F9] hover:bg-[#E2DDEC] text-[#503A7A] font-extrabold text-xs rounded-xl border border-purple-200 transition cursor-pointer"
                 >
-                  Tiếp tục làm bài
+                  Continue Test
                 </button>
 
                 <button
@@ -318,7 +318,7 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
                   className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-black text-xs rounded-xl shadow-md shadow-emerald-950/20 transition flex items-center gap-2 cursor-pointer"
                 >
                   <Send className="w-3.5 h-3.5" />
-                  <span>XÁC NHẬN NỘP BÀI (TURN IN)</span>
+                  <span>CONFIRM &amp; TURN IN</span>
                 </button>
               </div>
             </div>
