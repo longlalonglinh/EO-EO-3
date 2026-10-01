@@ -31,7 +31,8 @@ function setupInitialSheets() {
   if (sheetExams.getLastRow() === 0) {
     sheetExams.appendRow([
       'EXAM_CODE', 'TITLE', 'TEST_TYPE', 'DURATION_MINS', 
-      'AUDIO_URL', 'READING_PASSAGE', 'WRITING_TASK1_PROMPT', 'WRITING_TASK2_PROMPT', 'CREATED_AT'
+      'AUDIO_URL', 'READING_PASSAGE', 'WRITING_TASK1_PROMPT', 'WRITING_TASK2_PROMPT', 
+      'WRITING_TASK1_IMAGE', 'CREATED_AT'
     ]);
     sheetExams.getRange("1:1").setFontWeight("bold").setBackground("#e2e8f0");
   }
@@ -227,6 +228,12 @@ function doGet(e) {
         var dataE = sheetE.getDataRange().getValues();
         for (var j = 1; j < dataE.length; j++) {
           if (String(dataE[j][0]).trim().toUpperCase() === examCode) {
+            var rawCol8 = String(dataE[j][8] || '');
+            var rawCol9 = String(dataE[j][9] || '');
+            // Flexible detection: if column 9 is an image URL/path, use it; otherwise check col 10
+            var isCol8Img = rawCol8.indexOf('http') === 0 || rawCol8.indexOf('data:image') === 0 || rawCol8.indexOf('/') === 0 || rawCol8.indexOf('drive.google') !== -1;
+            var resolvedTask1Img = isCol8Img ? rawCol8 : (rawCol9.indexOf('http') === 0 || rawCol9.indexOf('data:image') === 0 || rawCol9.indexOf('/') === 0 ? rawCol9 : '');
+
             examMeta = {
               exam_code: dataE[j][0],
               title: dataE[j][1] || ('IELTS Examination - ' + examCode),
@@ -235,7 +242,10 @@ function doGet(e) {
               audio_url: normalizeAudioUrl(String(dataE[j][4] || '')),
               reading_passage: dataE[j][5] || '',
               writing_task1_prompt: dataE[j][6] || '',
-              writing_task2_prompt: dataE[j][7] || ''
+              writing_task2_prompt: dataE[j][7] || '',
+              writing_task1_image: resolvedTask1Img,
+              writing_task1_image_url: resolvedTask1Img,
+              writing_task1_imageUrl: resolvedTask1Img
             };
             break;
           }
@@ -511,18 +521,31 @@ function doPost(e) {
       var eTitle = exam.title || ('IELTS Exam ' + eCode);
       var eType = exam.test_type || 'Academic';
       var eDuration = exam.duration_mins || 60;
-      var eAudio = normalizeAudioUrl(exam.audio_url || '');
+      var examSkills = exam.skills || [];
+      var isOneSkill = exam.exam_type === 'one_skill' || examSkills.length === 1;
+
+      var allowListening = !isOneSkill || examSkills.indexOf('listening') !== -1;
+      var allowReading = !isOneSkill || examSkills.indexOf('reading') !== -1;
+      var allowWriting = !isOneSkill || examSkills.indexOf('writing') !== -1;
+
+      var eAudio = allowListening ? normalizeAudioUrl(exam.audio_url || '') : '';
       
       // Reading passage text extraction
       var ePassage = '';
-      if (exam.passages && exam.passages.length > 0) {
-        ePassage = exam.passages.map(function(p) { return p.text || ''; }).join('\\n\\n--- Passage Divider ---\\n\\n');
-      } else if (exam.passage_text) {
-        ePassage = exam.passage_text;
+      if (allowReading) {
+        if (exam.passages && exam.passages.length > 0) {
+          ePassage = exam.passages.map(function(p) { return p.text || ''; }).join('\\n\\n--- Passage Divider ---\\n\\n');
+        } else if (exam.passage_text) {
+          ePassage = exam.passage_text;
+        }
       }
       
-      var eW1 = exam.writing_task1_prompt || '';
-      var eW2 = exam.writing_task2_prompt || '';
+      var eW1 = allowWriting ? (exam.writing_task1_prompt || '') : '';
+      var eW2 = allowWriting ? (exam.writing_task2_prompt || '') : '';
+      var rawTask1Img = allowWriting ? (exam.writing_task1_image || exam.writing_task1_image_url || exam.writing_task1_imageUrl || '') : '';
+      // Limit cell character length to avoid Google Sheets 50k cell overflow error
+      var eW1Img = (rawTask1Img && rawTask1Img.length > 45000 && rawTask1Img.indexOf('data:image') === 0) ? '' : rawTask1Img;
+
       var nowTime = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss");
       
       // In-place update or append to EXAMS tab
@@ -535,7 +558,7 @@ function doPost(e) {
         }
       }
       
-      var examRow = [eCode, eTitle, eType, eDuration, eAudio, ePassage, eW1, eW2, nowTime];
+      var examRow = [eCode, eTitle, eType, eDuration, eAudio, ePassage, eW1, eW2, eW1Img, nowTime];
       if (existingRowIdx > 0) {
         sheetE.getRange(existingRowIdx, 1, 1, examRow.length).setValues([examRow]);
       } else {
@@ -550,10 +573,29 @@ function doPost(e) {
         }
       }
       
-      // Insert updated questions
-      var allQuestions = exam.questions || [];
-      if (allQuestions.length === 0) {
-        allQuestions = (exam.listening_questions || []).concat(exam.reading_questions || []);
+      // Insert updated questions according to exam skills (One Skill tests only save that skill's questions)
+      var listeningQs = allowListening ? (exam.listening_questions || []) : [];
+      var readingQs = allowReading ? (exam.reading_questions || []) : [];
+
+      var allQuestions = [];
+      if (isOneSkill) {
+        if (examSkills.indexOf('listening') !== -1) {
+          allQuestions = listeningQs;
+        } else if (examSkills.indexOf('reading') !== -1) {
+          allQuestions = readingQs;
+        } else {
+          allQuestions = []; // Writing-only exam has no objective questions in QUESTIONS tab
+        }
+      } else {
+        allQuestions = exam.questions || [];
+        if (allQuestions.length === 0) {
+          allQuestions = listeningQs.concat(readingQs);
+        } else if (examSkills.length > 0) {
+          allQuestions = allQuestions.filter(function(q) {
+            var sec = (q.section || 'reading').toLowerCase();
+            return examSkills.indexOf(sec) !== -1;
+          });
+        }
       }
       
       for (var qi = 0; qi < allQuestions.length; qi++) {

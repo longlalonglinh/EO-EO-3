@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { Readable } from 'node:stream';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
@@ -142,7 +143,46 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json({ limit: '10mb' }));
+  app.use(express.json({ limit: '50mb' }));
+
+  // Static uploads directory for cross-device diagram images
+  const uploadsDir = path.join(process.cwd(), 'server_data', 'uploads');
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+  app.use('/uploads', express.static(uploadsDir));
+
+  // Image Upload API (Used for Writing Task 1 charts & diagrams)
+  app.post('/api/upload-image', (req, res) => {
+    try {
+      const { image, filename } = req.body;
+      if (!image) {
+        return res.status(400).json({ success: false, error: 'No image provided' });
+      }
+
+      // If already a URL (e.g. http://... or /uploads/...)
+      if (!image.startsWith('data:image/')) {
+        return res.json({ success: true, url: image });
+      }
+
+      const matches = image.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,(.+)$/);
+      if (!matches) {
+        return res.status(400).json({ success: false, error: 'Invalid data URL format' });
+      }
+
+      const rawExt = matches[1].toLowerCase();
+      const ext = rawExt === 'jpeg' ? 'jpg' : rawExt === 'svg+xml' ? 'svg' : rawExt.replace(/[^a-z0-9]/g, '');
+      const cleanName = (filename ? filename.replace(/[^a-zA-Z0-9_-]/g, '_') : 'task1_chart') + `_${Date.now()}.${ext || 'jpg'}`;
+      const filePath = path.join(uploadsDir, cleanName);
+      const buffer = Buffer.from(matches[2], 'base64');
+      fs.writeFileSync(filePath, buffer);
+
+      const fileUrl = `/uploads/${cleanName}`;
+      res.json({ success: true, url: fileUrl });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
 
   // Health check
   app.get('/api/health', (req, res) => {
@@ -359,8 +399,12 @@ Extract ALL questions found in the document. Do not truncate. Return ONLY raw va
             }
           });
 
+          const reqListening = cleanSkills.includes('listening');
+          const reqReading = cleanSkills.includes('reading');
+          const reqWriting = cleanSkills.includes('writing');
+
           const prompt = `You are a Senior IELTS Examiner and Cambridge Assessment Specialist.
-Generate a complete, high-quality, authentic IELTS Academic Examination centered on the following topic and parameters:
+Generate an authentic IELTS Examination centered on the following topic and parameters:
 
 Topic: "${cleanTopic}"
 Target Band Level: ${targetBand}
@@ -373,19 +417,21 @@ REQUIRED SPECIFICATIONS:
 1. "exam_code": "${generatedCode}"
 2. "title": "IELTS Academic Practice Exam - ${cleanTopic}"
 3. "duration_mins": ${examDuration}
-4. "reading_passage_title": Academic title of the passage
-5. "reading_passage": A formal, academic reading passage of at least 450-650 words with multiple structured paragraphs demonstrating academic vocabulary (C1/C2 level for higher bands).
-6. "audio_url": "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=english-conversation-11823.mp3"
-7. "listening_questions": Array of questions for Listening (Part 1/2 dialogue or monologue). Must include multiple_choice and fill_in_blank. Options must be prefixed with "A. ", "B. ", "C. ", "D. ". Correct answer must match the option letter or text.
-8. "reading_questions": Array of questions for Reading based on the passage. Must include:
-   - "multiple_choice": with 4 options ["A. ...", "B. ...", "C. ...", "D. ..."]
-   - "true_false_not_given": options ["TRUE", "FALSE", "NOT GIVEN"], correct_answer strictly "TRUE", "FALSE", or "NOT GIVEN".
-   - "fill_in_blank": cloze completion from the passage with explicit correct_answer.
-   - For every question, provide an educational "explanation" citing the sentence in the passage.
-9. "writing_task1_prompt": IELTS Academic Task 1 prompt describing a chart, graph, table, or diagram with the instruction "Write at least 150 words."
-10. "writing_task2_prompt": IELTS Task 2 discursive essay prompt with the instruction "Write at least 250 words."
+4. "skills": ${JSON.stringify(cleanSkills)}
+5. "exam_type": "${cleanSkills.length === 1 ? 'one_skill' : cleanSkills.length === 2 ? 'two_skills' : 'full_test'}"
+${reqReading ? `6. "reading_passage_title": Academic title of the passage
+7. "reading_passage": A formal, academic reading passage of at least 450-650 words with multiple structured paragraphs demonstrating academic vocabulary (C1/C2 level for higher bands).
+8. "reading_questions": Array of questions for Reading based on the passage (multiple_choice, true_false_not_given, fill_in_blank). Every question must have options, correct_answer, and explanation.` : `6. "reading_passage_title": ""
+7. "reading_passage": ""
+8. "reading_questions": []`}
+${reqListening ? `9. "audio_url": "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=english-conversation-11823.mp3"
+10. "listening_questions": Array of questions for Listening (multiple_choice, fill_in_blank). Every question must have options, correct_answer, and explanation.` : `9. "audio_url": ""
+10. "listening_questions": []`}
+${reqWriting ? `11. "writing_task1_prompt": IELTS Academic Task 1 prompt describing a chart, graph, table, or diagram with the instruction "Write at least 150 words."
+12. "writing_task2_prompt": IELTS Task 2 discursive essay prompt with the instruction "Write at least 250 words."` : `11. "writing_task1_prompt": ""
+12. "writing_task2_prompt": ""`}
 
-Return ONLY valid JSON matching this structure without markdown code blocks.`;
+CRITICAL INSTRUCTION: Generate questions and content ONLY for the skills listed in Skills Requested (${cleanSkills.join(', ')}). Do NOT create questions for any unrequested skill. Return ONLY valid JSON matching this structure without markdown code blocks.`;
 
           const response = await ai.models.generateContent({
             model: 'gemini-3.8-flash',
@@ -398,6 +444,25 @@ Return ONLY valid JSON matching this structure without markdown code blocks.`;
           const rawText = response.text || '';
           const cleanedText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
           rawGeneratedExam = JSON.parse(cleanedText);
+
+          rawGeneratedExam.skills = cleanSkills;
+          rawGeneratedExam.exam_type = cleanSkills.length === 1 ? 'one_skill' : cleanSkills.length === 2 ? 'two_skills' : 'full_test';
+          if (!reqListening) {
+            rawGeneratedExam.listening_questions = [];
+            rawGeneratedExam.audio_url = '';
+          }
+          if (!reqReading) {
+            rawGeneratedExam.reading_questions = [];
+            rawGeneratedExam.reading_passage = '';
+            rawGeneratedExam.reading_passage_title = '';
+            rawGeneratedExam.passage_text = '';
+            rawGeneratedExam.passage_title = '';
+            rawGeneratedExam.passages = [];
+          }
+          if (!reqWriting) {
+            rawGeneratedExam.writing_task1_prompt = '';
+            rawGeneratedExam.writing_task2_prompt = '';
+          }
         } catch (err: any) {
           console.warn('[Generate Exam] Gemini call was unsuccessful:', err.message);
         }

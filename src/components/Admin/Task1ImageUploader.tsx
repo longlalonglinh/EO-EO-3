@@ -11,6 +11,7 @@ import {
   ZoomIn
 } from 'lucide-react';
 import { normalizeGoogleDriveImageUrl } from '../../utils/imageUrl';
+import { uploadImageToServer } from '../../services/api';
 
 interface Task1ImageUploaderProps {
   value?: string;
@@ -187,7 +188,18 @@ export const Task1ImageUploader: React.FC<Task1ImageUploaderProps> = ({
           setSavedPercent(null);
         }
 
-        onChange(result.dataUrl);
+        // Upload to server storage to get cross-device accessible URL
+        let finalImageStr = result.dataUrl;
+        try {
+          const uploadedUrl = await uploadImageToServer(result.dataUrl, file.name);
+          if (uploadedUrl && (uploadedUrl.startsWith('/uploads/') || uploadedUrl.startsWith('http'))) {
+            finalImageStr = uploadedUrl;
+          }
+        } catch (uploadErr) {
+          console.warn('[Task1ImageUploader] Server upload fallback to dataUrl:', uploadErr);
+        }
+
+        onChange(finalImageStr);
       } catch (err: any) {
         console.error('Error compressing image:', err);
         setErrorMsg(err.message || 'Could not process this image file. Please try another image.');

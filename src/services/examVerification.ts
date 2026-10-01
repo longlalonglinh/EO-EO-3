@@ -185,8 +185,18 @@ export function verifyAndOptimizeExam(raw: Partial<ExamData>): { exam: ExamData;
   // ==========================================
   // PHASE 2: Reading Passage & Multi-Passage Check
   // ==========================================
-  const rawPassageText = String(raw.reading_passage || raw.passage_text || '').trim();
-  const rawPassageTitle = String(raw.reading_passage_title || raw.passage_title || 'Academic Reading Passage').trim();
+  const rawSkills = raw.skills;
+  const isSkillIncluded = (skill: 'listening' | 'reading' | 'writing') => {
+    if (!rawSkills || rawSkills.length === 0) return true;
+    return rawSkills.includes(skill);
+  };
+
+  const rawPassageText = isSkillIncluded('reading') 
+    ? String(raw.reading_passage || raw.passage_text || '').trim() 
+    : '';
+  const rawPassageTitle = isSkillIncluded('reading') 
+    ? String(raw.reading_passage_title || raw.passage_title || 'Academic Reading Passage').trim() 
+    : '';
 
   const finalPassageText = rawPassageText;
   const wordCount = finalPassageText ? finalPassageText.split(/\s+/).filter(Boolean).length : 0;
@@ -199,19 +209,23 @@ export function verifyAndOptimizeExam(raw: Partial<ExamData>): { exam: ExamData;
     status: isReadingWordCountGood ? 'passed' : finalPassageText ? 'warning' : 'passed',
     details: finalPassageText 
       ? `Passage title: "${rawPassageTitle}" | Word count: ${wordCount} words`
-      : 'No reading passage included in this document.'
+      : isSkillIncluded('reading') ? 'No reading passage included in this document.' : 'Reading skill omitted in this exam.'
   });
 
   // ==========================================
   // PHASE 3 & 4: Questions Structure, Types & Answer Keys
   // ==========================================
-  const rawListeningQuestions = Array.isArray(raw.listening_questions) 
-    ? raw.listening_questions 
-    : (raw.questions?.filter(q => q.section === 'listening') || []);
+  const rawListeningQuestions = isSkillIncluded('listening')
+    ? (Array.isArray(raw.listening_questions) 
+        ? raw.listening_questions 
+        : (raw.questions?.filter(q => q.section === 'listening') || []))
+    : [];
 
-  const rawReadingQuestions = Array.isArray(raw.reading_questions)
-    ? raw.reading_questions
-    : (raw.questions?.filter(q => q.section === 'reading') || []);
+  const rawReadingQuestions = isSkillIncluded('reading')
+    ? (Array.isArray(raw.reading_questions)
+        ? raw.reading_questions
+        : (raw.questions?.filter(q => q.section === 'reading') || []))
+    : [];
 
   // Normalization helper for each question
   const seenIds = new Set<string>();
@@ -319,12 +333,12 @@ export function verifyAndOptimizeExam(raw: Partial<ExamData>): { exam: ExamData;
   // PHASE 5: Audio Resources & Writing Tasks Check
   // ==========================================
   const fallbackAudio = 'https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=english-conversation-11823.mp3';
-  const audioUrl = raw.audio_url 
-    ? raw.audio_url 
-    : cleanListeningQuestions.length > 0 ? fallbackAudio : undefined;
+  const audioUrl = isSkillIncluded('listening')
+    ? (raw.audio_url || (cleanListeningQuestions.length > 0 ? fallbackAudio : undefined))
+    : undefined;
 
-  const task1Prompt = raw.writing_task1_prompt ? String(raw.writing_task1_prompt).trim() : undefined;
-  const task2Prompt = raw.writing_task2_prompt ? String(raw.writing_task2_prompt).trim() : undefined;
+  const task1Prompt = isSkillIncluded('writing') && raw.writing_task1_prompt ? String(raw.writing_task1_prompt).trim() : undefined;
+  const task2Prompt = isSkillIncluded('writing') && raw.writing_task2_prompt ? String(raw.writing_task2_prompt).trim() : undefined;
 
   checks.push({
     id: 'TEST_MULTIMODAL_RESOURCES',
@@ -369,29 +383,34 @@ export function verifyAndOptimizeExam(raw: Partial<ExamData>): { exam: ExamData;
   });
 
   // Construct Multi-Passage structure
-  const passagesList: ReadingPassageItem[] = [
+  const passagesList: ReadingPassageItem[] = isSkillIncluded('reading') ? [
     {
       passage_index: 1,
       title: rawPassageTitle,
       text: finalPassageText,
       questions: cleanReadingQuestions
     }
-  ];
+  ] : [];
 
   const rawSections = raw.sections;
-  const writingSection = rawSections?.find((s: any) => s.skill === 'writing');
+  const filteredSections = rawSections ? rawSections.filter((s: any) => isSkillIncluded(s.skill)) : undefined;
+  const writingSection = filteredSections?.find((s: any) => s.skill === 'writing');
   const task1Obj = writingSection?.tasks?.find((t: any) => t.task_number === 1) || writingSection?.tasks?.[0];
 
-  const resolvedTask1Prompt = task1Prompt || (task1Obj?.prompt ? String(task1Obj.prompt).trim() : undefined);
-  const resolvedTask1Image = raw.writing_task1_image || 
-    raw.writing_task1_image_url || 
-    raw.writing_task1_imageUrl || 
-    task1Obj?.image_url || 
-    task1Obj?.imageUrl || 
-    (task1Obj as any)?.image || 
-    raw.image_url || 
-    raw.imageUrl || 
-    undefined;
+  const resolvedTask1Prompt = isSkillIncluded('writing')
+    ? (task1Prompt || (task1Obj?.prompt ? String(task1Obj.prompt).trim() : undefined))
+    : undefined;
+  const resolvedTask1Image = isSkillIncluded('writing')
+    ? (raw.writing_task1_image || 
+      raw.writing_task1_image_url || 
+      raw.writing_task1_imageUrl || 
+      task1Obj?.image_url || 
+      task1Obj?.imageUrl || 
+      (task1Obj as any)?.image || 
+      raw.image_url || 
+      raw.imageUrl || 
+      undefined)
+    : undefined;
 
   // Final Compiled Exam
   const verifiedExam: ExamData = {
@@ -400,14 +419,14 @@ export function verifyAndOptimizeExam(raw: Partial<ExamData>): { exam: ExamData;
     test_type: testType,
     exam_type: raw.exam_type,
     skills: raw.skills,
-    sections: rawSections,
+    sections: filteredSections,
     duration_mins: durationMins,
     audio_url: audioUrl,
-    audio_title: 'IELTS Official Academic Audio Section',
-    passage_title: rawPassageTitle,
-    reading_passage_title: rawPassageTitle,
-    passage_text: finalPassageText,
-    reading_passage: finalPassageText,
+    audio_title: isSkillIncluded('listening') ? 'IELTS Official Academic Audio Section' : undefined,
+    passage_title: isSkillIncluded('reading') ? rawPassageTitle : undefined,
+    reading_passage_title: isSkillIncluded('reading') ? rawPassageTitle : undefined,
+    passage_text: isSkillIncluded('reading') ? finalPassageText : undefined,
+    reading_passage: isSkillIncluded('reading') ? finalPassageText : undefined,
     passages: passagesList,
     listening_questions: cleanListeningQuestions,
     reading_questions: cleanReadingQuestions,
@@ -416,7 +435,7 @@ export function verifyAndOptimizeExam(raw: Partial<ExamData>): { exam: ExamData;
     writing_task1_image: resolvedTask1Image,
     writing_task1_image_url: resolvedTask1Image,
     writing_task1_imageUrl: resolvedTask1Image,
-    writing_task2_prompt: task2Prompt,
+    writing_task2_prompt: isSkillIncluded('writing') ? task2Prompt : undefined,
     created_at: raw.created_at || new Date().toISOString()
   };
 

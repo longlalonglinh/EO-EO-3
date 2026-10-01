@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Navbar } from './components/Navbar';
 import { LoginInstructions } from './components/Student/LoginInstructions';
 import { ListeningModule } from './components/Student/ListeningModule';
@@ -7,6 +7,7 @@ import { WritingModule } from './components/Student/WritingModule';
 import { ProctoringMonitor } from './components/Student/ProctoringMonitor';
 import { ResultPage } from './components/Student/ResultPage';
 import { SubmitConfirmationModal } from './components/Student/SubmitConfirmationModal';
+import { ReloadConfirmationModal } from './components/Student/ReloadConfirmationModal';
 import { MonitoringDashboard } from './components/Admin/MonitoringDashboard';
 import { ManualGrading } from './components/Admin/ManualGrading';
 import { UploadModule } from './components/Admin/UploadModule';
@@ -80,7 +81,7 @@ export default function App() {
     }
     return 'student';
   });
-  const [adminTab, setAdminTab] = useState<'dashboard' | 'grading' | 'upload' | 'preview' | 'gas_setup'>('dashboard');
+  const [adminTab, setAdminTab] = useState<'dashboard' | 'grading' | 'upload' | 'preview' | 'gas_setup' | 'custom_practice'>('dashboard');
 
   useEffect(() => {
     const checkAdminQueryOrHash = () => {
@@ -167,6 +168,58 @@ export default function App() {
 
   // Submit confirmation dialog state
   const [isConfirmSubmitOpen, setIsConfirmSubmitOpen] = useState<boolean>(false);
+
+  // Reload confirmation modal state & beforeunload protection
+  const [isReloadModalOpen, setIsReloadModalOpen] = useState(false);
+  const isBypassingBeforeUnloadRef = useRef(false);
+
+  const handleConfirmReload = () => {
+    setIsReloadModalOpen(false);
+    isBypassingBeforeUnloadRef.current = true;
+    window.location.reload();
+  };
+
+  const handleCancelReload = () => {
+    setIsReloadModalOpen(false);
+  };
+
+  // Browser beforeunload protection (Accidental browser reload / close during test)
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isBypassingBeforeUnloadRef.current) return;
+      if (isLoggedIn && currentModule !== 'results') {
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [isLoggedIn, currentModule]);
+
+  // Intercept keyboard reload shortcuts (F5, Ctrl+R, Cmd+R)
+  useEffect(() => {
+    const handleReloadKey = (e: KeyboardEvent) => {
+      const isReload = 
+        e.key === 'F5' || 
+        ((e.ctrlKey || e.metaKey) && (e.key === 'r' || e.key === 'R'));
+
+      if (isReload) {
+        if (isLoggedIn && currentModule !== 'results') {
+          e.preventDefault();
+          setIsReloadModalOpen(true);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleReloadKey);
+    return () => {
+      window.removeEventListener('keydown', handleReloadKey);
+    };
+  }, [isLoggedIn, currentModule]);
 
   // Reading questions count & ids helper
   const readingQuestionsCount = (examData.passages && examData.passages.length > 0)
@@ -807,6 +860,7 @@ function doGet(e) {
     var writingTask2 = '';
 
     var examsSheet = ss.getSheetByName('EXAMS');
+    var writingTask1Image = '';
     if (examsSheet && examsSheet.getLastRow() > 1) {
       var examsData = examsSheet.getDataRange().getValues();
       for (var eRow = 1; eRow < examsData.length; eRow++) {
@@ -818,6 +872,7 @@ function doGet(e) {
           if (er[6]) passageText = er[6].toString().trim();
           if (er[7]) writingTask1 = er[7].toString().trim();
           if (er[8]) writingTask2 = er[8].toString().trim();
+          if (er[9]) writingTask1Image = er[9].toString().trim();
           break;
         }
       }
@@ -863,7 +918,10 @@ function doGet(e) {
       passage_text: passageText,
       audio_url: audioUrl,
       writing_task1_prompt: writingTask1,
-      writing_task2_prompt: writingTask2
+      writing_task2_prompt: writingTask2,
+      writing_task1_image: writingTask1Image,
+      writing_task1_image_url: writingTask1Image,
+      writing_task1_imageUrl: writingTask1Image
     };
 
     return ContentService.createTextOutput(JSON.stringify(result))
@@ -1075,11 +1133,21 @@ function doPost(e) {
       var uTitle = exam.title || ('IELTS Exam ' + uExamCode);
       var uTestType = exam.test_type || 'Academic';
       var uDuration = exam.duration_mins || 60;
-      var uAudioUrl = exam.audio_url || '';
-      var uPassageTitle = exam.passage_title || '';
-      var uPassageText = exam.passage_text || '';
-      var uWritingTask1 = exam.writing_task1_prompt || '';
-      var uWritingTask2 = exam.writing_task2_prompt || '';
+
+      var examSkills = exam.skills || [];
+      var isOneSkill = exam.exam_type === 'one_skill' || examSkills.length === 1;
+
+      var allowListening = !isOneSkill || examSkills.indexOf('listening') !== -1;
+      var allowReading = !isOneSkill || examSkills.indexOf('reading') !== -1;
+      var allowWriting = !isOneSkill || examSkills.indexOf('writing') !== -1;
+
+      var uAudioUrl = allowListening ? (exam.audio_url || '') : '';
+      var uPassageTitle = allowReading ? (exam.passage_title || '') : '';
+      var uPassageText = allowReading ? (exam.passage_text || '') : '';
+      var uWritingTask1 = allowWriting ? (exam.writing_task1_prompt || '') : '';
+      var uWritingTask2 = allowWriting ? (exam.writing_task2_prompt || '') : '';
+      var rawTask1Img = allowWriting ? (exam.writing_task1_image || exam.writing_task1_image_url || exam.writing_task1_imageUrl || '') : '';
+      var uWritingTask1Image = (rawTask1Img && rawTask1Img.length > 45000 && rawTask1Img.indexOf('data:image') === 0) ? '' : rawTask1Img;
 
       sheetE.appendRow([
         uExamCode,
@@ -1090,10 +1158,11 @@ function doPost(e) {
         uPassageTitle,
         uPassageText,
         uWritingTask1,
-        uWritingTask2
+        uWritingTask2,
+        uWritingTask1Image
       ]);
 
-      var listeningQs = exam.listening_questions || [];
+      var listeningQs = allowListening ? (exam.listening_questions || []) : [];
       for (var l = 0; l < listeningQs.length; l++) {
         var lq = listeningQs[l];
         var lOptions = (lq.options && Array.isArray(lq.options)) ? lq.options.join('|') : (lq.options || '');
@@ -1112,7 +1181,7 @@ function doPost(e) {
         ]);
       }
 
-      var readingQs = exam.reading_questions || [];
+      var readingQs = allowReading ? (exam.reading_questions || []) : [];
       for (var r = 0; r < readingQs.length; r++) {
         var rq = readingQs[r];
         var rOptions = (rq.options && Array.isArray(rq.options)) ? rq.options.join('|') : (rq.options || '');
@@ -1307,11 +1376,13 @@ function doPost(e) {
         adminTab={adminTab}
         setActiveView={setActiveView}
         setAdminTab={setAdminTab}
+        isLoggedIn={isLoggedIn}
         studentMode={testMode}
         sbd={sbd}
         examCode={examCode}
         gasUrl={gasUrl}
         onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
+        onTriggerReload={() => setIsReloadModalOpen(true)}
       />
 
       {/* Offline Pending Submission Alert */}
@@ -1404,6 +1475,9 @@ function doPost(e) {
                 onExitToLogin={() => {
                   setIsLoggedIn(false);
                   setIsCustomPracticeSession(false);
+                  setSbd('');
+                  setExamCode('');
+                  setTestMode('TEST');
                 }}
                 gasUrl={gasUrl}
               />
@@ -1442,13 +1516,13 @@ function doPost(e) {
 
                 {/* Student Step Module Switcher Tabs */}
                 {currentModule !== 'results' && (
-                  <div className="bg-white/90 border border-purple-100/80 p-2.5 rounded-3xl shadow-xl shadow-purple-950/5 flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center space-x-2">
+                  <div className="bg-white/90 border border-purple-100/80 p-2 sm:p-2.5 rounded-3xl shadow-xl shadow-purple-950/5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                       
                       {hasListening && (
                         <button
                           onClick={() => handleSwitchTab('listening')}
-                          className={`px-5 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                          className={`px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl text-[11px] sm:text-xs font-bold transition-all flex items-center gap-1.5 sm:gap-2 cursor-pointer ${
                             currentModule === 'listening'
                               ? 'bg-[#6B51A5] text-white shadow-md'
                               : completedSkills.listening
@@ -1457,9 +1531,9 @@ function doPost(e) {
                           }`}
                         >
                           {completedSkills.listening ? (
-                            <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                            <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-700" />
                           ) : (
-                            <Headphones className="w-4 h-4" />
+                            <Headphones className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                           )}
                           <span>1. Listening ({examData.listening_questions?.length ?? 0} Qs)</span>
                         </button>
@@ -1468,7 +1542,7 @@ function doPost(e) {
                       {hasReading && (
                         <button
                           onClick={() => handleSwitchTab('reading')}
-                          className={`px-5 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                          className={`px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl text-[11px] sm:text-xs font-bold transition-all flex items-center gap-1.5 sm:gap-2 cursor-pointer ${
                             currentModule === 'reading'
                               ? 'bg-[#6B51A5] text-white shadow-md'
                               : completedSkills.reading
@@ -1479,11 +1553,11 @@ function doPost(e) {
                           }`}
                         >
                           {completedSkills.reading ? (
-                            <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                            <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-700" />
                           ) : testMode === 'TEST' && hasListening && !completedSkills.listening ? (
-                            <Lock className="w-3.5 h-3.5 text-rose-500" />
+                            <Lock className="w-3 h-3 text-rose-500" />
                           ) : (
-                            <BookOpen className="w-4 h-4" />
+                            <BookOpen className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                           )}
                           <span>2. Reading ({readingQuestionsCount} Qs)</span>
                         </button>
@@ -1492,7 +1566,7 @@ function doPost(e) {
                       {hasWriting && (
                         <button
                           onClick={() => handleSwitchTab('writing')}
-                          className={`px-5 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                          className={`px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl text-[11px] sm:text-xs font-bold transition-all flex items-center gap-1.5 sm:gap-2 cursor-pointer ${
                             currentModule === 'writing'
                               ? 'bg-[#6B51A5] text-white shadow-md'
                               : completedSkills.writing
@@ -1503,13 +1577,13 @@ function doPost(e) {
                           }`}
                         >
                           {completedSkills.writing ? (
-                            <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                            <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-700" />
                           ) : testMode === 'TEST' && ((hasListening && !completedSkills.listening) || (hasReading && !completedSkills.reading)) ? (
-                            <Lock className="w-3.5 h-3.5 text-rose-500" />
+                            <Lock className="w-3 h-3 text-rose-500" />
                           ) : (
-                            <FileText className="w-4 h-4" />
+                            <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                           )}
-                          <span>3. Writing (Task 1 &amp; Task 2)</span>
+                          <span>3. Writing</span>
                         </button>
                       )}
 
@@ -1519,7 +1593,7 @@ function doPost(e) {
                     <button
                       onClick={() => setIsConfirmSubmitOpen(true)}
                       disabled={isSubmitting}
-                      className="px-6 py-3 bg-[#6B51A5] hover:bg-[#583F8F] text-white font-extrabold text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-purple-900/15 flex items-center gap-2 transition disabled:opacity-50 cursor-pointer"
+                      className="px-5 sm:px-6 py-2.5 sm:py-3 bg-[#6B51A5] hover:bg-[#583F8F] text-white font-extrabold text-[11px] sm:text-xs uppercase tracking-wider rounded-xl sm:rounded-2xl shadow-lg shadow-purple-900/15 flex items-center justify-center gap-2 transition disabled:opacity-50 cursor-pointer shrink-0"
                     >
                       {isSubmitting ? (
                         <>
@@ -1723,6 +1797,8 @@ function doPost(e) {
                     onReturnHome={() => {
                       clearSessionTimers();
                       setIsLoggedIn(false);
+                      setSbd('');
+                      setExamCode('');
                       setUserAnswers({});
                       setWritingTask1('');
                       setWritingTask2('');
@@ -1734,6 +1810,8 @@ function doPost(e) {
                     onRestartPractice={() => {
                       clearSessionTimers();
                       setIsLoggedIn(false);
+                      setSbd('');
+                      setExamCode('');
                       setUserAnswers({});
                       setWritingTask1('');
                       setWritingTask2('');
@@ -1965,6 +2043,16 @@ function doPost(e) {
           handleSetExamData(examDataLoaded);
           setIsDiagnosticsOpen(false);
         }}
+      />
+
+      {/* Page Reload Confirmation Modal */}
+      <ReloadConfirmationModal
+        isOpen={isReloadModalOpen}
+        onCancel={handleCancelReload}
+        onConfirmReload={handleConfirmReload}
+        examCode={examCode}
+        candidateId={sbd}
+        isExamActive={isLoggedIn && currentModule !== 'results'}
       />
 
     </div>

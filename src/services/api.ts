@@ -1087,12 +1087,17 @@ export function triggerBackgroundRevalidation(apiUrl: string, cleanCode: string)
         );
 
         if (hasQuestions || hasWritingPrompts) {
+          const existingCached = examMemoryCache.get(cleanCode);
           const rawTask1Image = meta.writing_task1_image || meta.writing_task1_image_url || meta.writing_task1_imageUrl || 
             raw.writing_task1_image || raw.writing_task1_image_url || raw.writing_task1_imageUrl || 
             raw.exam?.writing_task1_image || raw.exam?.writing_task1_image_url || raw.exam?.writing_task1_imageUrl || 
             meta.imageUrl || meta.image_url || raw.imageUrl || raw.image_url || 
             raw.sections?.find((s: any) => s.skill === 'writing')?.tasks?.[0]?.image_url || 
-            raw.sections?.find((s: any) => s.skill === 'writing')?.tasks?.[0]?.imageUrl || '';
+            raw.sections?.find((s: any) => s.skill === 'writing')?.tasks?.[0]?.imageUrl || 
+            existingCached?.writing_task1_image || 
+            existingCached?.writing_task1_image_url || 
+            existingCached?.writing_task1_imageUrl || 
+            '';
 
           const rawExamObj: ExamData = {
             exam_code: cleanCode,
@@ -1209,12 +1214,17 @@ export function prefetchExam(
           );
 
           if (hasQuestions || hasWritingPrompts) {
+            const existingCached = examMemoryCache.get(cleanCode);
             const rawTask1Image = meta.writing_task1_image || meta.writing_task1_image_url || meta.writing_task1_imageUrl || 
               raw.writing_task1_image || raw.writing_task1_image_url || raw.writing_task1_imageUrl || 
               raw.exam?.writing_task1_image || raw.exam?.writing_task1_image_url || raw.exam?.writing_task1_imageUrl || 
               meta.imageUrl || meta.image_url || raw.imageUrl || raw.image_url || 
               raw.sections?.find((s: any) => s.skill === 'writing')?.tasks?.[0]?.image_url || 
-              raw.sections?.find((s: any) => s.skill === 'writing')?.tasks?.[0]?.imageUrl || '';
+              raw.sections?.find((s: any) => s.skill === 'writing')?.tasks?.[0]?.imageUrl || 
+              existingCached?.writing_task1_image || 
+              existingCached?.writing_task1_image_url || 
+              existingCached?.writing_task1_imageUrl || 
+              '';
 
             const rawExamObj: ExamData = {
               exam_code: cleanCode,
@@ -1418,12 +1428,17 @@ export async function fetchExam(
           );
 
           if (hasQuestions || hasWritingPrompts) {
+            const existingCached = examMemoryCache.get(cleanCode);
             const rawTask1Image = meta.writing_task1_image || meta.writing_task1_image_url || meta.writing_task1_imageUrl || 
               raw.writing_task1_image || raw.writing_task1_image_url || raw.writing_task1_imageUrl || 
               raw.exam?.writing_task1_image || raw.exam?.writing_task1_image_url || raw.exam?.writing_task1_imageUrl || 
               meta.imageUrl || meta.image_url || raw.imageUrl || raw.image_url || 
               raw.sections?.find((s: any) => s.skill === 'writing')?.tasks?.[0]?.image_url || 
-              raw.sections?.find((s: any) => s.skill === 'writing')?.tasks?.[0]?.imageUrl || '';
+              raw.sections?.find((s: any) => s.skill === 'writing')?.tasks?.[0]?.imageUrl || 
+              existingCached?.writing_task1_image || 
+              existingCached?.writing_task1_image_url || 
+              existingCached?.writing_task1_imageUrl || 
+              '';
 
             const rawExamObj: ExamData = {
               exam_code: cleanCode,
@@ -1738,6 +1753,31 @@ export async function fetchServerConfig(): Promise<{ gas_url?: string; last_sync
     console.warn('Could not fetch server config:', err);
   }
   return null;
+}
+
+/**
+ * Upload an image to the server storage to obtain a static, cross-device accessible URL
+ */
+export async function uploadImageToServer(dataUrlOrFile: string, filename?: string): Promise<string> {
+  if (!dataUrlOrFile || !dataUrlOrFile.startsWith('data:image/')) {
+    return dataUrlOrFile || '';
+  }
+  try {
+    const res = await fetch('/api/upload-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: dataUrlOrFile, filename })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.success && data.url) {
+        return data.url;
+      }
+    }
+  } catch (err) {
+    console.warn('Could not upload image to server:', err);
+  }
+  return dataUrlOrFile;
 }
 
 /**

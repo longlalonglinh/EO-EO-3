@@ -1,5 +1,6 @@
 import { ExamData, Question, QuestionType } from '../types';
 import { DEFAULT_API_URL } from './api';
+import { sanitizeExamForSkills } from '../utils/examUtils';
 
 export interface DiagnosticStepResult {
   id: string;
@@ -431,7 +432,7 @@ export async function seedExamToGoogleSheets(
     };
   }
 
-  const exam = examToSeed;
+  const exam = sanitizeExamForSkills(examToSeed);
 
   try {
     const payload = {
@@ -439,8 +440,10 @@ export async function seedExamToGoogleSheets(
       exam_data: {
         exam_code: exam.exam_code,
         title: exam.title,
-        test_type: 'Academic',
-        duration_mins: 150,
+        test_type: exam.test_type || 'Academic',
+        exam_type: exam.exam_type,
+        skills: exam.skills,
+        duration_mins: exam.duration_mins || 150,
         audio_url: exam.audio_url,
         passage_title: exam.passage_title,
         passage_text: exam.passage_text,
@@ -448,6 +451,7 @@ export async function seedExamToGoogleSheets(
         passages: exam.passages,
         listening_questions: exam.listening_questions,
         reading_questions: exam.reading_questions,
+        questions: exam.questions,
         writing_task1_prompt: exam.writing_task1_prompt,
         writing_task2_prompt: exam.writing_task2_prompt
       }

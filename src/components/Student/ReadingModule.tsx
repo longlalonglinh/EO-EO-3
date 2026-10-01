@@ -56,7 +56,8 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
   const [filterMode, setFilterMode] = useState<'current_passage' | 'all' | 'unanswered'>('current_passage');
   const [mobileTab, setMobileTab] = useState<'questions' | 'passage'>('questions');
   const [highlightedQuestionId, setHighlightedQuestionId] = useState<string | null>(null);
-  const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
+  const [windowWidth, setWindowWidth] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 1200);
+  const [tabletSplitEnabled, setTabletSplitEnabled] = useState<boolean>(false);
   const [fontScale, setFontScale] = useState<'sm' | 'base' | 'lg'>('base');
   const [autoSaveTime, setAutoSaveTime] = useState<string>('');
   const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -72,14 +73,18 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
     }
   }, [userAnswers]);
 
-  // Track window resize to ensure fluid responsive layout on 13-inch screens / zoom changes
+  // Track window resize to ensure fluid responsive layout on mobile, tablet, and desktop
   useEffect(() => {
     const handleResize = () => {
-      setIsDesktop(window.innerWidth >= 768);
+      setWindowWidth(window.innerWidth);
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  const isMobile = windowWidth < 768;
+  const isTablet = windowWidth >= 768 && windowWidth < 1024;
+  const isDesktop = windowWidth >= 1024 || (isTablet && tabletSplitEnabled);
 
   const passageContainerRef = useRef<HTMLDivElement | null>(null);
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
@@ -440,6 +445,21 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
           </div>
 
           <div className="flex items-center gap-2 pl-2">
+            {isTablet && (
+              <button
+                type="button"
+                onClick={() => setTabletSplitEnabled(!tabletSplitEnabled)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center gap-1.5 ${
+                  tabletSplitEnabled 
+                    ? 'bg-[#6B51A5] text-white border-purple-400 shadow-xs' 
+                    : 'bg-white text-[#503A7A] border-purple-200 hover:bg-purple-50'
+                }`}
+                title="Chuyển chế độ hiển thị trên tablet: 2 cột song song hoặc 1 cột dạng tab"
+              >
+                <span>{tabletSplitEnabled ? '📱 Chuyển sang Dạng Tab' : '💻 Chia 2 Cột Song Song'}</span>
+              </button>
+            )}
+
             <span className={`text-[11px] font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 border transition-all ${
               isSaving 
                 ? 'bg-amber-50 text-amber-800 border-amber-200' 
@@ -457,42 +477,44 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
 
       </div>
 
-      {/* 3. MOBILE VIEW SWITCHER (< 768px) */}
-      <div className="flex md:hidden items-center justify-between bg-purple-50 p-1.5 rounded-2xl border border-purple-200">
-        <div className="flex items-center gap-1 w-full">
-          <button
-            type="button"
-            onClick={() => setMobileTab('questions')}
-            className={`flex-1 py-2 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-              mobileTab === 'questions' ? 'bg-[#6B51A5] text-white shadow-md' : 'text-[#503A7A] hover:bg-purple-100'
-            }`}
-          >
-            <HelpCircle className="w-3.5 h-3.5" />
-            <span>Questions ({displayedQuestions.length})</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setMobileTab('passage')}
-            className={`flex-1 py-2 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-              mobileTab === 'passage' ? 'bg-[#6B51A5] text-white shadow-md' : 'text-[#503A7A] hover:bg-purple-100'
-            }`}
-          >
-            <BookOpen className="w-3.5 h-3.5" />
-            <span>Passage {activePassageIndex}</span>
-          </button>
+      {/* 3. MOBILE & TABLET VIEW SWITCHER */}
+      {!isDesktop && (
+        <div className="flex items-center justify-between bg-purple-50 p-1.5 rounded-2xl border border-purple-200 shadow-xs">
+          <div className="flex items-center gap-1.5 w-full">
+            <button
+              type="button"
+              onClick={() => setMobileTab('passage')}
+              className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                mobileTab === 'passage' ? 'bg-[#6B51A5] text-white shadow-md' : 'text-[#503A7A] hover:bg-purple-100'
+              }`}
+            >
+              <BookOpen className="w-4 h-4" />
+              <span>📖 Bài Đọc (Passage {activePassageIndex})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileTab('questions')}
+              className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                mobileTab === 'questions' ? 'bg-[#6B51A5] text-white shadow-md' : 'text-[#503A7A] hover:bg-purple-100'
+              }`}
+            >
+              <HelpCircle className="w-4 h-4" />
+              <span>❓ Câu Hỏi ({displayedQuestions.length} câu)</span>
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 4. SPLIT SCREEN WORKSPACE WITH DRAGGABLE RESIZER */}
       <div
         ref={splitContainerRef}
-        className="flex flex-col md:flex-row h-[560px] md:h-[calc(100dvh-13.5rem)] md:min-h-[460px] md:max-h-[850px] bg-white rounded-3xl border border-purple-100/80 overflow-hidden shadow-xl shadow-purple-950/5 relative"
+        className="flex flex-col md:flex-row h-[calc(100dvh-13rem)] min-h-[460px] max-h-[850px] bg-white rounded-3xl border border-purple-100/80 overflow-hidden shadow-xl shadow-purple-950/5 relative"
       >
         
         {/* LEFT COLUMN: READING PASSAGE & HIGHLIGHTER */}
         <div
-          className={`h-full flex flex-col bg-[#F8F6FC] md:border-r border-purple-100 overflow-hidden w-full ${
-            mobileTab === 'questions' ? 'hidden md:flex' : 'flex'
+          className={`h-full flex flex-col bg-[#F8F6FC] ${isDesktop ? 'border-r border-purple-100' : ''} overflow-hidden w-full ${
+            !isDesktop && mobileTab === 'questions' ? 'hidden' : 'flex'
           }`}
           style={{
             width: isDesktop ? `${leftWidth}%` : '100%'
@@ -631,24 +653,20 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
             {renderHighlightedPassage(currentPassage.text)}
           </div>
 
-          {/* Active Highlight Chips */}
-          {highlights.length > 0 && (
-            <div className="p-2.5 bg-white border-t border-purple-100 max-h-20 overflow-y-auto flex flex-wrap gap-1.5 text-xs shrink-0">
-              {highlights.map((hl) => (
-                <span
-                  key={hl.id}
-                  className="px-2.5 py-0.5 rounded-lg text-slate-950 font-bold flex items-center gap-1 shadow-sm text-[11px]"
-                  style={{ backgroundColor: hl.color_hex }}
-                >
-                  <span className="max-w-[120px] truncate">{hl.text}</span>
-                  <button
-                    onClick={() => handleRemoveHighlight(hl.id)}
-                    className="hover:text-rose-700 font-black ml-1 cursor-pointer"
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
+          {/* Mobile & Tablet Jump to Questions Footer Banner */}
+          {!isDesktop && (
+            <div className="p-3 bg-white border-t border-purple-100 flex items-center justify-between shrink-0">
+              <span className="text-xs text-[#7C68A5] font-semibold">
+                Passage {currentPassage.passage_index} ({displayedQuestions.length} câu hỏi)
+              </span>
+              <button
+                type="button"
+                onClick={() => setMobileTab('questions')}
+                className="bg-[#6B51A5] hover:bg-[#503A7A] text-white text-xs font-bold px-3.5 py-1.5 rounded-xl shadow-md flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
+              >
+                <span>Trả lời câu hỏi</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
           )}
         </div>
@@ -673,7 +691,7 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
         {/* RIGHT COLUMN: READING QUESTIONS */}
         <div
           className={`h-full flex flex-col bg-white overflow-hidden w-full ${
-            mobileTab === 'passage' ? 'hidden md:flex' : 'flex'
+            !isDesktop && mobileTab === 'passage' ? 'hidden' : 'flex'
           }`}
           style={{
             width: isDesktop ? `${100 - leftWidth}%` : '100%'
@@ -692,31 +710,45 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
               </span>
             </span>
 
-            {/* Jump buttons within current filtered view */}
-            <div className="flex flex-wrap gap-1">
-              {displayedQuestions.map((q, idx) => {
-                const isAns = !!userAnswers[q.question_id] && userAnswers[q.question_id].trim() !== '';
-                return (
-                  <button
-                    key={`${q.question_id || 'rq_nav'}-${idx}`}
-                    type="button"
-                    onClick={() => handleJumpToQuestion(q)}
-                    className={`w-6 h-6 rounded-lg text-[10px] font-black transition cursor-pointer flex items-center justify-center ${
-                      isAns
-                        ? 'bg-emerald-600 text-white shadow-xs'
-                        : 'bg-[#E2DDEC] hover:bg-[#D9D3E4] text-[#3C2A63]'
-                    }`}
-                    title={`Question ${q.globalNumber}`}
-                  >
-                    {q.globalNumber}
-                  </button>
-                );
-              })}
+            <div className="flex items-center gap-2">
+              {/* Quick Jump back to Passage on Mobile/Tablet */}
+              {!isDesktop && (
+                <button
+                  type="button"
+                  onClick={() => setMobileTab('passage')}
+                  className="bg-[#6B51A5] hover:bg-[#503A7A] text-white text-[11px] font-bold px-2.5 py-1 rounded-xl shadow-xs flex items-center gap-1 transition active:scale-95 cursor-pointer"
+                >
+                  <BookOpen className="w-3 h-3 text-purple-200" />
+                  <span>Xem bài đọc</span>
+                </button>
+              )}
+
+              {/* Jump buttons within current filtered view */}
+              <div className="flex flex-wrap gap-1">
+                {displayedQuestions.map((q, idx) => {
+                  const isAns = !!userAnswers[q.question_id] && userAnswers[q.question_id].trim() !== '';
+                  return (
+                    <button
+                      key={`${q.question_id || 'rq_nav'}-${idx}`}
+                      type="button"
+                      onClick={() => handleJumpToQuestion(q)}
+                      className={`w-6 h-6 rounded-lg text-[10px] font-black transition cursor-pointer flex items-center justify-center ${
+                        isAns
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'bg-[#E2DDEC] hover:bg-[#D9D3E4] text-[#3C2A63]'
+                      }`}
+                      title={`Question ${q.globalNumber}`}
+                    >
+                      {q.globalNumber}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
-          {/* Scrollable Questions List */}
-          <div className="flex-1 p-4 sm:p-6 overflow-y-auto overscroll-contain space-y-6">
+          {/* Scrollable Questions List with generous bottom padding for fixed footer */}
+          <div className="flex-1 p-4 sm:p-6 overflow-y-auto overscroll-contain space-y-6 pb-36 md:pb-28">
             {displayedQuestions.length === 0 ? (
               <div className="p-12 text-center bg-purple-50/50 rounded-3xl border border-dashed border-purple-200">
                 <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto mb-2" />

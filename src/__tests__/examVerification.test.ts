@@ -291,4 +291,112 @@ Nevertheless, the intermittency of wind velocity poses substantial challenges to
     expect(normalizeGoogleDriveImageUrl('')).toBe('');
   });
 
+  it('guarantees that creating a One Skill Reading exam strips all listening questions and audio', () => {
+    const mixedInput = {
+      exam_code: 'READ_ONLY_01',
+      title: 'IELTS Academic Reading Special Drill',
+      test_type: 'TEST' as const,
+      exam_type: 'one_skill' as const,
+      skills: ['reading' as const],
+      duration_mins: 60,
+      audio_url: 'https://cdn.pixabay.com/audio/sample.mp3',
+      reading_passage_title: 'Artificial Intelligence in Medical Diagnostics',
+      reading_passage: 'Artificial intelligence is revolutionizing the healthcare sector with computer vision systems and neural network diagnostic algorithms.',
+      reading_questions: [
+        {
+          question_id: 'R1',
+          section: 'reading' as const,
+          question_type: 'multiple_choice' as const,
+          question_text: 'What field is being revolutionized according to the text?',
+          options: ['A. Healthcare', 'B. Transportation', 'C. Agriculture', 'D. Construction'],
+          correct_answer: 'A',
+          acceptable_answers: ['A', 'Healthcare'],
+          explanation: 'Text directly highlights the healthcare sector.',
+          max_score: 1
+        }
+      ],
+      // Extraneous listening questions present in raw input (e.g. from default template)
+      listening_questions: [
+        {
+          question_id: 'L1',
+          section: 'listening' as const,
+          question_type: 'multiple_choice' as const,
+          question_text: 'Who called the office?',
+          options: ['A. John', 'B. Mary'],
+          correct_answer: 'A',
+          max_score: 1
+        }
+      ]
+    };
+
+    const { exam } = verifyAndOptimizeExam(mixedInput);
+
+    expect(exam.exam_type).toBe('one_skill');
+    expect(exam.skills).toEqual(['reading']);
+    // Listening questions must be completely stripped out
+    expect(exam.listening_questions).toHaveLength(0);
+    expect(exam.audio_url).toBeUndefined();
+    // Reading questions preserved
+    expect(exam.reading_questions).toHaveLength(1);
+    expect(exam.reading_questions![0].question_id).toBe('R1');
+    // Unified questions list must ONLY contain the 1 reading question
+    expect(exam.questions).toHaveLength(1);
+    expect(exam.questions![0].section).toBe('reading');
+  });
+
+  it('guarantees that creating a One Skill Listening exam strips all reading passages and questions', () => {
+    const mixedInput = {
+      exam_code: 'LISTEN_ONLY_01',
+      title: 'IELTS Academic Listening Drill',
+      test_type: 'TEST' as const,
+      exam_type: 'one_skill' as const,
+      skills: ['listening' as const],
+      duration_mins: 35,
+      audio_url: 'https://cdn.pixabay.com/audio/sample.mp3',
+      listening_questions: [
+        {
+          question_id: 'L1',
+          section: 'listening' as const,
+          question_type: 'multiple_choice' as const,
+          question_text: 'Where does the tour group meet?',
+          options: ['A. Reception desk', 'B. Main entrance', 'C. Bus stop', 'D. Cafeteria'],
+          correct_answer: 'A',
+          acceptable_answers: ['A', 'Reception desk'],
+          explanation: 'The guide asks the group to convene at the reception desk.',
+          max_score: 1
+        }
+      ],
+      // Extraneous reading questions from default template
+      reading_passage_title: 'Unwanted Reading Passage',
+      reading_passage: 'This passage should not be present in a listening-only exam.',
+      reading_questions: [
+        {
+          question_id: 'R1',
+          section: 'reading' as const,
+          question_type: 'multiple_choice' as const,
+          question_text: 'Unwanted reading question',
+          options: ['A. 1', 'B. 2'],
+          correct_answer: 'A',
+          max_score: 1
+        }
+      ]
+    };
+
+    const { exam } = verifyAndOptimizeExam(mixedInput);
+
+    expect(exam.exam_type).toBe('one_skill');
+    expect(exam.skills).toEqual(['listening']);
+    // Reading questions and passages must be completely stripped out
+    expect(exam.reading_questions).toHaveLength(0);
+    expect(exam.passages).toHaveLength(0);
+    expect(exam.passage_text).toBeUndefined();
+    // Listening questions preserved
+    expect(exam.listening_questions).toHaveLength(1);
+    expect(exam.listening_questions![0].question_id).toBe('L1');
+    expect(exam.audio_url).toBe('https://cdn.pixabay.com/audio/sample.mp3');
+    // Unified questions list must ONLY contain the 1 listening question
+    expect(exam.questions).toHaveLength(1);
+    expect(exam.questions![0].section).toBe('listening');
+  });
+
 });

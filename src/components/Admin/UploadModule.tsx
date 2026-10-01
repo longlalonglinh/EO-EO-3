@@ -32,6 +32,7 @@ import { generateExamWithAI, parsePdfWithServerGemini } from '../../services/gem
 import { ExamTestReport, verifyAndOptimizeExam } from '../../services/examVerification';
 import { saveExamToServerDb } from '../../services/api';
 import { saveExamToIndexedDB } from '../../services/indexedDb';
+import { sanitizeExamForSkills } from '../../utils/examUtils';
 
 interface UploadModuleProps {
   onParsedData: (data: ExamData) => void;
@@ -180,18 +181,19 @@ export const UploadModule: React.FC<UploadModuleProps> = ({
       setCurrentStep('4/4 Simulating student auto-grading with 100% solvability guarantee...');
       await new Promise(r => setTimeout(r, 300));
 
-      setGeneratedExam(res.exam);
+      const sanitized = sanitizeExamForSkills(res.exam);
+      setGeneratedExam(sanitized);
       setTestReport(res.testReport);
-      setRawJsonOutput(JSON.stringify(res.exam, null, 2));
+      setRawJsonOutput(JSON.stringify(sanitized, null, 2));
 
       // Propagate to main application state
-      onParsedData(res.exam);
+      onParsedData(sanitized);
 
       // Auto-save to IndexedDB & Server DB
-      saveExamToIndexedDB(res.exam).catch(() => {});
-      saveExamToServerDb(res.exam).catch(() => {});
+      saveExamToIndexedDB(sanitized).catch(() => {});
+      saveExamToServerDb(sanitized).catch(() => {});
 
-      setSaveSuccessMsg(`Exam ${res.exam.exam_code} successfully verified and saved to Central Database.`);
+      setSaveSuccessMsg(`Exam ${sanitized.exam_code} successfully verified and saved to Central Database.`);
     } catch (err: any) {
       console.error('Error generating exam:', err);
       setErrorMsg(err.message || 'Error generating IELTS exam via AI. Please check your network connection.');
@@ -219,16 +221,17 @@ export const UploadModule: React.FC<UploadModuleProps> = ({
       setCurrentStep('Chạy kiểm tra tự động 6 điểm định dạng & mô phỏng chấm điểm...');
       await new Promise(r => setTimeout(r, 300));
 
-      setGeneratedExam(res.exam);
+      const sanitized = sanitizeExamForSkills(res.exam);
+      setGeneratedExam(sanitized);
       setTestReport(res.testReport);
-      setRawJsonOutput(JSON.stringify(res.exam, null, 2));
+      setRawJsonOutput(JSON.stringify(sanitized, null, 2));
 
-      onParsedData(res.exam);
-      saveExamToIndexedDB(res.exam).catch(() => {});
-      saveExamToServerDb(res.exam).catch(() => {});
+      onParsedData(sanitized);
+      saveExamToIndexedDB(sanitized).catch(() => {});
+      saveExamToServerDb(sanitized).catch(() => {});
 
-      const totalQs = (res.exam.reading_questions?.length || 0) + (res.exam.listening_questions?.length || 0) + (res.exam.questions?.length || 0);
-      setSaveSuccessMsg(`Trích xuất thành công ${totalQs} câu hỏi từ tài liệu "${res.exam.title}". Đã kiểm tra cấu trúc và lưu vào Central DB.`);
+      const totalQs = (sanitized.reading_questions?.length || 0) + (sanitized.listening_questions?.length || 0) + (sanitized.questions?.length || 0);
+      setSaveSuccessMsg(`Trích xuất thành công ${totalQs} câu hỏi từ tài liệu "${sanitized.title}". Đã kiểm tra cấu trúc và lưu vào Central DB.`);
     } catch (err: any) {
       console.error('Error parsing document with Gemini:', err);
       setErrorMsg(err.message || 'Không thể trích xuất đề thi. Vui lòng kiểm tra lại file PDF hoặc copy/paste trực tiếp văn bản.');
@@ -243,9 +246,10 @@ export const UploadModule: React.FC<UploadModuleProps> = ({
     if (!generatedExam) return;
     setLoading(true);
     try {
-      await saveExamToServerDb(generatedExam);
-      await saveExamToIndexedDB(generatedExam);
-      setSaveSuccessMsg(`Exam ${generatedExam.exam_code} published to Central Database for all student candidates.`);
+      const sanitized = sanitizeExamForSkills(generatedExam);
+      await saveExamToServerDb(sanitized);
+      await saveExamToIndexedDB(sanitized);
+      setSaveSuccessMsg(`Exam ${sanitized.exam_code} published to Central Database for all student candidates.`);
       setTimeout(() => setSaveSuccessMsg(null), 4000);
     } catch (e: any) {
       setErrorMsg('Failed to save to server database: ' + e.message);

@@ -87,7 +87,8 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
   const [splitRatio, setSplitRatio] = useState<number>(45); // 45% left (prompt), 55% right (editor)
   const [isResizing, setIsResizing] = useState<boolean>(false);
   const [mobileWritingView, setMobileWritingView] = useState<'editor' | 'prompt'>('editor');
-  const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
+  const [windowWidth, setWindowWidth] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 1200);
+  const [tabletSplitEnabled, setTabletSplitEnabled] = useState<boolean>(false);
   const writingSplitContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Automatically switch to Task 2 if only Task 2 is present in the exam paper
@@ -97,14 +98,18 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
     }
   }, [task1Prompt, task2Prompt]);
 
-  // Track window resizing for 13-inch screens and browser zoom
+  // Track window resizing for mobile, tablet, and desktop screens
   useEffect(() => {
     const handleResize = () => {
-      setIsDesktop(window.innerWidth >= 768);
+      setWindowWidth(window.innerWidth);
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  const isMobile = windowWidth < 768;
+  const isTablet = windowWidth >= 768 && windowWidth < 1024;
+  const isDesktop = windowWidth >= 1024 || (isTablet && tabletSplitEnabled);
 
   // Split drag handle listener
   useEffect(() => {
@@ -342,78 +347,99 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
           </button>
         </div>
 
-        {/* Quick Split Ratio Presets for Desktop & 13" laptops */}
-        <div className="hidden md:flex items-center gap-1.5 bg-[#F5F2F9] px-3 py-1.5 rounded-2xl border border-purple-100 text-xs">
-          <span className="text-[11px] font-bold text-[#7C68A5] mr-1">Layout:</span>
-          <button
-            type="button"
-            onClick={() => setSplitRatio(45)}
-            className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${
-              splitRatio === 45 ? 'bg-[#6B51A5] text-white shadow-xs' : 'bg-white text-[#503A7A] hover:bg-purple-100'
-            }`}
-            title="Balanced (Prompt 45% - Response 55%)"
-          >
-            45:55
-          </button>
-          <button
-            type="button"
-            onClick={() => setSplitRatio(58)}
-            className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${
-              splitRatio === 58 ? 'bg-[#6B51A5] text-white shadow-xs' : 'bg-white text-[#503A7A] hover:bg-purple-100'
-            }`}
-            title="Expand prompt & diagram 58%"
-          >
-            Prompt 58%
-          </button>
-          <button
-            type="button"
-            onClick={() => setSplitRatio(35)}
-            className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${
-              splitRatio === 35 ? 'bg-[#6B51A5] text-white shadow-xs' : 'bg-white text-[#503A7A] hover:bg-purple-100'
-            }`}
-            title="Expand response editor 65%"
-          >
-            Editor 65%
-          </button>
+        {/* Quick Split Ratio Presets for Desktop & Tablet */}
+        <div className="flex items-center gap-2 text-xs">
+          {isTablet && (
+            <button
+              type="button"
+              onClick={() => setTabletSplitEnabled(!tabletSplitEnabled)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center gap-1.5 ${
+                tabletSplitEnabled 
+                  ? 'bg-[#6B51A5] text-white border-purple-400 shadow-xs' 
+                  : 'bg-white text-[#503A7A] border-purple-200 hover:bg-purple-50'
+              }`}
+              title="Chuyển chế độ hiển thị trên tablet: 2 cột song song hoặc 1 cột dạng tab"
+            >
+              <span>{tabletSplitEnabled ? '📱 Chuyển sang Dạng Tab' : '💻 Chia 2 Cột Song Song'}</span>
+            </button>
+          )}
+
+          {isDesktop && (
+            <div className="hidden lg:flex items-center gap-1.5 bg-[#F5F2F9] px-3 py-1.5 rounded-2xl border border-purple-100 text-xs">
+              <span className="text-[11px] font-bold text-[#7C68A5] mr-1">Tỉ lệ:</span>
+              <button
+                type="button"
+                onClick={() => setSplitRatio(45)}
+                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${
+                  splitRatio === 45 ? 'bg-[#6B51A5] text-white shadow-xs' : 'bg-white text-[#503A7A] hover:bg-purple-100'
+                }`}
+                title="Cân bằng (Đề bài 45% - Bài viết 55%)"
+              >
+                45:55
+              </button>
+              <button
+                type="button"
+                onClick={() => setSplitRatio(58)}
+                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${
+                  splitRatio === 58 ? 'bg-[#6B51A5] text-white shadow-xs' : 'bg-white text-[#503A7A] hover:bg-purple-100'
+                }`}
+                title="Mở rộng đề bài & biểu đồ 58%"
+              >
+                Đề bài 58%
+              </button>
+              <button
+                type="button"
+                onClick={() => setSplitRatio(35)}
+                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${
+                  splitRatio === 35 ? 'bg-[#6B51A5] text-white shadow-xs' : 'bg-white text-[#503A7A] hover:bg-purple-100'
+                }`}
+                title="Mở rộng khung viết bài 65%"
+              >
+                Bài viết 65%
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Mobile view toggle (< 768px) */}
-      <div className="flex md:hidden items-center justify-between bg-purple-50 p-1.5 rounded-2xl border border-purple-200">
-        <div className="flex items-center gap-1 w-full">
-          <button
-            type="button"
-            onClick={() => setMobileWritingView('editor')}
-            className={`flex-1 py-2 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-              mobileWritingView === 'editor' ? 'bg-[#6B51A5] text-white shadow-md' : 'text-[#503A7A] hover:bg-purple-100'
-            }`}
-          >
-            <FileText className="w-3.5 h-3.5" />
-            <span>Response Area ({activeTab === 'task1' ? task1WordCount : task2WordCount} words)</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setMobileWritingView('prompt')}
-            className={`flex-1 py-2 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-              mobileWritingView === 'prompt' ? 'bg-[#6B51A5] text-white shadow-md' : 'text-[#503A7A] hover:bg-purple-100'
-            }`}
-          >
-            <ImageIcon className="w-3.5 h-3.5" />
-            <span>Prompt &amp; Material</span>
-          </button>
+      {/* Mobile & Tablet Tab View Toggle */}
+      {!isDesktop && (
+        <div className="flex items-center justify-between bg-purple-50 p-1.5 rounded-2xl border border-purple-200 shadow-xs">
+          <div className="flex items-center gap-1.5 w-full">
+            <button
+              type="button"
+              onClick={() => setMobileWritingView('editor')}
+              className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                mobileWritingView === 'editor' ? 'bg-[#6B51A5] text-white shadow-md' : 'text-[#503A7A] hover:bg-purple-100'
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              <span>✍️ Khu vực Viết ({activeTab === 'task1' ? task1WordCount : task2WordCount} từ)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileWritingView('prompt')}
+              className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                mobileWritingView === 'prompt' ? 'bg-[#6B51A5] text-white shadow-md' : 'text-[#503A7A] hover:bg-purple-100'
+              }`}
+            >
+              <ImageIcon className="w-4 h-4" />
+              <span>📊 Đề bài {activeTab === 'task1' ? '& Biểu đồ' : ''}</span>
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* TASK 1 SPLIT-SCREEN WORKSPACE */}
       {activeTab === 'task1' && (
         <div
           ref={writingSplitContainerRef}
-          className="flex flex-col md:flex-row h-[560px] md:h-[calc(100dvh-13.5rem)] md:min-h-[460px] md:max-h-[850px] bg-white rounded-3xl border border-purple-100/80 overflow-hidden shadow-xl shadow-purple-950/5 relative"
+          className="flex flex-col md:flex-row h-[calc(100dvh-13rem)] min-h-[460px] max-h-[850px] bg-white rounded-3xl border border-purple-100/80 overflow-hidden shadow-xl shadow-purple-950/5 relative"
         >
           {/* Left Column: Task 1 Prompt, Instructions & Graphic */}
           <div
-            className={`h-full flex flex-col bg-[#F8F6FC] md:border-r border-purple-100 overflow-hidden w-full ${
-              mobileWritingView === 'editor' ? 'hidden md:flex' : 'flex'
+            className={`h-full flex flex-col bg-[#F8F6FC] ${isDesktop ? 'border-r border-purple-100' : ''} overflow-hidden w-full ${
+              !isDesktop && mobileWritingView === 'editor' ? 'hidden' : 'flex'
             }`}
             style={{ width: isDesktop ? `${splitRatio}%` : '100%' }}
           >
@@ -492,7 +518,7 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
           {/* Right Column: Task 1 Response Editor */}
           <div
             className={`h-full flex flex-col bg-white overflow-hidden w-full ${
-              mobileWritingView === 'prompt' ? 'hidden md:flex' : 'flex'
+              !isDesktop && mobileWritingView === 'prompt' ? 'hidden' : 'flex'
             }`}
             style={{ width: isDesktop ? `${100 - splitRatio}%` : '100%' }}
           >
@@ -502,24 +528,39 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
                 <span>Task 1 Response Editor</span>
               </span>
 
-              {/* Word Count Indicator */}
-              <span className={`text-xs font-black px-3 py-1 rounded-full border flex items-center gap-1.5 transition ${
-                task1WordCount >= 150
-                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                  : 'bg-rose-100 text-rose-800 border-rose-300'
-              }`}>
-                {task1WordCount >= 150 ? (
-                  <>
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
-                    <span>{task1WordCount} / 150 words (Met)</span>
-                  </>
-                ) : (
-                  <>
-                    <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-                    <span>{task1WordCount} / 150 words (Need {150 - task1WordCount} more)</span>
-                  </>
+              <div className="flex items-center gap-2">
+                {/* Floating Quick View for Task 1 Diagram on mobile/tablet */}
+                {cleanTask1Image && !isDesktop && (
+                  <button
+                    type="button"
+                    onClick={() => setIsZoomOpen(true)}
+                    className="bg-[#6B51A5] hover:bg-[#503A7A] text-white text-[11px] font-bold px-3 py-1 rounded-xl shadow-xs flex items-center gap-1 transition active:scale-95 cursor-pointer"
+                    title="Nhấn để xem biểu đồ Task 1 phóng to"
+                  >
+                    <ImageIcon className="w-3.5 h-3.5 text-purple-200" />
+                    <span>Xem Biểu Đồ</span>
+                  </button>
                 )}
-              </span>
+
+                {/* Word Count Indicator */}
+                <span className={`text-xs font-black px-3 py-1 rounded-full border flex items-center gap-1.5 transition ${
+                  task1WordCount >= 150
+                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                    : 'bg-rose-100 text-rose-800 border-rose-300'
+                }`}>
+                  {task1WordCount >= 150 ? (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
+                      <span>{task1WordCount} / 150 words (Met)</span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                      <span>{task1WordCount} / 150 words (Need {150 - task1WordCount} more)</span>
+                    </>
+                  )}
+                </span>
+              </div>
             </div>
 
             <div className="flex-1 p-4 flex flex-col overflow-hidden">
@@ -584,12 +625,12 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
       {activeTab === 'task2' && (
         <div
           ref={writingSplitContainerRef}
-          className="flex flex-col md:flex-row h-[560px] md:h-[calc(100dvh-13.5rem)] md:min-h-[460px] md:max-h-[850px] bg-white rounded-3xl border border-purple-100/80 overflow-hidden shadow-xl shadow-purple-950/5 relative"
+          className="flex flex-col md:flex-row h-[calc(100dvh-13rem)] min-h-[460px] max-h-[850px] bg-white rounded-3xl border border-purple-100/80 overflow-hidden shadow-xl shadow-purple-950/5 relative"
         >
           {/* Left Column: Task 2 Prompt & Instructions */}
           <div
-            className={`h-full flex flex-col bg-[#F8F6FC] md:border-r border-purple-100 overflow-hidden w-full ${
-              mobileWritingView === 'editor' ? 'hidden md:flex' : 'flex'
+            className={`h-full flex flex-col bg-[#F8F6FC] ${isDesktop ? 'border-r border-purple-100' : ''} overflow-hidden w-full ${
+              !isDesktop && mobileWritingView === 'editor' ? 'hidden' : 'flex'
             }`}
             style={{ width: isDesktop ? `${splitRatio}%` : '100%' }}
           >
@@ -631,7 +672,7 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
           {/* Right Column: Task 2 Response Editor */}
           <div
             className={`h-full flex flex-col bg-white overflow-hidden w-full ${
-              mobileWritingView === 'prompt' ? 'hidden md:flex' : 'flex'
+              !isDesktop && mobileWritingView === 'prompt' ? 'hidden' : 'flex'
             }`}
             style={{ width: isDesktop ? `${100 - splitRatio}%` : '100%' }}
           >

@@ -18,6 +18,7 @@ import {
 import { VisualExamBuilder } from './VisualExamBuilder';
 import { saveExamToIndexedDB } from '../../services/indexedDb';
 import { saveExamToServerDb } from '../../services/api';
+import { sanitizeExamForSkills } from '../../utils/examUtils';
 
 const BLANK_TEMPLATE: ExamData = {
   exam_code: 'NEW_EXAM',
@@ -50,34 +51,35 @@ export const PreviewModule: React.FC<PreviewModuleProps> = ({
 
   // Handle save from VisualExamBuilder
   const handleSaveExam = async (updatedExam: ExamData) => {
-    setExam(updatedExam);
+    const sanitizedExam = sanitizeExamForSkills(updatedExam);
+    setExam(sanitizedExam);
     setSaveStatus('saving');
 
     // Dual persist in IndexedDB
-    await saveExamToIndexedDB(updatedExam);
+    await saveExamToIndexedDB(sanitizedExam);
 
     // Save to Centralized Server Database so all devices can access immediately
-    await saveExamToServerDb(updatedExam);
+    await saveExamToServerDb(sanitizedExam);
 
     // Dual persist in localStorage
     try {
       const existingRaw = localStorage.getItem('ielts_saved_exams');
       let existingList: ExamData[] = existingRaw ? JSON.parse(existingRaw) : [];
       if (!Array.isArray(existingList)) existingList = [];
-      const idx = existingList.findIndex(e => e.exam_code === updatedExam.exam_code);
+      const idx = existingList.findIndex(e => e.exam_code === sanitizedExam.exam_code);
       if (idx >= 0) {
-        existingList[idx] = updatedExam;
+        existingList[idx] = sanitizedExam;
       } else {
-        existingList.push(updatedExam);
+        existingList.push(sanitizedExam);
       }
       localStorage.setItem('ielts_saved_exams', JSON.stringify(existingList));
-      localStorage.setItem('ielts_current_exam', JSON.stringify(updatedExam));
+      localStorage.setItem('ielts_current_exam', JSON.stringify(sanitizedExam));
     } catch (err) {
       console.warn('Could not save exam to localStorage:', err);
     }
 
     if (onSaveToGas) {
-      onSaveToGas(updatedExam);
+      onSaveToGas(sanitizedExam);
     }
 
     // Direct fetch to GAS if configured
@@ -88,7 +90,7 @@ export const PreviewModule: React.FC<PreviewModuleProps> = ({
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify({
             action: 'upload_exam',
-            exam_data: updatedExam
+            exam_data: sanitizedExam
           })
         });
       }

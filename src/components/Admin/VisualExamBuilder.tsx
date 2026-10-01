@@ -18,8 +18,10 @@ import {
 } from 'lucide-react';
 import { ExamData, Question, ReadingPassageItem, QuestionType, IELTSQuestionType, canonicalizeQuestionType, SkillType, ExamType } from '../../types';
 import { saveExamToIndexedDB } from '../../services/indexedDb';
+import { saveExamToServerDb } from '../../services/api';
 import { Task1ImageUploader } from './Task1ImageUploader';
 import { QuestionEditorItem } from './QuestionEditorItem';
+import { sanitizeExamForSkills } from '../../utils/examUtils';
 
 // 1. Zod Validation Schema - Highly flexible to allow single-skill exams & partial question sets
 export const questionZodSchema = z.object({
@@ -154,6 +156,14 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
       detectedSkills.length === 1 ? 'one_skill' : detectedSkills.length === 2 ? 'two_skills' : 'full_test'
     );
 
+    const isOneSkill = detectedExamType === 'one_skill' || detectedSkills.length === 1;
+    const allowListening = !isOneSkill || detectedSkills.includes('listening');
+    const allowReading = !isOneSkill || detectedSkills.includes('reading');
+    const allowWriting = !isOneSkill || detectedSkills.includes('writing');
+
+    const filteredPassages = allowReading ? formattedPassages : [];
+    const filteredListeningQs = allowListening ? allListeningQs : [];
+
     return {
       exam_code: data.exam_code || 'TEST01',
       title: data.title || 'IELTS Mock Test',
@@ -164,10 +174,10 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
       listening_duration_mins: data.listening_duration_mins || 35,
       reading_duration_mins: data.reading_duration_mins || 60,
       writing_duration_mins: data.writing_duration_mins || 60,
-      audio_url: data.audio_url || '',
-      audio_title: data.audio_title || '',
-      passages: formattedPassages,
-      listening_questions: allListeningQs.map(q => ({
+      audio_url: allowListening ? (data.audio_url || '') : '',
+      audio_title: allowListening ? (data.audio_title || '') : '',
+      passages: filteredPassages,
+      listening_questions: filteredListeningQs.map(q => ({
         question_id: q.question_id,
         section: 'listening' as const,
         part: q.part || 1,
@@ -186,9 +196,9 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
         nb_condition: q.nb_condition,
         multi_select_count: q.multi_select_count || 2
       })),
-      writing_task1_prompt: initialTask1Prompt,
-      writing_task1_image: initialTask1Image,
-      writing_task2_prompt: initialTask2Prompt
+      writing_task1_prompt: allowWriting ? initialTask1Prompt : '',
+      writing_task1_image: allowWriting ? initialTask1Image : '',
+      writing_task2_prompt: allowWriting ? initialTask2Prompt : ''
     };
   };
 
@@ -276,31 +286,54 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
     if (hasListening) detectedSkills.push('listening');
     if (hasReading) detectedSkills.push('reading');
     if (hasWriting) detectedSkills.push('writing');
-    const detectedExamType: ExamType = detectedSkills.length === 1 ? 'one_skill' : detectedSkills.length === 2 ? 'two_skills' : 'full_test';
 
-    const task1Img = formData.writing_task1_image?.trim() || '';
+    // Determine target skills with strict adherence to form selection and one_skill discipline
+    let targetSkills: SkillType[] = formData.skills && formData.skills.length > 0 ? [...formData.skills] : [];
+    if (targetSkills.length === 0) {
+      if (hasReading && !hasListening && !hasWriting) targetSkills = ['reading'];
+      else if (hasListening && !hasReading && !hasWriting) targetSkills = ['listening'];
+      else if (hasWriting && !hasReading && !hasListening) targetSkills = ['writing'];
+      else targetSkills = detectedSkills;
+    }
+
+    const isOneSkillExam = formData.exam_type === 'one_skill' || targetSkills.length === 1;
+    const finalExamType: ExamType = formData.exam_type || (targetSkills.length === 1 ? 'one_skill' : targetSkills.length === 2 ? 'two_skills' : 'full_test');
+
+    const allowListening = !isOneSkillExam || targetSkills.includes('listening');
+    const allowReading = !isOneSkillExam || targetSkills.includes('reading');
+    const allowWriting = !isOneSkillExam || targetSkills.includes('writing');
+
+    const rawTask1Img = formData.writing_task1_image?.trim() || '';
+    const finalListeningQuestions = allowListening ? flatListeningQuestions : [];
+    const finalReadingQuestions = allowReading ? flatReadingQuestions : [];
+    const finalPassages = allowReading ? standardizedPassages : [];
+    const finalAudioUrl = allowListening ? (formData.audio_url?.trim() || '') : '';
+    const finalAudioTitle = allowListening ? (formData.audio_title?.trim() || '') : '';
+    const finalTask1Prompt = allowWriting ? (formData.writing_task1_prompt?.trim() || '') : '';
+    const finalTask1Img = allowWriting ? rawTask1Img : '';
+    const finalTask2Prompt = allowWriting ? (formData.writing_task2_prompt?.trim() || '') : '';
 
     // Standardize sections array for dynamic modular multi-skill engine
     const sections: any[] = [];
-    if (hasListening) {
+    if (allowListening && (finalListeningQuestions.length > 0 || finalAudioUrl)) {
       sections.push({
         skill: 'listening',
         title: 'IELTS Listening Section',
         durationMinutes: formData.listening_duration_mins || 35,
-        audioUrl: formData.audio_url?.trim() || '',
-        questions: flatListeningQuestions
+        audioUrl: finalAudioUrl,
+        questions: finalListeningQuestions
       });
     }
-    if (hasReading) {
+    if (allowReading && (finalReadingQuestions.length > 0 || finalPassages.some(p => p.text?.trim().length > 0))) {
       sections.push({
         skill: 'reading',
         title: 'IELTS Reading Section',
         durationMinutes: formData.reading_duration_mins || 60,
-        passages: standardizedPassages,
-        questions: flatReadingQuestions
+        passages: finalPassages,
+        questions: finalReadingQuestions
       });
     }
-    if (hasWriting) {
+    if (allowWriting && (finalTask1Prompt || finalTask2Prompt || finalTask1Img)) {
       sections.push({
         skill: 'writing',
         title: 'IELTS Writing Section',
@@ -310,9 +343,9 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
             id: 'task-1',
             task_number: 1,
             title: 'Writing Task 1 (Report)',
-            prompt: formData.writing_task1_prompt?.trim() || '',
-            image_url: task1Img,
-            imageUrl: task1Img,
+            prompt: finalTask1Prompt,
+            image_url: finalTask1Img,
+            imageUrl: finalTask1Img,
             min_words: 150,
             suggested_time_minutes: 20
           },
@@ -320,7 +353,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
             id: 'task-2',
             task_number: 2,
             title: 'Writing Task 2 (Essay)',
-            prompt: formData.writing_task2_prompt?.trim() || '',
+            prompt: finalTask2Prompt,
             min_words: 250,
             suggested_time_minutes: 40
           }
@@ -328,35 +361,44 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
       });
     }
 
-    const completeExam: ExamData = {
+    const unverifiedExam: ExamData = {
       exam_code: formData.exam_code.trim().toUpperCase(),
       title: formData.title,
       test_type: formData.test_type,
-      exam_type: formData.exam_type || detectedExamType,
-      skills: formData.skills && formData.skills.length > 0 ? formData.skills : detectedSkills,
+      exam_type: finalExamType,
+      skills: targetSkills,
       sections,
       duration_mins: formData.duration_mins,
       listening_duration_mins: formData.listening_duration_mins,
       reading_duration_mins: formData.reading_duration_mins,
       writing_duration_mins: formData.writing_duration_mins,
-      audio_url: formData.audio_url?.trim() || '',
-      audio_title: formData.audio_title?.trim() || '',
-      passages: standardizedPassages,
-      reading_questions: flatReadingQuestions,
-      listening_questions: flatListeningQuestions,
-      questions: [...flatListeningQuestions, ...flatReadingQuestions],
-      writing_task1_prompt: formData.writing_task1_prompt?.trim() || '',
-      writing_task1_image: task1Img,
-      writing_task1_image_url: task1Img,
-      writing_task1_imageUrl: task1Img,
-      writing_task2_prompt: formData.writing_task2_prompt?.trim() || '',
+      audio_url: finalAudioUrl,
+      audio_title: finalAudioTitle,
+      passages: finalPassages,
+      reading_questions: finalReadingQuestions,
+      listening_questions: finalListeningQuestions,
+      questions: [...finalListeningQuestions, ...finalReadingQuestions],
+      writing_task1_prompt: finalTask1Prompt,
+      writing_task1_image: finalTask1Img,
+      writing_task1_image_url: finalTask1Img,
+      writing_task1_imageUrl: finalTask1Img,
+      writing_task2_prompt: finalTask2Prompt,
       created_at: new Date().toISOString()
     };
+
+    const completeExam = sanitizeExamForSkills(unverifiedExam);
 
     // 1. Dual save to IndexedDB
     await saveExamToIndexedDB(completeExam);
 
-    // 2. Dual save to localStorage safely
+    // 2. Save directly to Central Server DB so all other devices can fetch it immediately
+    try {
+      await saveExamToServerDb(completeExam);
+    } catch (serverErr) {
+      console.warn('Could not auto-save to server DB:', serverErr);
+    }
+
+    // 3. Dual save to localStorage safely
     try {
       const existingRaw = localStorage.getItem('ielts_saved_exams');
       let existingList: ExamData[] = existingRaw ? JSON.parse(existingRaw) : [];
@@ -586,6 +628,13 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
                 setValue('exam_type', 'one_skill');
                 setValue('skills', ['reading']);
                 setValue('duration_mins', 60);
+                setValue('reading_duration_mins', 60);
+                setValue('listening_questions', []);
+                setValue('audio_url', '');
+                setValue('audio_title', '');
+                setValue('writing_task1_prompt', '');
+                setValue('writing_task1_image', '');
+                setValue('writing_task2_prompt', '');
                 setActiveSection('reading');
               }}
               className="px-2.5 py-1 text-[11px] font-bold bg-white text-[#503A7A] hover:bg-purple-100 rounded-lg border border-purple-200 transition cursor-pointer shadow-2xs"
@@ -598,6 +647,11 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
                 setValue('exam_type', 'one_skill');
                 setValue('skills', ['listening']);
                 setValue('duration_mins', 35);
+                setValue('listening_duration_mins', 35);
+                setValue('passages', []);
+                setValue('writing_task1_prompt', '');
+                setValue('writing_task1_image', '');
+                setValue('writing_task2_prompt', '');
                 setActiveSection('listening');
               }}
               className="px-2.5 py-1 text-[11px] font-bold bg-white text-[#503A7A] hover:bg-purple-100 rounded-lg border border-purple-200 transition cursor-pointer shadow-2xs"
@@ -610,6 +664,11 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
                 setValue('exam_type', 'one_skill');
                 setValue('skills', ['writing']);
                 setValue('duration_mins', 60);
+                setValue('writing_duration_mins', 60);
+                setValue('passages', []);
+                setValue('listening_questions', []);
+                setValue('audio_url', '');
+                setValue('audio_title', '');
                 setActiveSection('writing');
               }}
               className="px-2.5 py-1 text-[11px] font-bold bg-white text-[#503A7A] hover:bg-purple-100 rounded-lg border border-purple-200 transition cursor-pointer shadow-2xs"
@@ -624,6 +683,9 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
                 setValue('exam_type', 'two_skills');
                 setValue('skills', ['listening', 'reading']);
                 setValue('duration_mins', 95);
+                setValue('writing_task1_prompt', '');
+                setValue('writing_task1_image', '');
+                setValue('writing_task2_prompt', '');
                 setActiveSection('listening');
               }}
               className="px-2.5 py-1 text-[11px] font-bold bg-indigo-50 text-indigo-900 hover:bg-indigo-100 rounded-lg border border-indigo-200 transition cursor-pointer shadow-2xs"
@@ -636,6 +698,9 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
                 setValue('exam_type', 'two_skills');
                 setValue('skills', ['reading', 'writing']);
                 setValue('duration_mins', 120);
+                setValue('listening_questions', []);
+                setValue('audio_url', '');
+                setValue('audio_title', '');
                 setActiveSection('reading');
               }}
               className="px-2.5 py-1 text-[11px] font-bold bg-indigo-50 text-indigo-900 hover:bg-indigo-100 rounded-lg border border-indigo-200 transition cursor-pointer shadow-2xs"
@@ -648,6 +713,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
                 setValue('exam_type', 'two_skills');
                 setValue('skills', ['listening', 'writing']);
                 setValue('duration_mins', 95);
+                setValue('passages', []);
                 setActiveSection('listening');
               }}
               className="px-2.5 py-1 text-[11px] font-bold bg-indigo-50 text-indigo-900 hover:bg-indigo-100 rounded-lg border border-indigo-200 transition cursor-pointer shadow-2xs"

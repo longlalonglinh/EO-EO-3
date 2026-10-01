@@ -370,7 +370,7 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
         )}
 
         {/* Playback Controls & Non-Seekable Progress */}
-        <div className="flex items-center space-x-4 w-full md:w-auto flex-1 max-w-2xl">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto flex-1 max-w-2xl">
           
           {/* Requirement 4: Single-Play Button */}
           {testMode === 'TEST' ? (
@@ -378,7 +378,7 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
               type="button"
               onClick={handleStartAudio}
               disabled={!cleanAudioUrl || isPlaying || hasEnded}
-              className={`px-5 py-3 rounded-2xl flex items-center gap-2 font-extrabold text-xs shadow-md transition ${
+              className={`px-5 py-3 rounded-2xl flex items-center justify-center gap-2 font-extrabold text-xs shadow-md transition shrink-0 ${
                 !cleanAudioUrl
                   ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
                   : hasEnded

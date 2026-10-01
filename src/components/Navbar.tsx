@@ -9,6 +9,7 @@ import {
   Settings, 
   Maximize2, 
   RefreshCw, 
+  RotateCcw,
   Activity,
   Menu,
   X,
@@ -21,11 +22,13 @@ interface NavbarProps {
   adminTab: 'dashboard' | 'grading' | 'upload' | 'preview' | 'gas_setup' | 'custom_practice';
   setActiveView: (view: 'student' | 'admin') => void;
   setAdminTab: (tab: 'dashboard' | 'grading' | 'upload' | 'preview' | 'gas_setup' | 'custom_practice') => void;
+  isLoggedIn?: boolean;
   studentMode?: 'TEST' | 'PRACTICE';
   sbd?: string;
   examCode?: string;
   gasUrl: string;
   onOpenDiagnostics?: () => void;
+  onTriggerReload?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -33,11 +36,13 @@ export const Navbar: React.FC<NavbarProps> = ({
   adminTab,
   setActiveView,
   setAdminTab,
+  isLoggedIn = false,
   studentMode,
   sbd,
   examCode,
   gasUrl,
-  onOpenDiagnostics
+  onOpenDiagnostics,
+  onTriggerReload
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -81,13 +86,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            <div
-              onDoubleClick={() => setActiveView(activeView === 'admin' ? 'student' : 'admin')}
-              className="select-none cursor-default"
-              title={activeView === 'admin' ? 'Double-click to return to student view' : undefined}
-            >
+            <div className="select-none cursor-default">
               <div className="flex items-center gap-1.5">
-                <h1 className="text-base sm:text-xl font-black tracking-tight text-[#3C2A63]">
+                <h1 className="text-base sm:text-xl font-black tracking-tight text-[#3C2A63] cursor-default">
                   EO EO Testing
                 </h1>
                 {activeView === 'admin' && (
@@ -102,8 +103,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          {/* Center Info Badges for Student (Desktop/Tablet) */}
-          {activeView === 'student' && sbd && examCode && (
+          {/* Center Info Badges for Student (Desktop/Tablet) - Shown ONLY when candidate is actively logged in */}
+          {activeView === 'student' && isLoggedIn && sbd && examCode && (
             <div className="hidden md:flex items-center space-x-3 bg-[#F5F2F9] px-4 py-1.5 rounded-2xl border border-purple-100 text-xs">
               <span className="font-medium text-[#503A7A]">
                 Candidate ID: <strong className="text-[#3C2A63] font-bold">{sbd}</strong>
@@ -176,6 +177,18 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
+            {onTriggerReload && (
+              <button
+                type="button"
+                onClick={onTriggerReload}
+                className="p-2 rounded-xl bg-[#E2DDEC] hover:bg-[#D9D3E4] text-[#3C2A63] transition-all cursor-pointer"
+                title="Tải lại trang (Reload Page)"
+                aria-label="Tải lại trang"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+            )}
+
             <button
               onClick={toggleFullscreen}
               className="p-2 rounded-xl bg-[#E2DDEC] hover:bg-[#D9D3E4] text-[#3C2A63] transition-all cursor-pointer"
@@ -187,8 +200,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         </div>
 
-        {/* Student Mobile Compact Badge Bar */}
-        {activeView === 'student' && sbd && examCode && (
+        {/* Student Mobile Compact Badge Bar - Shown ONLY when candidate is actively logged in */}
+        {activeView === 'student' && isLoggedIn && sbd && examCode && (
           <div className="md:hidden py-1.5 border-t border-purple-100/60 flex items-center justify-between text-[11px]">
             <div className="flex items-center space-x-1.5 text-[#503A7A] font-semibold truncate">
               <span>ID: <strong className="text-[#3C2A63]">{sbd}</strong></span>

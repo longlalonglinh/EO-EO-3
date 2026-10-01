@@ -2,10 +2,45 @@ import fs from 'fs';
 import path from 'path';
 
 const DATA_DIR = path.join(process.cwd(), 'server_data');
+const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 
-// Ensure data directory exists
+// Ensure data and uploads directories exist
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+/**
+ * Persists base64 data URLs to disk as permanent image files so that
+ * all devices (phones, tablets, PCs) can load them cleanly via static URL
+ * without hitting Google Sheets 50,000 character cell limits.
+ */
+export function persistBase64Image(dataUrlOrUrl: string, examCode: string): string {
+  if (!dataUrlOrUrl || typeof dataUrlOrUrl !== 'string') return '';
+  const trimmed = dataUrlOrUrl.trim();
+  if (!trimmed.startsWith('data:image/')) {
+    return trimmed;
+  }
+
+  try {
+    const matches = trimmed.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,(.+)$/);
+    if (!matches) return trimmed;
+
+    const rawExt = matches[1].toLowerCase();
+    const ext = rawExt === 'jpeg' ? 'jpg' : rawExt === 'svg+xml' ? 'svg' : rawExt.replace(/[^a-z0-9]/g, '');
+    const safeCode = (examCode || 'EXAM').replace(/[^a-zA-Z0-9_-]/g, '');
+    const filename = `task1_${safeCode}_${Date.now()}.${ext || 'jpg'}`;
+    const filePath = path.join(UPLOADS_DIR, filename);
+
+    const buffer = Buffer.from(matches[2], 'base64');
+    fs.writeFileSync(filePath, buffer);
+    return `/uploads/${filename}`;
+  } catch (err) {
+    console.warn('[Server Storage] Error persisting base64 image:', err);
+    return trimmed;
+  }
 }
 
 const EXAMS_FILE = path.join(DATA_DIR, 'exams.json');
@@ -114,7 +149,7 @@ export function saveStoredExam(examData: any): any {
   const writingSection = examData.sections?.find((s: any) => s.skill === 'writing');
   const task1Obj = writingSection?.tasks?.find((t: any) => t.task_number === 1) || writingSection?.tasks?.[0];
 
-  const resolvedT1Img = examData.writing_task1_image || 
+  const rawT1Img = examData.writing_task1_image || 
     examData.writing_task1_image_url || 
     examData.writing_task1_imageUrl || 
     task1Obj?.image_url || 
@@ -123,35 +158,87 @@ export function saveStoredExam(examData: any): any {
     examData.imageUrl || 
     '';
 
+  const resolvedT1Img = rawT1Img ? persistBase64Image(rawT1Img, cleanCode) : '';
+
+  const rawSkills = Array.isArray(examData.skills) ? examData.skills : [];
+  const isOneSkill = examData.exam_type === 'one_skill' || rawSkills.length === 1;
+  const allowListening = !isOneSkill || rawSkills.includes('listening');
+  const allowReading = !isOneSkill || rawSkills.includes('reading');
+  const allowWriting = !isOneSkill || rawSkills.includes('writing');
+
+  const listening_questions = allowListening ? (examData.listening_questions || []) : [];
+  const reading_questions = allowReading ? (examData.reading_questions || []) : [];
+  const audio_url = allowListening ? (examData.audio_url || '') : '';
+  const passages = allowReading ? (examData.passages || []) : [];
+  const passage_text = allowReading ? (examData.passage_text || examData.reading_passage || '') : '';
+  const passage_title = allowReading ? (examData.passage_title || examData.reading_passage_title || '') : '';
+
+  const cleanW1 = allowWriting ? (examData.writing_task1_prompt || '') : '';
+  const cleanW1Img = allowWriting ? resolvedT1Img : '';
+  const cleanW2 = allowWriting ? (examData.writing_task2_prompt || '') : '';
+
+  let questions = examData.questions;
+  if (Array.isArray(questions)) {
+    questions = questions.filter((q: any) => {
+      const sec = (q.section || 'reading').toLowerCase();
+      if (sec === 'listening') return allowListening;
+      if (sec === 'reading') return allowReading;
+      return true;
+    });
+  } else {
+    questions = [...listening_questions, ...reading_questions];
+  }
+
   let sections = examData.sections;
   if (Array.isArray(sections)) {
-    sections = sections.map((sec: any) => {
-      if (sec.skill === 'writing' && Array.isArray(sec.tasks)) {
-        return {
-          ...sec,
-          tasks: sec.tasks.map((t: any) => {
-            if (t.task_number === 1 || t.id === 'task-1') {
-              return {
-                ...t,
-                image_url: t.image_url || t.imageUrl || resolvedT1Img,
-                imageUrl: t.imageUrl || t.image_url || resolvedT1Img
-              };
-            }
-            return t;
-          })
-        };
-      }
-      return sec;
-    });
+    sections = sections
+      .filter((sec: any) => {
+        if (sec.skill === 'listening') return allowListening;
+        if (sec.skill === 'reading') return allowReading;
+        if (sec.skill === 'writing') return allowWriting;
+        return true;
+      })
+      .map((sec: any) => {
+        if (sec.skill === 'writing' && Array.isArray(sec.tasks)) {
+          return {
+            ...sec,
+            tasks: sec.tasks.map((t: any) => {
+              if (t.task_number === 1 || t.id === 'task-1') {
+                return {
+                  ...t,
+                  image_url: t.image_url || t.imageUrl || cleanW1Img,
+                  imageUrl: t.imageUrl || t.image_url || cleanW1Img
+                };
+              }
+              return t;
+            })
+          };
+        }
+        return sec;
+      });
   }
 
   const standardizedExam = {
     ...examData,
     exam_code: cleanCode,
+    skills: rawSkills,
+    exam_type: examData.exam_type || (rawSkills.length === 1 ? 'one_skill' : rawSkills.length === 2 ? 'two_skills' : 'full_test'),
     sections,
-    writing_task1_image: resolvedT1Img,
-    writing_task1_image_url: resolvedT1Img,
-    writing_task1_imageUrl: resolvedT1Img,
+    audio_url,
+    audio_title: allowListening ? (examData.audio_title || '') : '',
+    passage_title,
+    reading_passage_title: passage_title,
+    passage_text,
+    reading_passage: passage_text,
+    passages,
+    listening_questions,
+    reading_questions,
+    questions,
+    writing_task1_prompt: cleanW1,
+    writing_task1_image: cleanW1Img,
+    writing_task1_image_url: cleanW1Img,
+    writing_task1_imageUrl: cleanW1Img,
+    writing_task2_prompt: cleanW2,
     updated_at: new Date().toISOString()
   };
 
