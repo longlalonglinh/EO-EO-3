@@ -454,9 +454,9 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
                     ? 'bg-[#6B51A5] text-white border-purple-400 shadow-xs' 
                     : 'bg-white text-[#503A7A] border-purple-200 hover:bg-purple-50'
                 }`}
-                title="Chuyển chế độ hiển thị trên tablet: 2 cột song song hoặc 1 cột dạng tab"
+                title="Switch display layout: 2 split columns or tabbed view"
               >
-                <span>{tabletSplitEnabled ? '📱 Chuyển sang Dạng Tab' : '💻 Chia 2 Cột Song Song'}</span>
+                <span>{tabletSplitEnabled ? '📱 Switch to Tabs' : '💻 Split 2 Columns'}</span>
               </button>
             )}
 
@@ -466,11 +466,11 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
                 : 'bg-emerald-50 text-emerald-800 border-emerald-200'
             }`}>
               <Save className={`w-3.5 h-3.5 ${isSaving ? 'animate-spin text-amber-600' : 'text-emerald-700'}`} />
-              <span>{isSaving ? 'Đang lưu...' : autoSaveTime ? `Đã lưu (${autoSaveTime})` : 'Tự động lưu'}</span>
+              <span>{isSaving ? 'Saving...' : autoSaveTime ? `Saved (${autoSaveTime})` : 'Auto-saving'}</span>
             </span>
 
             <span className="hidden lg:inline text-xs text-[#7C68A5] font-medium">
-              Đã làm: <strong className="text-[#6B51A5] font-black">{totalAnswered}</strong> / {all40Questions.length}
+              Answered: <strong className="text-[#6B51A5] font-black">{totalAnswered}</strong> / {all40Questions.length}
             </span>
           </div>
         </div>
@@ -489,7 +489,7 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
               }`}
             >
               <BookOpen className="w-4 h-4" />
-              <span>📖 Bài Đọc (Passage {activePassageIndex})</span>
+              <span>📖 Reading Passage (Passage {activePassageIndex})</span>
             </button>
             <button
               type="button"
@@ -499,7 +499,7 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
               }`}
             >
               <HelpCircle className="w-4 h-4" />
-              <span>❓ Câu Hỏi ({displayedQuestions.length} câu)</span>
+              <span>❓ Questions ({displayedQuestions.length} Qs)</span>
             </button>
           </div>
         </div>
@@ -657,14 +657,14 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
           {!isDesktop && (
             <div className="p-3 bg-white border-t border-purple-100 flex items-center justify-between shrink-0">
               <span className="text-xs text-[#7C68A5] font-semibold">
-                Passage {currentPassage.passage_index} ({displayedQuestions.length} câu hỏi)
+                Passage {currentPassage.passage_index} ({displayedQuestions.length} questions)
               </span>
               <button
                 type="button"
                 onClick={() => setMobileTab('questions')}
                 className="bg-[#6B51A5] hover:bg-[#503A7A] text-white text-xs font-bold px-3.5 py-1.5 rounded-xl shadow-md flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
               >
-                <span>Trả lời câu hỏi</span>
+                <span>Answer Questions</span>
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
@@ -719,7 +719,7 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
                   className="bg-[#6B51A5] hover:bg-[#503A7A] text-white text-[11px] font-bold px-2.5 py-1 rounded-xl shadow-xs flex items-center gap-1 transition active:scale-95 cursor-pointer"
                 >
                   <BookOpen className="w-3 h-3 text-purple-200" />
-                  <span>Xem bài đọc</span>
+                  <span>View Passage</span>
                 </button>
               )}
 

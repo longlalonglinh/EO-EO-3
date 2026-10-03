@@ -1,0 +1,21 @@
+[
+  {
+    "submission_id": "TEST_CONCURRENT_1791050964656",
+    "sbd": "SBD_CONCUR_01",
+    "exam_code": "WT1004",
+    "grading_version": 2,
+    "writing_status": "GRADED",
+    "received_at": "2026-10-03T18:09:24.656Z",
+    "writing_band": 6.5,
+    "writing_scores": {
+      "TR": 6.5,
+      "CC": 6.5,
+      "LR": 6.5,
+      "GRA": 6.5
+    },
+    "writing_feedback": "Good response",
+    "graded_by": "Examiner_A",
+    "graded_at": "2026-10-03T18:09:24.657Z",
+    "overall_band": 6.5
+  }
+]

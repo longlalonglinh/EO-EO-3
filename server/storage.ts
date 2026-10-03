@@ -306,16 +306,31 @@ export function updateStoredWritingScore(
   submissionId: string, 
   scores: any, 
   overallWriting: number, 
-  feedback?: string
-): any | null {
+  feedback?: string,
+  expectedVersion?: number,
+  examinerId?: string
+): { success: boolean; submission?: any; conflict?: boolean; message?: string } {
   const submissions = getStoredSubmissions();
   const sub = submissions.find((s: any) => s.submission_id === submissionId);
-  if (!sub) return null;
+  if (!sub) return { success: false, message: 'Submission not found' };
+
+  // TC-EXAM-02: Optimistic Locking for concurrent examiners
+  const currentVersion = sub.grading_version || 1;
+  if (expectedVersion !== undefined && Number(expectedVersion) !== currentVersion) {
+    return {
+      success: false,
+      conflict: true,
+      message: 'DỮ LIỆU ĐÃ ĐƯỢC CẬP NHẬT BỞI NGƯỜI KHÁC. VUI LÒNG TẢI LẠI TRANG'
+    };
+  }
 
   sub.writing_status = 'GRADED';
   sub.writing_band = overallWriting;
   sub.writing_scores = scores;
   if (feedback !== undefined) sub.writing_feedback = feedback;
+  sub.grading_version = currentVersion + 1;
+  sub.graded_by = examinerId || 'examiner';
+  sub.graded_at = new Date().toISOString();
 
   // Re-calculate overall band if listening and reading bands exist
   const lBand = Number(sub.listening_band) || 0;
@@ -334,7 +349,7 @@ export function updateStoredWritingScore(
 
   cachedSubmissions = submissions;
   safeWriteJson(SUBMISSIONS_FILE, submissions);
-  return sub;
+  return { success: true, submission: sub };
 }
 
 // ---------------- CHEAT LOGS ----------------

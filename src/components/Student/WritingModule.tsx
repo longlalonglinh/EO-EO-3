@@ -362,22 +362,22 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
                   ? 'bg-[#6B51A5] text-white border-purple-400 shadow-xs' 
                   : 'bg-white text-[#503A7A] border-purple-200 hover:bg-purple-50'
               }`}
-              title="Chuyển chế độ hiển thị trên tablet: 2 cột song song hoặc 1 cột dạng tab"
+              title="Switch display layout: 2 split columns or tabbed view"
             >
-              <span>{tabletSplitEnabled ? '📱 Chuyển sang Dạng Tab' : '💻 Chia 2 Cột Song Song'}</span>
+              <span>{tabletSplitEnabled ? '📱 Switch to Tabs' : '💻 Split 2 Columns'}</span>
             </button>
           )}
 
           {isDesktop && (
             <div className="hidden lg:flex items-center gap-1.5 bg-[#F5F2F9] px-3 py-1.5 rounded-2xl border border-purple-100 text-xs">
-              <span className="text-[11px] font-bold text-[#7C68A5] mr-1">Tỉ lệ:</span>
+              <span className="text-[11px] font-bold text-[#7C68A5] mr-1">Ratio:</span>
               <button
                 type="button"
                 onClick={() => setSplitRatio(45)}
                 className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${
                   splitRatio === 45 ? 'bg-[#6B51A5] text-white shadow-xs' : 'bg-white text-[#503A7A] hover:bg-purple-100'
                 }`}
-                title="Cân bằng (Đề bài 45% - Bài viết 55%)"
+                title="Balanced (Prompt 45% - Response 55%)"
               >
                 45:55
               </button>
@@ -387,9 +387,9 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
                 className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${
                   splitRatio === 58 ? 'bg-[#6B51A5] text-white shadow-xs' : 'bg-white text-[#503A7A] hover:bg-purple-100'
                 }`}
-                title="Mở rộng đề bài & biểu đồ 58%"
+                title="Expand prompt & diagram to 58%"
               >
-                Đề bài 58%
+                Prompt 58%
               </button>
               <button
                 type="button"
@@ -397,9 +397,9 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
                 className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${
                   splitRatio === 35 ? 'bg-[#6B51A5] text-white shadow-xs' : 'bg-white text-[#503A7A] hover:bg-purple-100'
                 }`}
-                title="Mở rộng khung viết bài 65%"
+                title="Expand writing editor to 65%"
               >
-                Bài viết 65%
+                Response 65%
               </button>
             </div>
           )}
@@ -539,10 +539,10 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
                     type="button"
                     onClick={() => setIsZoomOpen(true)}
                     className="bg-[#6B51A5] hover:bg-[#503A7A] text-white text-[11px] font-bold px-3 py-1 rounded-xl shadow-xs flex items-center gap-1 transition active:scale-95 cursor-pointer"
-                    title="Nhấn để xem biểu đồ Task 1 phóng to"
+                    title="Click to view enlarged Task 1 diagram"
                   >
                     <ImageIcon className="w-3.5 h-3.5 text-purple-200" />
-                    <span>Xem Biểu Đồ</span>
+                    <span>View Diagram</span>
                   </button>
                 )}
 

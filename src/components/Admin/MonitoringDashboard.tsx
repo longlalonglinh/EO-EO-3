@@ -10,7 +10,10 @@ import {
   Clock, 
   Activity,
   LayoutList,
-  Table as TableIcon
+  Table as TableIcon,
+  Wifi,
+  WifiOff,
+  AlertTriangle
 } from 'lucide-react';
 import { CheatLog, SubmissionRecord } from '../../types';
 import { fetchSubmissions, fetchCheatLogs, deduplicateSubmissions, deduplicateCheatLogs, DEFAULT_API_URL } from '../../services/api';
@@ -34,6 +37,14 @@ export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [activeSubTab, setActiveTab] = useState<'submissions' | 'cheatlogs'>('submissions');
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+  const [violationThresholdFilter, setViolationThresholdFilter] = useState<'all' | 'high'>('all');
+  const [currentTimeMs, setCurrentTimeMs] = useState<number>(Date.now());
+
+  // Periodically refresh current time to update 15s disconnection indicators
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTimeMs(Date.now()), 3000);
+    return () => clearInterval(timer);
+  }, []);
 
   const loadData = async () => {
     setLoading(true);
@@ -62,6 +73,20 @@ export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({
 
   const term = String(searchTerm || '').toLowerCase().trim();
 
+  // TC-PROC-01 & TC-PROC-02: Count violations per candidate and compute connection status
+  const candidateViolationsMap = new Map<string, number>();
+  const candidateLastSeenMap = new Map<string, number>();
+
+  cheatLogs.forEach(l => {
+    const sbd = String(l.sbd || '').toUpperCase();
+    candidateViolationsMap.set(sbd, (candidateViolationsMap.get(sbd) || 0) + 1);
+    const logTime = new Date(l.timestamp || 0).getTime();
+    const currentMax = candidateLastSeenMap.get(sbd) || 0;
+    if (logTime > currentMax) {
+      candidateLastSeenMap.set(sbd, logTime);
+    }
+  });
+
   const filteredSubmissions = submissions.filter((s) => {
     if (!term) return true;
     const sbd = String(s?.sbd ?? '').toLowerCase();
@@ -71,12 +96,23 @@ export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({
   });
 
   const filteredLogs = cheatLogs.filter((l) => {
-    if (!term) return true;
     const sbd = String(l?.sbd ?? '').toLowerCase();
+    const cleanSbdUpper = String(l?.sbd ?? '').toUpperCase();
     const examCode = String(l?.exam_code ?? '').toLowerCase();
     const violation = String(l?.violation_type ?? '').toLowerCase();
+
+    // Violation count filter (TC-PROC-01: VIOLATION_COUNT > 3)
+    if (violationThresholdFilter === 'high') {
+      const count = candidateViolationsMap.get(cleanSbdUpper) || 0;
+      if (count <= 3) return false;
+    }
+
+    if (!term) return true;
     return sbd.includes(term) || examCode.includes(term) || violation.includes(term);
   });
+
+  // TC-PROC-01: Bounded slice of logs to maintain 60 FPS under high-frequency log flooding
+  const boundedLogs = filteredLogs.slice(0, 150);
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -147,7 +183,31 @@ export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({
         </div>
 
         {/* Search Field & View Mode Toggle */}
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          {activeSubTab === 'cheatlogs' && (
+            <div className="flex bg-[#E2DDEC] p-1 rounded-xl text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setViolationThresholdFilter('all')}
+                className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                  violationThresholdFilter === 'all' ? 'bg-white text-[#3C2A63] shadow-xs' : 'text-[#7C68A5]'
+                }`}
+              >
+                All Logs
+              </button>
+              <button
+                type="button"
+                onClick={() => setViolationThresholdFilter('high')}
+                className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                  violationThresholdFilter === 'high' ? 'bg-rose-600 text-white shadow-xs' : 'text-rose-700'
+                }`}
+                title="Filter candidates with more than 3 violations"
+              >
+                Violations &gt; 3
+              </button>
+            </div>
+          )}
+
           <div className="relative flex-1 sm:w-64">
             <Search className="w-4 h-4 text-[#7C68A5] absolute left-3 top-1/2 -translate-y-1/2" />
             <input
@@ -303,38 +363,67 @@ export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({
       {/* CHEAT LOGS VIEW */}
       {activeSubTab === 'cheatlogs' && (
         <>
+          {filteredLogs.length > 150 && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs px-4 py-2 rounded-2xl flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>
+                Displaying 150 of {filteredLogs.length} recorded alerts (buffered rendering maintains 60 FPS under high event frequency).
+              </span>
+            </div>
+          )}
+
           {/* Mobile Cards for Alerts */}
           <div className="block md:hidden space-y-3">
-            {filteredLogs.length === 0 ? (
+            {boundedLogs.length === 0 ? (
               <div className="bg-white border border-purple-100 rounded-3xl p-8 text-center text-xs text-[#7C68A5] italic">
                 No proctoring violations recorded.
               </div>
             ) : (
-              filteredLogs.map((log, idx) => (
-                <div 
-                  key={`${log.log_id || 'log'}-${idx}`}
-                  className="bg-white border border-rose-100 rounded-2xl p-4 shadow-sm space-y-2"
-                >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="text-sm font-bold text-[#3C2A63]">
-                        Candidate: {log.sbd} <span className="font-mono text-xs text-[#6B51A5]">({log.exam_code})</span>
+              boundedLogs.map((log, idx) => {
+                const sbdUpper = String(log.sbd || '').toUpperCase();
+                const lastSeen = candidateLastSeenMap.get(sbdUpper) || new Date(log.timestamp || 0).getTime();
+                const isDisconnected = (currentTimeMs - lastSeen) > 15000;
+
+                return (
+                  <div 
+                    key={`${log.log_id || 'log'}-${idx}`}
+                    className="bg-white border border-rose-100 rounded-2xl p-4 shadow-sm space-y-2.5"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="text-sm font-bold text-[#3C2A63]">
+                          Candidate: {log.sbd} <span className="font-mono text-xs text-[#6B51A5]">({log.exam_code})</span>
+                        </div>
+                        <span className="text-[10px] font-mono text-[#7C68A5]">{log.log_id}</span>
                       </div>
-                      <span className="text-[10px] font-mono text-[#7C68A5]">{log.log_id}</span>
+
+                      <div className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1">
+                        <ShieldAlert className="w-3 h-3 text-rose-600" />
+                        <span>{log.violation_type}</span>
+                      </div>
                     </div>
 
-                    <div className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1">
-                      <ShieldAlert className="w-3 h-3 text-rose-600" />
-                      <span>{log.violation_type}</span>
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                      {isDisconnected ? (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-1">
+                          <WifiOff className="w-3 h-3 text-rose-600" />
+                          <span>MẤT KẾT NỐI (DISCONNECTED)</span>
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                          <Wifi className="w-3 h-3 text-emerald-600" />
+                          <span>STABLE ONLINE</span>
+                        </span>
+                      )}
+
+                      <div className="flex items-center gap-1 text-[11px] font-mono text-[#503A7A]">
+                        <Clock className="w-3.5 h-3.5 text-[#6B51A5]" />
+                        <span>{formatSubmissionTime(log)}</span>
+                      </div>
                     </div>
                   </div>
-
-                  <div className="flex items-center gap-1 text-[11px] font-mono text-[#503A7A] pt-1">
-                    <Clock className="w-3.5 h-3.5 text-[#6B51A5]" />
-                    <span>{formatSubmissionTime(log)}</span>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
 
@@ -347,35 +436,57 @@ export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({
                     <th className="py-3.5 px-4">Log ID</th>
                     <th className="py-3.5 px-4">Candidate ID</th>
                     <th className="py-3.5 px-4">Exam Code</th>
+                    <th className="py-3.5 px-4">Connection State</th>
                     <th className="py-3.5 px-4">Violation Type</th>
                     <th className="py-3.5 px-4">Recorded Timestamp</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-purple-100/60">
-                  {filteredLogs.length === 0 ? (
+                  {boundedLogs.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="text-center py-8 text-[#7C68A5] italic">
+                      <td colSpan={6} className="text-center py-8 text-[#7C68A5] italic">
                         No proctoring violations recorded.
                       </td>
                     </tr>
                   ) : (
-                    filteredLogs.map((log, idx) => (
-                      <tr key={`${log.log_id || 'log'}-row-${idx}`} className="hover:bg-[#F8F6FC] transition-colors">
-                        <td className="py-3 px-4 font-mono text-[#7C68A5]">{log.log_id}</td>
-                        <td className="py-3 px-4 font-bold text-[#3C2A63]">{log.sbd}</td>
-                        <td className="py-3 px-4 font-medium">{log.exam_code}</td>
-                        <td className="py-3 px-4 font-bold text-rose-700 flex items-center gap-1.5">
-                          <ShieldAlert className="w-3.5 h-3.5 shrink-0 text-rose-600" />
-                          <span>{log.violation_type}</span>
-                        </td>
-                        <td className="py-3 px-4 text-[#503A7A] font-semibold">
-                          <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-purple-50 border border-purple-200/60 text-xs font-mono text-[#503A7A]">
-                            <Clock className="w-3 h-3 text-[#6B51A5] shrink-0" />
-                            <span>{formatSubmissionTime(log)}</span>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                    boundedLogs.map((log, idx) => {
+                      const sbdUpper = String(log.sbd || '').toUpperCase();
+                      const lastSeen = candidateLastSeenMap.get(sbdUpper) || new Date(log.timestamp || 0).getTime();
+                      const isDisconnected = (currentTimeMs - lastSeen) > 15000;
+
+                      return (
+                        <tr key={`${log.log_id || 'log'}-row-${idx}`} className="hover:bg-[#F8F6FC] transition-colors">
+                          <td className="py-3 px-4 font-mono text-[#7C68A5]">{log.log_id}</td>
+                          <td className="py-3 px-4 font-bold text-[#3C2A63]">{log.sbd}</td>
+                          <td className="py-3 px-4 font-medium">{log.exam_code}</td>
+                          <td className="py-3 px-4">
+                            {isDisconnected ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-rose-100 text-rose-800 border border-rose-300 font-bold text-[11px]">
+                                <WifiOff className="w-3.5 h-3.5 text-rose-600" />
+                                <span>MẤT KẾT NỐI (DISCONNECTED)</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-[11px]">
+                                <Wifi className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>STABLE ONLINE</span>
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 font-bold text-rose-700">
+                            <div className="flex items-center gap-1.5">
+                              <ShieldAlert className="w-3.5 h-3.5 shrink-0 text-rose-600" />
+                              <span>{log.violation_type}</span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-[#503A7A] font-semibold">
+                            <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-purple-50 border border-purple-200/60 text-xs font-mono text-[#503A7A]">
+                              <Clock className="w-3 h-3 text-[#6B51A5] shrink-0" />
+                              <span>{formatSubmissionTime(log)}</span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>

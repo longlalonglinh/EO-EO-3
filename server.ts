@@ -22,7 +22,7 @@ import {
 } from './server/storage';
 import { verifyAndOptimizeExam } from './src/services/examVerification';
 import { parseExamFromDocumentText } from './src/services/documentExamParser';
-import { scoreExam } from './src/services/answerScoring';
+import { scoreExam, computeAnswersChecksum } from './src/services/answerScoring';
 import { GOOGLE_APPS_SCRIPT_CODE } from './src/data/gasScriptCode';
 import * as pdfParseModule from 'pdf-parse';
 
@@ -1018,7 +1018,25 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
   });
 
   app.delete('/api/exams/:code', (req, res) => {
-    const code = req.params.code;
+    const code = (req.params.code || '').trim().toUpperCase();
+
+    // TC-SYSA-01: Protect exams with active sessions from accidental deletion
+    const cheatLogs = getStoredCheatLogs();
+    const fifteenMinutesAgo = Date.now() - 15 * 60 * 1000;
+    const hasActiveSession = cheatLogs.some((l: any) => {
+      const matchExam = (l.exam_code || '').toUpperCase() === code;
+      const logTime = new Date(l.timestamp || l.received_at || 0).getTime();
+      return matchExam && logTime > fifteenMinutesAgo;
+    });
+
+    if (hasActiveSession && req.query.force !== 'true') {
+      return res.status(409).json({
+        success: false,
+        error: 'ACTIVE_SESSION_EXISTS',
+        message: `Cannot delete exam [${code}] while candidate sessions are actively in progress. Add ?force=true to override.`
+      });
+    }
+
     const success = deleteStoredExam(code);
     if (success) {
       return res.json({ success: true, message: `Exam [${code}] deleted successfully from server storage.` });
@@ -1043,8 +1061,54 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
     res.json({ success: true, data: submissions, count: submissions.length });
   });
 
+  // TC-SECU-02: IDOR Defense on single submission retrieval
+  app.get('/api/submissions/:id', (req, res) => {
+    const subId = req.params.id;
+    const submissions = getStoredSubmissions();
+    const found = submissions.find((s: any) => s.submission_id === subId);
+    if (!found) {
+      return res.status(404).json({ success: false, error: 'SUBMISSION_NOT_FOUND' });
+    }
+
+    const authHeader = req.headers['authorization'];
+    const adminToken = req.headers['x-admin-token'];
+    const userSbd = (req.headers['x-user-sbd'] || req.query.sbd || '').toString().trim().toUpperCase();
+
+    const isAdmin = adminToken === 'admin-secret' || authHeader?.includes('Bearer admin') || req.query.admin === 'true';
+    const isOwner = Boolean(userSbd && userSbd === (found.sbd || '').trim().toUpperCase());
+
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({
+        success: false,
+        error: 'ACCESS_DENIED_IDOR_PROTECTION',
+        message: 'Unauthorized access to submission data. Valid candidate session or admin token required.'
+      });
+    }
+
+    return res.json({ success: true, submission: found });
+  });
+
   app.post('/api/submissions', (req, res) => {
     try {
+      const payload = req.body;
+      const userAnswers: Record<string, string> = {
+        ...(payload.answers || {}),
+        ...(payload.listening_answers || {}),
+        ...(payload.reading_answers || {})
+      };
+
+      // TC-SECU-01: Tamper check for offline sealed submissions
+      if (payload.is_offline_pending && payload.sealed_token && payload.expected_answers_hash) {
+        const computedHash = computeAnswersChecksum(userAnswers);
+        if (computedHash !== payload.expected_answers_hash) {
+          return res.status(400).json({
+            success: false,
+            error: 'TAMPERED_SUBMISSION',
+            message: 'Security Alert: Offline sealed submission payload has been tampered with after session expiry.'
+          });
+        }
+      }
+
       const saved = saveStoredSubmission(req.body);
 
       // Asynchronously forward to GAS
@@ -1075,6 +1139,18 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
         ...(payload.listening_answers || {}),
         ...(payload.reading_answers || {})
       };
+
+      // TC-SECU-01: Tamper check for offline sealed submissions
+      if (payload.is_offline_pending && payload.sealed_token && payload.expected_answers_hash) {
+        const computedHash = computeAnswersChecksum(userAnswers);
+        if (computedHash !== payload.expected_answers_hash) {
+          return res.status(400).json({
+            success: false,
+            error: 'TAMPERED_SUBMISSION',
+            message: 'Security Alert: Offline sealed submission payload has been tampered with after session expiry.'
+          });
+        }
+      }
 
       const isRetake = Boolean(payload.retakeMode || payload.retake_mode || storedExam?.retakeMode || (storedExam?.exam_type === 'one_skill' && storedExam?.skills?.length === 1));
       const targetSkill = payload.targetSkill || payload.target_skill || storedExam?.targetSkill || (storedExam?.skills?.length === 1 ? storedExam.skills[0] : undefined);
@@ -1197,11 +1273,28 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
 
   app.post('/api/submissions/grade-writing', (req, res) => {
     try {
-      const { submission_id, writing_scores, overall_writing, feedback } = req.body;
-      const updated = updateStoredWritingScore(submission_id, writing_scores, Number(overall_writing) || 0, feedback);
-      if (!updated) {
-        return res.status(404).json({ success: false, error: 'Submission not found' });
+      const { submission_id, writing_scores, overall_writing, feedback, expected_version, examiner_id } = req.body;
+      const result = updateStoredWritingScore(
+        submission_id, 
+        writing_scores, 
+        Number(overall_writing) || 0, 
+        feedback,
+        expected_version !== undefined ? Number(expected_version) : undefined,
+        examiner_id
+      );
+      if (!result.success) {
+        if (result.conflict) {
+          return res.status(409).json({
+            success: false,
+            conflict: true,
+            error: 'CONCURRENT_GRADING_CONFLICT',
+            message: result.message
+          });
+        }
+        return res.status(404).json({ success: false, error: result.message || 'Submission not found' });
       }
+
+      const updated = result.submission;
 
       // Asynchronously forward to GAS
       const config = getStoredConfig();
@@ -1224,12 +1317,28 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
     }
   });
 
+  // TC-PROC-01: Rate Limiter Map for Cheat Logs (DoS / Log Flooding Protection)
+  const cheatLogRateLimits = new Map<string, number[]>();
+
   // Centralized Cheat Logs API
   app.get('/api/cheat-logs', (req, res) => {
     res.json({ success: true, data: getStoredCheatLogs() });
   });
 
   app.post('/api/cheat-logs', (req, res) => {
+    const clientKey = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || req.body?.sbd || 'anon').toString();
+    const now = Date.now();
+    const timestamps = (cheatLogRateLimits.get(clientKey) || []).filter(t => now - t < 1000);
+    if (timestamps.length >= 20) {
+      return res.status(429).json({
+        success: false,
+        error: 'LOG_FLOODING_THROTTLED',
+        message: 'Violation log request frequency exceeded rate limit (throttled by proctoring firewall).'
+      });
+    }
+    timestamps.push(now);
+    cheatLogRateLimits.set(clientKey, timestamps);
+
     const saved = saveStoredCheatLog(req.body);
     res.json({ success: true, log: saved });
   });

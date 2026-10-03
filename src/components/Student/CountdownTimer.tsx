@@ -132,7 +132,7 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
         <Clock className="w-3.5 h-3.5 text-[#6B51A5] shrink-0" />
         
         {isTimeHidden ? (
-          <span className="font-sans text-[11px] text-[#7C68A5]">Đã ẩn số</span>
+          <span className="font-sans text-[11px] text-[#7C68A5]">Time hidden</span>
         ) : (
           <span className="font-mono text-xs font-bold tracking-wider">{formattedTime}</span>
         )}
@@ -141,7 +141,7 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
           type="button"
           onClick={() => setIsTimeHidden(!isTimeHidden)}
           className="p-1 text-[#7C68A5] hover:text-[#3C2A63] transition rounded-md cursor-pointer"
-          title={isTimeHidden ? 'Hiện đồng hồ đếm ngược' : 'Ẩn con số để giảm căng thẳng'}
+          title={isTimeHidden ? 'Show countdown timer' : 'Hide timer numbers to reduce anxiety'}
         >
           {isTimeHidden ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
         </button>
@@ -151,7 +151,7 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
             type="button"
             onClick={handleResetTimer}
             className="p-1 text-purple-600 hover:text-purple-900 transition rounded-md cursor-pointer"
-            title="Đặt lại đồng hồ"
+            title="Reset timer"
           >
             <RotateCcw className="w-3 h-3" />
           </button>
@@ -186,11 +186,11 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-bold uppercase tracking-wider text-[#7C68A5]">
-                {sectionName ? `${sectionName}` : 'Thời gian làm bài còn lại'}
+                {sectionName ? `${sectionName}` : 'Remaining Test Time'}
               </span>
               {testMode === 'TEST' && (
                 <span className="text-[9px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold border border-slate-200">
-                  Chính thức
+                  Official
                 </span>
               )}
             </div>
@@ -198,8 +198,8 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
             <div className="flex items-baseline space-x-2 mt-0.5">
               {isTimeHidden ? (
                 <div className="flex items-center gap-2 text-xs font-semibold text-[#7C68A5]">
-                  <span>Đồng hồ đang chạy ngầm</span>
-                  <span className="text-[11px] font-normal italic">(Theo dõi thanh tiến trình ngoại vi bên dưới)</span>
+                  <span>Timer running in background</span>
+                  <span className="text-[11px] font-normal italic">(Track via peripheral visual bar below)</span>
                 </div>
               ) : (
                 <span className={`font-mono text-xl font-black tracking-tight ${
@@ -211,7 +211,7 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
 
               {!isTimeHidden && (
                 <span className="text-[11px] text-[#7C68A5] font-medium hidden sm:inline">
-                  {isUnder5Min ? '• Dưới 5 phút (chuẩn bị kết thúc)' : isUnder10Min ? '• Dưới 10 phút' : '• Đang đếm ngược'}
+                  {isUnder5Min ? '• Under 5 minutes (ending soon)' : isUnder10Min ? '• Under 10 minutes' : '• Counting down'}
                 </span>
               )}
             </div>
@@ -224,17 +224,17 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
             type="button"
             onClick={() => setIsTimeHidden(!isTimeHidden)}
             className="px-3 py-1.5 bg-[#F5F2F9] hover:bg-[#E2DDEC] text-[#503A7A] border border-purple-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
-            title={isTimeHidden ? 'Hiện số phút giây đếm ngược' : 'Thu gọn / Ẩn con số để tập trung làm bài'}
+            title={isTimeHidden ? 'Show countdown timer digits' : 'Hide timer digits to focus on test'}
           >
             {isTimeHidden ? (
               <>
                 <Eye className="w-3.5 h-3.5 text-[#6B51A5]" />
-                <span className="hidden sm:inline">Hiện số đếm</span>
+                <span className="hidden sm:inline">Show Timer</span>
               </>
             ) : (
               <>
                 <EyeOff className="w-3.5 h-3.5 text-[#6B51A5]" />
-                <span className="hidden sm:inline">Ẩn số đếm</span>
+                <span className="hidden sm:inline">Hide Timer</span>
               </>
             )}
           </button>
@@ -244,7 +244,7 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
               type="button"
               onClick={handleResetTimer}
               className="px-3 py-1.5 bg-[#F5F2F9] hover:bg-[#E2DDEC] text-[#503A7A] border border-purple-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
-              title="Đặt lại đồng hồ bài thi"
+              title="Reset test timer"
             >
               <RotateCcw className="w-3.5 h-3.5 text-[#6B51A5]" />
               <span className="hidden sm:inline">Reset</span>
@@ -268,8 +268,8 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
           />
         </div>
         <div className="flex items-center justify-between text-[10px] text-[#7C68A5] font-medium">
-          <span>Tiến độ thời gian (Thị giác ngoại vi)</span>
-          <span>{Math.round(progressPercent)}% còn lại</span>
+          <span>Time progress (Peripheral visual indicator)</span>
+          <span>{Math.round(progressPercent)}% remaining</span>
         </div>
       </div>
     </div>

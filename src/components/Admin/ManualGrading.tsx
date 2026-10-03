@@ -3,6 +3,7 @@ import { FileEdit, Copy, Check, Save, UserCheck, Send, Sparkles, Clock, ArrowLef
 import { SubmissionRecord, GradingForm } from '../../types';
 import { fetchSubmissions, saveWritingScore, deduplicateSubmissions, DEFAULT_API_URL } from '../../services/api';
 import { formatSubmissionTime } from '../../utils/dateFormatter';
+import { normalizeScoreInput, calculateIeltsOverallBand } from '../../services/answerScoring';
 
 interface ManualGradingProps {
   apiUrl?: string;
@@ -52,10 +53,13 @@ export const ManualGrading: React.FC<ManualGradingProps> = ({ apiUrl, gasUrl }) 
     loadSubmissions();
   }, [effectiveApiUrl]);
 
-  // Recalculate Overall Writing score (Average of 4 criteria rounded to nearest 0.5)
+  // Recalculate Overall Writing score according to official IELTS band rounding (.25/.75 rules)
   useEffect(() => {
-    const avg = (gradingForm.tr + gradingForm.cc + gradingForm.lr + gradingForm.gra) / 4;
-    const rounded = Math.round(avg * 2) / 2;
+    const tr = normalizeScoreInput(gradingForm.tr);
+    const cc = normalizeScoreInput(gradingForm.cc);
+    const lr = normalizeScoreInput(gradingForm.lr);
+    const gra = normalizeScoreInput(gradingForm.gra);
+    const rounded = calculateIeltsOverallBand([tr, cc, lr, gra]);
     setGradingForm((prev) => ({ ...prev, overall_writing: rounded }));
   }, [gradingForm.tr, gradingForm.cc, gradingForm.lr, gradingForm.gra]);
 
@@ -63,12 +67,31 @@ export const ManualGrading: React.FC<ManualGradingProps> = ({ apiUrl, gasUrl }) 
     if (!selectedSub) return;
     setLoading(true);
     try {
-      const res = await saveWritingScore(effectiveApiUrl, selectedSub.submission_id, gradingForm);
+      const tr = normalizeScoreInput(gradingForm.tr);
+      const cc = normalizeScoreInput(gradingForm.cc);
+      const lr = normalizeScoreInput(gradingForm.lr);
+      const gra = normalizeScoreInput(gradingForm.gra);
+      const expectedVersion = (selectedSub as any).grading_version || 1;
+
+      const res = await saveWritingScore(effectiveApiUrl, selectedSub.submission_id, {
+        ...gradingForm,
+        tr,
+        cc,
+        lr,
+        gra,
+        expected_version: expectedVersion
+      });
+
       if (res.success) {
         alert(`✅ Writing score for candidate ${selectedSub.sbd} saved successfully!`);
         loadSubmissions();
       } else {
-        alert(`❌ Failed to save score: ${res.message}`);
+        if (res.conflict) {
+          alert(`⚠️ DỮ LIỆU ĐÃ ĐƯỢC CẬP NHẬT BỞI NGƯỜI KHÁC. VUI LÒNG TẢI LẠI TRANG.\n\n(Another examiner has submitted grades for candidate ${selectedSub.sbd}. The latest data will now be reloaded.)`);
+          loadSubmissions();
+        } else {
+          alert(`❌ Failed to save score: ${res.message}`);
+        }
       }
     } catch (err) {
       console.error('Error saving score:', err);

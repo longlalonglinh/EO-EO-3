@@ -25,7 +25,7 @@ import {
   savePracticeDecksToIndexedDB,
   getPracticeDecksFromIndexedDB
 } from './indexedDb';
-import { gradeExamAnswers } from './answerScoring';
+import { gradeExamAnswers, computeAnswersChecksum } from './answerScoring';
 import { DEFAULT_EXAMS } from '../data/defaultExams';
 
 export const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbySNk5foVr4UMC5ZVP1YTlxjxT9qFgdI85cH5nyQ63ffqXdYVZ7SJKbmD0B3xNO3DEe/exec";
@@ -303,8 +303,40 @@ export async function fetchCheatLogs(
 export async function saveWritingScore(
   apiUrl: string, 
   submissionId: string, 
-  form: GradingForm
-): Promise<{ success: boolean; message?: string }> {
+  form: GradingForm & { expected_version?: number; examiner_id?: string }
+): Promise<{ success: boolean; conflict?: boolean; message?: string }> {
+  // Centralized Server DB Sync (/api/submissions/grade-writing) with Optimistic Locking
+  try {
+    const serverRes = await fetch('/api/submissions/grade-writing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        submission_id: submissionId,
+        writing_scores: {
+          TR: form.tr,
+          CC: form.cc,
+          LR: form.lr,
+          GRA: form.gra
+        },
+        overall_writing: form.overall_writing,
+        feedback: form.feedback,
+        expected_version: form.expected_version,
+        examiner_id: form.examiner_id
+      })
+    });
+
+    if (serverRes.status === 409) {
+      const conflictData = await serverRes.json().catch(() => ({}));
+      return {
+        success: false,
+        conflict: true,
+        message: conflictData.message || 'DỮ LIỆU ĐÃ ĐƯỢC CẬP NHẬT BỞI NGƯỜI KHÁC. VUI LÒNG TẢI LẠI TRANG'
+      };
+    }
+  } catch (e) {
+    console.warn('Server DB grade sync error:', e);
+  }
+
   // Update in LocalStorage & IndexedDB
   const localSaved = localStorage.getItem('ielts_student_submissions');
   if (localSaved) {
@@ -331,25 +363,6 @@ export async function saveWritingScore(
     });
     localStorage.setItem('ielts_student_submissions', JSON.stringify(updated));
   }
-
-  // Centralized Server DB Sync (/api/submissions/grade-writing)
-  try {
-    fetch('/api/submissions/grade-writing', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        submission_id: submissionId,
-        writing_scores: {
-          TR: form.tr,
-          CC: form.cc,
-          LR: form.lr,
-          GRA: form.gra
-        },
-        overall_writing: form.overall_writing,
-        feedback: form.feedback
-      })
-    }).catch(err => console.warn('Server DB grade sync failed:', err));
-  } catch (e) {}
 
   if (!apiUrl || apiUrl.includes('mock_ielts_exam_system_gas_url')) {
     return { success: true, message: 'Writing scores saved to IndexedDB & LocalStorage successfully!' };
@@ -468,11 +481,12 @@ export async function submitExamPayload(
   };
 
   const answersCount = Object.keys(userAnswers).length;
-  const rawDigest = `${submissionId}:${payload.sbd}:${payload.exam_code}:${answersCount}:${timestamp}`;
+  const answersChecksum = computeAnswersChecksum(userAnswers);
+  const rawDigest = `${submissionId}:${payload.sbd}:${payload.exam_code}:${answersCount}:${answersChecksum}:${timestamp}`;
   const sealedToken = typeof btoa !== 'undefined'
-    ? `SEALED-IELTS-${btoa(rawDigest).replace(/[^a-zA-Z0-9]/g, '').slice(0, 24)}`
-    : `SEALED-IELTS-${Date.now().toString(36).toUpperCase()}`;
-  const receiptCode = `RCPT-${(payload.exam_code || 'EXAM').toUpperCase()}-${(payload.sbd || 'USER').toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
+    ? `SEALED-IELTS-${answersChecksum}-${btoa(rawDigest).replace(/[^a-zA-Z0-9]/g, '').slice(0, 16)}`
+    : `SEALED-IELTS-${answersChecksum}-${Date.now().toString(36).toUpperCase()}`;
+  const receiptCode = `RCPT-${(payload.exam_code || 'EXAM').toUpperCase()}-${(payload.sbd || 'USER').toUpperCase()}-${answersChecksum}-${Date.now().toString(36).toUpperCase()}`;
 
   // 0. Attempt Authoritative Server-Side Grading & Certified Submission first
   try {
@@ -485,7 +499,8 @@ export async function submitExamPayload(
         submission_id: submissionId,
         submission_type: submissionType,
         sealed_token: sealedToken,
-        offline_receipt_code: receiptCode
+        offline_receipt_code: receiptCode,
+        expected_answers_hash: answersChecksum
       })
     });
     if (serverGradeRes.ok) {
@@ -641,8 +656,8 @@ export async function submitExamPayload(
     sealed_token: sealedToken,
     offline_receipt_code: receiptCode,
     message: submissionType === 'TIMEOUT_FORCED' 
-      ? 'Đã tự động niêm phong bài thi an toàn ngoại tuyến vào IndexedDB (Hết giờ). Đang chờ kết nối lại mạng để cấp chứng chỉ máy chủ.'
-      : 'Bài thi đã được niêm phong ngoại tuyến an toàn vào IndexedDB. Đang chờ kết nối lại mạng để tự động đồng bộ.'
+      ? 'Exam automatically and securely sealed offline into IndexedDB (Time expired). Awaiting reconnection to obtain server certificate.'
+      : 'Exam has been securely sealed offline into IndexedDB. Awaiting network reconnection to auto-sync.'
   };
 
   const record: SubmissionRecord = {
@@ -831,7 +846,7 @@ export async function syncPendingSubmissions(gasUrl?: string): Promise<{
             sync_status: 'CERTIFIED_ONLINE',
             sealed_token: certifiedSub.sealed_token,
             offline_receipt_code: certifiedSub.offline_receipt_code,
-            message: 'Đồng bộ bài thi lên máy chủ thành công!'
+            message: 'Exam submission synced to server successfully!'
           });
           continue;
         }

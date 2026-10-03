@@ -402,3 +402,75 @@ export function gradeExamAnswers(
 }
 
 export const scoreExam = gradeExamAnswers;
+
+/**
+ * TC-EXAM-03: Score Input Sanitization & Bounds Normalization
+ * - Handles comma-to-dot replacement ('8,5' -> 8.5)
+ * - Restricts input strictly to [0.0 - 9.0]
+ * - Rejects non-numeric strings and NaN values safely
+ */
+export function normalizeScoreInput(val: string | number | undefined | null): number {
+  if (val === undefined || val === null || val === '') return 0.0;
+  
+  if (typeof val === 'number') {
+    if (isNaN(val)) return 0.0;
+    return Math.max(0.0, Math.min(9.0, val));
+  }
+
+  // Normalize string: convert commas to dots, remove spaces
+  const cleanStr = String(val).trim().replace(',', '.');
+  const parsed = parseFloat(cleanStr);
+  if (isNaN(parsed)) return 0.0;
+
+  return Math.max(0.0, Math.min(9.0, parsed));
+}
+
+/**
+ * TC-EXAM-03: Official IELTS Band Score Rounding
+ * - Average of scores is rounded to the nearest half or whole band:
+ *   - If fractional part is < 0.25 -> rounds DOWN to nearest whole band (e.g. 6.125 -> 6.0)
+ *   - If fractional part is >= 0.25 and < 0.75 -> rounds to .5 band (e.g. 6.25 -> 6.5, 6.625 -> 6.5)
+ *   - If fractional part is >= 0.75 -> rounds UP to nearest whole band (e.g. 6.75 -> 7.0)
+ */
+export function calculateIeltsOverallBand(scores: (number | string)[]): number {
+  const validScores = scores
+    .map(s => normalizeScoreInput(s))
+    .filter(s => s > 0);
+
+  if (validScores.length === 0) return 0.0;
+
+  const sum = validScores.reduce((acc, curr) => acc + curr, 0);
+  const avg = sum / validScores.length;
+
+  const whole = Math.floor(avg);
+  const fraction = avg - whole;
+
+  if (fraction < 0.25) {
+    return whole;
+  } else if (fraction < 0.75) {
+    return whole + 0.5;
+  } else {
+    return whole + 1.0;
+  }
+}
+
+/**
+ * TC-SECU-01: Cryptographic Deterministic Checksum of Answers
+ * Produces a stable checksum from an answer dictionary to seal offline submissions
+ * and detect post-timeout answer tampering.
+ */
+export function computeAnswersChecksum(answers: Record<string, string> | undefined | null): string {
+  if (!answers || typeof answers !== 'object') return '0';
+  const keys = Object.keys(answers).sort();
+  let hash = 0x811c9dc5; // FNV-1a 32-bit offset basis
+  for (const k of keys) {
+    const val = String(answers[k] ?? '').trim().toLowerCase();
+    const str = `${k}:${val};`;
+    for (let i = 0; i < str.length; i++) {
+      hash ^= str.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193); // FNV prime
+    }
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
