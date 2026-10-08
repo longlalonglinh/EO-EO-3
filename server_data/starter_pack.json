@@ -2719,6 +2719,37 @@
         "correct_answer": "A",
         "max_score": 1
       }
+    ],
+    "writing_task1_image_url": "https://images.unsplash.com/photo-1466611653911-95081537e5b7?auto=format&fit=crop&w=800&q=80",
+    "writing_task1_imageUrl": "https://images.unsplash.com/photo-1466611653911-95081537e5b7?auto=format&fit=crop&w=800&q=80",
+    "image_url": "https://images.unsplash.com/photo-1466611653911-95081537e5b7?auto=format&fit=crop&w=800&q=80",
+    "imageUrl": "https://images.unsplash.com/photo-1466611653911-95081537e5b7?auto=format&fit=crop&w=800&q=80",
+    "sections": [
+      {
+        "skill": "writing",
+        "title": "IELTS Academic Writing Section",
+        "durationMinutes": 60,
+        "tasks": [
+          {
+            "id": "task-1",
+            "task_number": 1,
+            "title": "Writing Task 1 (Report)",
+            "prompt": "The chart below shows the total global renewable energy investment (in billion USD) and capacity addition between 2010 and 2024. Summarise the information by selecting and reporting the main features, and make comparisons where relevant. (Write at least 150 words)",
+            "image_url": "https://images.unsplash.com/photo-1466611653911-95081537e5b7?auto=format&fit=crop&w=800&q=80",
+            "imageUrl": "https://images.unsplash.com/photo-1466611653911-95081537e5b7?auto=format&fit=crop&w=800&q=80",
+            "min_words": 150,
+            "suggested_time_minutes": 20
+          },
+          {
+            "id": "task-2",
+            "task_number": 2,
+            "title": "Writing Task 2 (Essay)",
+            "prompt": "Some people believe that government funding should be devoted exclusively to renewable energy development, while others argue that fossil fuels should continue to receive subsidies to maintain low energy prices for low-income households. Discuss both views and give your own opinion. (Write at least 250 words)",
+            "min_words": 250,
+            "suggested_time_minutes": 40
+          }
+        ]
+      }
     ]
   },
   {
@@ -3260,6 +3291,37 @@
         "correct_answer": "FALSE",
         "max_score": 1
       }
+    ],
+    "writing_task1_image_url": "https://images.unsplash.com/photo-1466611653911-95081537e5b7?auto=format&fit=crop&w=800&q=80",
+    "writing_task1_imageUrl": "https://images.unsplash.com/photo-1466611653911-95081537e5b7?auto=format&fit=crop&w=800&q=80",
+    "image_url": "https://images.unsplash.com/photo-1466611653911-95081537e5b7?auto=format&fit=crop&w=800&q=80",
+    "imageUrl": "https://images.unsplash.com/photo-1466611653911-95081537e5b7?auto=format&fit=crop&w=800&q=80",
+    "sections": [
+      {
+        "skill": "writing",
+        "title": "IELTS Academic Writing Section",
+        "durationMinutes": 60,
+        "tasks": [
+          {
+            "id": "task-1",
+            "task_number": 1,
+            "title": "Writing Task 1 (Report)",
+            "prompt": "The chart below shows the total global renewable energy investment (in billion USD) and capacity addition between 2010 and 2024. Summarise the information by selecting and reporting the main features, and make comparisons where relevant. (Write at least 150 words)",
+            "image_url": "https://images.unsplash.com/photo-1466611653911-95081537e5b7?auto=format&fit=crop&w=800&q=80",
+            "imageUrl": "https://images.unsplash.com/photo-1466611653911-95081537e5b7?auto=format&fit=crop&w=800&q=80",
+            "min_words": 150,
+            "suggested_time_minutes": 20
+          },
+          {
+            "id": "task-2",
+            "task_number": 2,
+            "title": "Writing Task 2 (Essay)",
+            "prompt": "Some people believe that government funding should be devoted exclusively to renewable energy development, while others argue that fossil fuels should continue to receive subsidies to maintain low energy prices for low-income households. Discuss both views and give your own opinion. (Write at least 250 words)",
+            "min_words": 250,
+            "suggested_time_minutes": 40
+          }
+        ]
+      }
     ]
   },
   {
@@ -3276,7 +3338,38 @@
     "writing_task2_prompt": "In many countries, an increasing number of students choose to take a gap year before entering university, either to work or travel. Do you think the advantages of taking a gap year outweigh the disadvantages? Give reasons for your answer and include relevant examples. Write at least 250 words.",
     "questions": [],
     "listening_questions": [],
-    "reading_questions": []
+    "reading_questions": [],
+    "writing_task1_image_url": "https://images.unsplash.com/photo-1544717305-2782549b5136?w=800&auto=format&fit=crop&q=60",
+    "writing_task1_imageUrl": "https://images.unsplash.com/photo-1544717305-2782549b5136?w=800&auto=format&fit=crop&q=60",
+    "image_url": "https://images.unsplash.com/photo-1544717305-2782549b5136?w=800&auto=format&fit=crop&q=60",
+    "imageUrl": "https://images.unsplash.com/photo-1544717305-2782549b5136?w=800&auto=format&fit=crop&q=60",
+    "sections": [
+      {
+        "skill": "writing",
+        "title": "IELTS Academic Writing Section",
+        "durationMinutes": 60,
+        "tasks": [
+          {
+            "id": "task-1",
+            "task_number": 1,
+            "title": "Writing Task 1 (Report)",
+            "prompt": "The charts below show the comparison of water usage for domestic, industrial, and agricultural purposes across different world regions. Summarise the information by selecting and reporting the main features, and make comparisons where relevant. Write at least 150 words.",
+            "image_url": "https://images.unsplash.com/photo-1544717305-2782549b5136?w=800&auto=format&fit=crop&q=60",
+            "imageUrl": "https://images.unsplash.com/photo-1544717305-2782549b5136?w=800&auto=format&fit=crop&q=60",
+            "min_words": 150,
+            "suggested_time_minutes": 20
+          },
+          {
+            "id": "task-2",
+            "task_number": 2,
+            "title": "Writing Task 2 (Essay)",
+            "prompt": "In many countries, an increasing number of students choose to take a gap year before entering university, either to work or travel. Do you think the advantages of taking a gap year outweigh the disadvantages? Give reasons for your answer and include relevant examples. Write at least 250 words.",
+            "min_words": 250,
+            "suggested_time_minutes": 40
+          }
+        ]
+      }
+    ]
   },
   {
     "exam_code": "WT1001",
@@ -3292,6 +3385,145 @@
     "writing_task2_prompt": "Some people think that universities should provide graduates with the knowledge and skills needed in the workplace. Others think that the true function of a university should be to give access to knowledge for its own sake, regardless of whether the course is useful to an employer. What, in your opinion, should be the main function of a university? Write at least 250 words.",
     "questions": [],
     "listening_questions": [],
-    "reading_questions": []
+    "reading_questions": [],
+    "writing_task1_image_url": "https://images.unsplash.com/photo-1497435334941-8c899ee9e8e9?w=800&auto=format&fit=crop&q=60",
+    "writing_task1_imageUrl": "https://images.unsplash.com/photo-1497435334941-8c899ee9e8e9?w=800&auto=format&fit=crop&q=60",
+    "image_url": "https://images.unsplash.com/photo-1497435334941-8c899ee9e8e9?w=800&auto=format&fit=crop&q=60",
+    "imageUrl": "https://images.unsplash.com/photo-1497435334941-8c899ee9e8e9?w=800&auto=format&fit=crop&q=60",
+    "sections": [
+      {
+        "skill": "writing",
+        "title": "IELTS Academic Writing Section",
+        "durationMinutes": 60,
+        "tasks": [
+          {
+            "id": "task-1",
+            "task_number": 1,
+            "title": "Writing Task 1 (Report)",
+            "prompt": "The graph below shows the proportion of energy generated from renewable sources in four European nations between 2000 and 2020. Summarise the information by selecting and reporting the main features, and make comparisons where relevant. Write at least 150 words.",
+            "image_url": "https://images.unsplash.com/photo-1497435334941-8c899ee9e8e9?w=800&auto=format&fit=crop&q=60",
+            "imageUrl": "https://images.unsplash.com/photo-1497435334941-8c899ee9e8e9?w=800&auto=format&fit=crop&q=60",
+            "min_words": 150,
+            "suggested_time_minutes": 20
+          },
+          {
+            "id": "task-2",
+            "task_number": 2,
+            "title": "Writing Task 2 (Essay)",
+            "prompt": "Some people think that universities should provide graduates with the knowledge and skills needed in the workplace. Others think that the true function of a university should be to give access to knowledge for its own sake, regardless of whether the course is useful to an employer. What, in your opinion, should be the main function of a university? Write at least 250 words.",
+            "min_words": 250,
+            "suggested_time_minutes": 40
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "exam_code": "RW2001",
+    "title": "IELTS Academic Reading & Writing Dual-Skill Paper (Set RW2001)",
+    "test_type": "PRACTICE",
+    "exam_type": "two_skills",
+    "skills": [
+      "reading",
+      "writing"
+    ],
+    "duration_mins": 120,
+    "listening_duration_mins": 0,
+    "reading_duration_mins": 60,
+    "writing_duration_mins": 60,
+    "passages": [
+      {
+        "passage_index": 1,
+        "title": "The Evolution of Modern Artificial Intelligence",
+        "text": "Artificial intelligence (AI) has developed rapidly over the past decade, moving from narrow machine learning models to multimodal foundational models capable of human-level reasoning across complex tasks.\n\nIn medicine, deep neural networks are increasingly employed to assist radiologists in detecting malignancies with unprecedented accuracy.",
+        "questions": []
+      }
+    ],
+    "writing_task1_prompt": "The bar chart illustrates the percentage of global corporate investment in artificial intelligence, cloud infrastructure, and cybersecurity between 2018 and 2024.\n\nSummarise the information by selecting and reporting the main features, and make comparisons where relevant.\n\nWrite at least 150 words.",
+    "writing_task1_image": "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop&q=60",
+    "writing_task1_image_url": "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop&q=60",
+    "writing_task1_imageUrl": "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop&q=60",
+    "writing_task2_prompt": "With the rapid advancement of artificial intelligence, many routine white-collar jobs are being automated. Some argue this will cause widespread unemployment, while others believe AI will generate new higher-value industries. Discuss both views and give your opinion.\n\nWrite at least 250 words.",
+    "questions": [],
+    "image_url": "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop&q=60",
+    "imageUrl": "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop&q=60",
+    "sections": [
+      {
+        "skill": "writing",
+        "title": "IELTS Academic Writing Section",
+        "durationMinutes": 60,
+        "tasks": [
+          {
+            "id": "task-1",
+            "task_number": 1,
+            "title": "Writing Task 1 (Report)",
+            "prompt": "The bar chart illustrates the percentage of global corporate investment in artificial intelligence, cloud infrastructure, and cybersecurity between 2018 and 2024.\n\nSummarise the information by selecting and reporting the main features, and make comparisons where relevant.\n\nWrite at least 150 words.",
+            "image_url": "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop&q=60",
+            "imageUrl": "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop&q=60",
+            "min_words": 150,
+            "suggested_time_minutes": 20
+          },
+          {
+            "id": "task-2",
+            "task_number": 2,
+            "title": "Writing Task 2 (Essay)",
+            "prompt": "With the rapid advancement of artificial intelligence, many routine white-collar jobs are being automated. Some argue this will cause widespread unemployment, while others believe AI will generate new higher-value industries. Discuss both views and give your opinion.\n\nWrite at least 250 words.",
+            "min_words": 250,
+            "suggested_time_minutes": 40
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "exam_code": "WT1004",
+    "title": "IELTS Academic Writing One-Skill Retake (Set WT1004)",
+    "test_type": "PRACTICE",
+    "exam_type": "one_skill",
+    "skills": [
+      "writing"
+    ],
+    "retakeMode": true,
+    "targetSkill": "writing",
+    "duration_mins": 60,
+    "listening_duration_mins": 0,
+    "reading_duration_mins": 0,
+    "writing_duration_mins": 60,
+    "passages": [],
+    "writing_task1_prompt": "The charts below show the number of Japanese tourists travelling abroad between 1985 and 1995 and Australia's share of the Japanese tourist market.\n\nSummarise the information by selecting and reporting the main features, and make comparisons where relevant.\n\nWrite at least 150 words.",
+    "writing_task1_image": "https://images.unsplash.com/photo-1543269865-cbf427effbad?w=800&auto=format&fit=crop&q=60",
+    "writing_task1_image_url": "https://images.unsplash.com/photo-1543269865-cbf427effbad?w=800&auto=format&fit=crop&q=60",
+    "writing_task1_imageUrl": "https://images.unsplash.com/photo-1543269865-cbf427effbad?w=800&auto=format&fit=crop&q=60",
+    "writing_task2_prompt": "Some people believe that international tourism brings only positive benefits to host countries, while others argue that it causes environmental and cultural harm. Discuss both views and give your own opinion.\n\nWrite at least 250 words.",
+    "questions": [],
+    "image_url": "https://images.unsplash.com/photo-1543269865-cbf427effbad?w=800&auto=format&fit=crop&q=60",
+    "imageUrl": "https://images.unsplash.com/photo-1543269865-cbf427effbad?w=800&auto=format&fit=crop&q=60",
+    "sections": [
+      {
+        "skill": "writing",
+        "title": "IELTS Academic Writing Section",
+        "durationMinutes": 60,
+        "tasks": [
+          {
+            "id": "task-1",
+            "task_number": 1,
+            "title": "Writing Task 1 (Report)",
+            "prompt": "The charts below show the number of Japanese tourists travelling abroad between 1985 and 1995 and Australia's share of the Japanese tourist market.\n\nSummarise the information by selecting and reporting the main features, and make comparisons where relevant.\n\nWrite at least 150 words.",
+            "image_url": "https://images.unsplash.com/photo-1543269865-cbf427effbad?w=800&auto=format&fit=crop&q=60",
+            "imageUrl": "https://images.unsplash.com/photo-1543269865-cbf427effbad?w=800&auto=format&fit=crop&q=60",
+            "min_words": 150,
+            "suggested_time_minutes": 20
+          },
+          {
+            "id": "task-2",
+            "task_number": 2,
+            "title": "Writing Task 2 (Essay)",
+            "prompt": "Some people believe that international tourism brings only positive benefits to host countries, while others argue that it causes environmental and cultural harm. Discuss both views and give your own opinion.\n\nWrite at least 250 words.",
+            "min_words": 250,
+            "suggested_time_minutes": 40
+          }
+        ]
+      }
+    ]
   }
 ]

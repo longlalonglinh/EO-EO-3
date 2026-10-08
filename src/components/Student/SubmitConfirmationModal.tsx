@@ -259,12 +259,19 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
 
             {/* Warning If Questions Left Unanswered */}
             {unansweredCount > 0 && (
-              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-start space-x-2.5 text-xs text-amber-900">
-                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-bold">You have {unansweredCount} unanswered questions.</p>
-                  <p className="text-[11px] text-amber-700 mt-0.5">
-                    In the IELTS test, incorrect answers are not penalized. You are strongly advised to answer all questions before submitting.
+              <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-2xl flex items-start space-x-3 text-xs text-amber-950 shadow-sm animate-fadeIn">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <p className="font-black text-amber-900 text-sm">
+                      You have {unansweredCount} unanswered question{unansweredCount > 1 ? 's' : ''}!
+                    </p>
+                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900">
+                      {totalAnswered} / {totalQuestions} answered
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-amber-800 leading-relaxed font-medium">
+                    IELTS does not deduct points for incorrect guesses. We strongly recommend returning to the test and attempting all questions before turning in.
                   </p>
                 </div>
               </div>
@@ -272,12 +279,14 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
 
             {/* Writing warning if empty or very short */}
             {hasWritingWarnings && (
-              <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-start space-x-2.5 text-xs text-rose-900">
-                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-bold">Writing responses have not met the minimum word counts.</p>
-                  <p className="text-[11px] text-rose-700 mt-0.5">
-                    Ensure Task 1 has at least 150 words and Task 2 has at least 250 words to avoid Task Achievement penalties.
+              <div className="p-4 bg-rose-50 border-2 border-rose-300 rounded-2xl flex items-start space-x-3 text-xs text-rose-950 shadow-sm animate-fadeIn">
+                <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-black text-rose-900 text-sm">
+                    Writing word count requirements not met!
+                  </p>
+                  <p className="text-[11px] text-rose-800 leading-relaxed font-medium">
+                    Task 1 requires at least 150 words (current: {writingTask1Words}) and Task 2 requires at least 250 words (current: {writingTask2Words}). Submitting now may severely impact your Task Achievement band.
                   </p>
                 </div>
               </div>
@@ -291,34 +300,42 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
               </div>
             )}
 
-            {/* Action Buttons: Differentiating Save Draft vs Official Turn In (Google Classroom Pattern) */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+            {/* Action Buttons: Clear visual hierarchy & Fitts's Law separation (min 16px gap) */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 pt-3 border-t border-purple-100">
               <button
                 type="button"
                 onClick={handleSaveDraftClick}
-                className="w-full sm:w-auto px-4 py-2.5 bg-white hover:bg-purple-50 text-[#503A7A] font-extrabold text-xs rounded-xl border border-purple-200 transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                className="px-4 py-2.5 bg-white hover:bg-purple-50 text-[#503A7A] font-extrabold text-xs rounded-xl border border-purple-200 transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
                 title="Save draft and resume later"
               >
                 <Save className="w-3.5 h-3.5 text-[#6B51A5]" />
                 <span>SAVE DRAFT</span>
               </button>
 
-              <div className="flex items-center space-x-2 w-full sm:w-auto justify-end">
+              <div className="flex flex-col-reverse sm:flex-row items-center gap-4 sm:gap-4 justify-end">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-4 py-2.5 bg-[#F5F2F9] hover:bg-[#E2DDEC] text-[#503A7A] font-extrabold text-xs rounded-xl border border-purple-200 transition cursor-pointer"
+                  className="w-full sm:w-auto px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-200 transition cursor-pointer text-center"
                 >
-                  Continue Test
+                  ← Continue Test
                 </button>
 
                 <button
                   type="button"
                   onClick={onConfirmSubmit}
-                  className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-black text-xs rounded-xl shadow-md shadow-emerald-950/20 transition flex items-center gap-2 cursor-pointer"
+                  className={`w-full sm:w-auto px-6 py-3 text-white font-black text-xs rounded-xl transition flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-98 ${
+                    unansweredCount > 0 || hasWritingWarnings
+                      ? 'bg-rose-700 hover:bg-rose-800 shadow-rose-950/20 ring-2 ring-rose-400/40'
+                      : 'bg-emerald-700 hover:bg-emerald-800 shadow-emerald-950/20'
+                  }`}
                 >
                   <Send className="w-3.5 h-3.5" />
-                  <span>CONFIRM &amp; TURN IN</span>
+                  <span>
+                    {unansweredCount > 0
+                      ? `SUBMIT WITH ${unansweredCount} UNANSWERED`
+                      : 'CONFIRM & TURN IN'}
+                  </span>
                 </button>
               </div>
             </div>

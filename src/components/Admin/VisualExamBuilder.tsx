@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -14,7 +14,14 @@ import {
   HelpCircle,
   Sliders,
   RotateCcw,
-  Sparkles
+  Sparkles,
+  Undo2,
+  Redo2,
+  AlertTriangle,
+  XCircle,
+  Check,
+  ArrowRight,
+  ListCheck
 } from 'lucide-react';
 import { ExamData, Question, ReadingPassageItem, QuestionType, IELTSQuestionType, canonicalizeQuestionType, SkillType, ExamType } from '../../types';
 import { saveExamToIndexedDB } from '../../services/indexedDb';
@@ -231,6 +238,147 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
   const watchedPassages = watch('passages');
   const watchedExamCode = watch('exam_code');
   const watchedTask1Image = watch('writing_task1_image');
+
+  // History stack for Undo / Redo (Heuristic #3: User Control & Freedom)
+  const [history, setHistory] = useState<ExamFormValues[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const isInternalUndoRedo = useRef(false);
+
+  // Take snapshot when important form states change
+  useEffect(() => {
+    if (isInternalUndoRedo.current) return;
+    const currentValues = watch();
+    const timer = setTimeout(() => {
+      setHistory(prev => {
+        const next = prev.slice(0, historyIndex + 1);
+        next.push(JSON.parse(JSON.stringify(currentValues)));
+        if (next.length > 30) next.shift();
+        return next;
+      });
+      setHistoryIndex(prev => Math.min(prev + 1, 29));
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [
+    watchedPassages,
+    watchedExamCode,
+    watchedTask1Image,
+    watch('audio_url'),
+    watch('skills'),
+    watch('writing_task1_prompt'),
+    watch('writing_task2_prompt'),
+    watch('listening_questions')
+  ]);
+
+  const handleUndo = () => {
+    if (historyIndex > 0) {
+      isInternalUndoRedo.current = true;
+      const target = history[historyIndex - 1];
+      reset(target);
+      setHistoryIndex(historyIndex - 1);
+      setTimeout(() => { isInternalUndoRedo.current = false; }, 150);
+    }
+  };
+
+  const handleRedo = () => {
+    if (historyIndex < history.length - 1) {
+      isInternalUndoRedo.current = true;
+      const target = history[historyIndex + 1];
+      reset(target);
+      setHistoryIndex(historyIndex + 1);
+      setTimeout(() => { isInternalUndoRedo.current = false; }, 150);
+    }
+  };
+
+  // Keyboard shortcut Ctrl+Z / Cmd+Z / Ctrl+Y
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+        if (e.shiftKey) {
+          e.preventDefault();
+          handleRedo();
+        } else {
+          e.preventDefault();
+          handleUndo();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [historyIndex, history]);
+
+  // Real-time Pre-Publish Readiness Checklist Audit
+  const watchedValues = watch();
+  const targetSkills = watchedValues.skills || ['listening', 'reading', 'writing'];
+  const hasListeningSkill = targetSkills.includes('listening');
+  const hasReadingSkill = targetSkills.includes('reading');
+  const hasWritingSkill = targetSkills.includes('writing');
+
+  const audioUrl = watchedValues.audio_url?.trim();
+  const audioCheck = !hasListeningSkill ? 'na' : Boolean(audioUrl) ? 'pass' : 'fail';
+
+  const allReadingQs = (watchedValues.passages || []).flatMap(p => p.questions || []);
+  const allListeningQs = watchedValues.listening_questions || [];
+  const allQs = [...(hasReadingSkill ? allReadingQs : []), ...(hasListeningSkill ? allListeningQs : [])];
+  const totalQuestionsCount = allQs.length;
+  const missingAnswerKeyQs = allQs.filter(q => !q.correct_answer || !q.correct_answer.trim());
+  const answerKeyCheck = totalQuestionsCount === 0 
+    ? 'warn' 
+    : missingAnswerKeyQs.length === 0 
+    ? 'pass' 
+    : 'fail';
+
+  const t1Prompt = watchedValues.writing_task1_prompt?.trim();
+  const t1Img = watchedValues.writing_task1_image?.trim();
+  const t2Prompt = watchedValues.writing_task2_prompt?.trim();
+  const writingCheck = !hasWritingSkill 
+    ? 'na' 
+    : (Boolean(t1Prompt || t1Img) && Boolean(t2Prompt))
+    ? 'pass'
+    : (Boolean(t1Prompt || t1Img) || Boolean(t2Prompt))
+    ? 'warn'
+    : 'fail';
+
+  const totalDuration = watchedValues.duration_mins || 0;
+  const durationCheck = totalDuration > 0 ? 'pass' : 'fail';
+
+  const auditItems = [
+    {
+      id: 'audio',
+      title: 'Listening Audio File',
+      status: audioCheck,
+      desc: audioCheck === 'pass' ? 'Audio file URL configured' : audioCheck === 'fail' ? 'Audio URL is missing' : 'Not required (Listening omitted)',
+      tab: 'listening' as const
+    },
+    {
+      id: 'answers',
+      title: 'Question Answer Keys',
+      status: answerKeyCheck,
+      desc: answerKeyCheck === 'pass' ? `All ${totalQuestionsCount} questions have valid answer keys` : answerKeyCheck === 'fail' ? `${missingAnswerKeyQs.length} question(s) missing correct answer key` : 'No questions created yet',
+      tab: (allReadingQs.length > 0 ? 'reading' : 'listening') as any
+    },
+    {
+      id: 'writing',
+      title: 'Writing Prompts',
+      status: writingCheck,
+      desc: writingCheck === 'pass' ? 'Task 1 and Task 2 prompts provided' : writingCheck === 'warn' ? 'Only 1 of 2 writing tasks has a prompt' : writingCheck === 'fail' ? 'Writing prompts are empty' : 'Not required (Writing omitted)',
+      tab: 'writing' as const
+    },
+    {
+      id: 'timing',
+      title: 'Exam Timer & Duration',
+      status: durationCheck,
+      desc: durationCheck === 'pass' ? `${totalDuration} mins set` : 'Duration must be > 0 mins',
+      tab: 'settings' as const
+    }
+  ];
+
+  const activeAudits = auditItems.filter(i => i.status !== 'na');
+  const passingAudits = activeAudits.filter(i => i.status === 'pass').length;
+  const readinessPercent = activeAudits.length > 0 ? Math.round((passingAudits / activeAudits.length) * 100) : 100;
 
   const onValidSubmit = async (formData: ExamFormValues) => {
     // Sanitize reading questions and passages (allow empty or partial passages)
@@ -580,6 +728,31 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto justify-between md:justify-end">
+          {/* Undo / Redo controls */}
+          <div className="flex items-center bg-[#F5F2F9] border border-purple-200 rounded-2xl p-0.5">
+            <button
+              type="button"
+              onClick={handleUndo}
+              disabled={historyIndex <= 0}
+              className="px-3 py-1.5 text-xs font-bold text-[#503A7A] hover:bg-[#E2DDEC] disabled:opacity-30 disabled:cursor-not-allowed rounded-xl flex items-center gap-1.5 transition cursor-pointer"
+              title="Undo last change (Ctrl+Z)"
+            >
+              <Undo2 className="w-3.5 h-3.5 text-[#6B51A5]" />
+              <span className="hidden sm:inline">Undo</span>
+            </button>
+            <div className="w-px h-4 bg-purple-200" />
+            <button
+              type="button"
+              onClick={handleRedo}
+              disabled={historyIndex >= history.length - 1}
+              className="px-3 py-1.5 text-xs font-bold text-[#503A7A] hover:bg-[#E2DDEC] disabled:opacity-30 disabled:cursor-not-allowed rounded-xl flex items-center gap-1.5 transition cursor-pointer"
+              title="Redo change (Ctrl+Y)"
+            >
+              <Redo2 className="w-3.5 h-3.5 text-[#6B51A5]" />
+              <span className="hidden sm:inline">Redo</span>
+            </button>
+          </div>
+
           <button
             type="button"
             onClick={() => setShowResetModal(true)}
@@ -587,7 +760,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
             className="px-3.5 py-2 bg-[#F5F2F9] hover:bg-[#E2DDEC] text-[#3C2A63] rounded-2xl text-xs font-black transition flex items-center gap-1.5 cursor-pointer border border-purple-100"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>Reset (Blank Sheet)</span>
+            <span>Reset (Blank)</span>
           </button>
 
           <button
@@ -598,6 +771,92 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
             <Save className="w-4 h-4" />
             <span>{isSaving ? 'Saving...' : 'Validate & Save Exam'}</span>
           </button>
+        </div>
+      </div>
+
+      {/* PRE-PUBLISH READINESS CHECKLIST (Thanh tiến độ kiểm tra hợp lệ) */}
+      <div className="bg-white rounded-3xl p-4 sm:p-5 border border-purple-100 shadow-md shadow-purple-950/5 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-purple-100 text-[#6B51A5] rounded-xl">
+              <ListCheck className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-xs font-black text-[#3C2A63] uppercase tracking-wider">
+                Pre-Publish Readiness Checklist
+              </h3>
+              <p className="text-[11px] text-[#7C68A5]">
+                System verification before publishing exam to students
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-black text-[#503A7A]">
+              Readiness: {readinessPercent}%
+            </span>
+            <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border ${
+              readinessPercent === 100
+                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                : 'bg-amber-100 text-amber-800 border-amber-300'
+            }`}>
+              {readinessPercent === 100 ? 'Ready to Publish' : 'Needs Review'}
+            </span>
+          </div>
+        </div>
+
+        {/* Readiness Progress Bar */}
+        <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+          <div 
+            className={`h-2 rounded-full transition-all duration-500 ${
+              readinessPercent === 100 ? 'bg-emerald-500' : readinessPercent >= 75 ? 'bg-[#6B51A5]' : 'bg-amber-500'
+            }`}
+            style={{ width: `${readinessPercent}%` }}
+          />
+        </div>
+
+        {/* 4 Interactive Audit Badges */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1">
+          {auditItems.map((item) => {
+            const isPass = item.status === 'pass';
+            const isWarn = item.status === 'warn';
+            const isFail = item.status === 'fail';
+            const isNa = item.status === 'na';
+
+            return (
+              <div
+                key={item.id}
+                onClick={() => {
+                  if (item.tab) setActiveSection(item.tab);
+                }}
+                className={`p-3 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between space-y-1.5 ${
+                  isPass
+                    ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950 hover:bg-emerald-100/70'
+                    : isWarn
+                    ? 'bg-amber-50/80 border-amber-300 text-amber-950 hover:bg-amber-100/80'
+                    : isFail
+                    ? 'bg-rose-50/80 border-rose-300 text-rose-950 hover:bg-rose-100/80'
+                    : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+                }`}
+                title="Click to jump directly to this section"
+              >
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[11px] font-black">{item.title}</span>
+                  {isPass && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />}
+                  {isWarn && <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />}
+                  {isFail && <XCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />}
+                  {isNa && <span className="text-[9px] font-bold text-slate-400">N/A</span>}
+                </div>
+                <p className="text-[10px] leading-tight opacity-90">
+                  {item.desc}
+                </p>
+                <span className="text-[9px] font-extrabold text-[#6B51A5] flex items-center gap-0.5 pt-0.5">
+                  <span>Go to section</span>
+                  <ArrowRight className="w-2.5 h-2.5" />
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
 

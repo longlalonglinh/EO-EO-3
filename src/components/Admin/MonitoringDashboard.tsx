@@ -13,7 +13,8 @@ import {
   Table as TableIcon,
   Wifi,
   WifiOff,
-  AlertTriangle
+  AlertTriangle,
+  Flag
 } from 'lucide-react';
 import { CheatLog, SubmissionRecord } from '../../types';
 import { fetchSubmissions, fetchCheatLogs, deduplicateSubmissions, deduplicateCheatLogs, DEFAULT_API_URL } from '../../services/api';
@@ -397,17 +398,30 @@ export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({
                         <span className="text-[10px] font-mono text-[#7C68A5]">{log.log_id}</span>
                       </div>
 
-                      <div className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1">
-                        <ShieldAlert className="w-3 h-3 text-rose-600" />
-                        <span>{log.violation_type}</span>
-                      </div>
+                      {log.violation_type === 'TASK1_IMAGE_ISSUE_REPORT' || log.violation_type === 'WRITING_ISSUE_REPORT' ? (
+                        <div className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">
+                          <Flag className="w-3 h-3 text-amber-600" />
+                          <span>CANDIDATE ISSUE REPORT</span>
+                        </div>
+                      ) : (
+                        <div className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1">
+                          <ShieldAlert className="w-3 h-3 text-rose-600" />
+                          <span>{log.violation_type}</span>
+                        </div>
+                      )}
                     </div>
+
+                    {log.description && (
+                      <div className="p-2 rounded-xl bg-purple-50/70 border border-purple-100 text-[11px] text-[#503A7A]">
+                        {log.description}
+                      </div>
+                    )}
 
                     <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                       {isDisconnected ? (
                         <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-1">
                           <WifiOff className="w-3 h-3 text-rose-600" />
-                          <span>MẤT KẾT NỐI (DISCONNECTED)</span>
+                          <span>DISCONNECTED (LOST SIGNAL)</span>
                         </span>
                       ) : (
                         <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
@@ -472,11 +486,25 @@ export const MonitoringDashboard: React.FC<MonitoringDashboardProps> = ({
                               </span>
                             )}
                           </td>
-                          <td className="py-3 px-4 font-bold text-rose-700">
-                            <div className="flex items-center gap-1.5">
-                              <ShieldAlert className="w-3.5 h-3.5 shrink-0 text-rose-600" />
-                              <span>{log.violation_type}</span>
-                            </div>
+                          <td className="py-3 px-4 font-bold">
+                            {log.violation_type === 'TASK1_IMAGE_ISSUE_REPORT' || log.violation_type === 'WRITING_ISSUE_REPORT' ? (
+                              <div className="flex flex-col gap-1">
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-100 text-amber-900 border border-amber-300 font-extrabold text-[11px] w-fit">
+                                  <Flag className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                  <span>CANDIDATE ISSUE REPORT</span>
+                                </span>
+                                {log.description && (
+                                  <span className="text-[10px] font-normal text-[#7C68A5] max-w-xs truncate">
+                                    {log.description}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5 text-rose-700">
+                                <ShieldAlert className="w-3.5 h-3.5 shrink-0 text-rose-600" />
+                                <span>{log.violation_type}</span>
+                              </div>
+                            )}
                           </td>
                           <td className="py-3 px-4 text-[#503A7A] font-semibold">
                             <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-purple-50 border border-purple-200/60 text-xs font-mono text-[#503A7A]">

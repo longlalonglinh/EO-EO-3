@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Question, IELTSQuestionType, canonicalizeQuestionType } from '../../types';
 import { 
   CheckCircle2, 
@@ -12,7 +12,8 @@ import {
   Users,
   Layers,
   ArrowRight,
-  Info
+  Info,
+  Flag
 } from 'lucide-react';
 import { IELTSTableCompletion } from '../Common/IELTSTableCompletion';
 import { IELTSFlowChartCompletion } from '../Common/IELTSFlowChartCompletion';
@@ -24,6 +25,8 @@ interface IELTSQuestionCardProps {
   userAnswer: string; // or comma separated string for multi-choice
   onAnswerChange: (questionId: string, answer: string) => void;
   headingsList?: { id: string; text: string }[];
+  isFlagged?: boolean;
+  onToggleFlag?: (questionId: string) => void;
 }
 
 export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
@@ -31,9 +34,23 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
   questionNumber,
   userAnswer = '',
   onAnswerChange,
-  headingsList = []
+  headingsList = [],
+  isFlagged = false,
+  onToggleFlag
 }) => {
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
+  const [justSaved, setJustSaved] = useState(false);
+  const prevAnswerRef = useRef(userAnswer);
+
+  useEffect(() => {
+    if (prevAnswerRef.current !== userAnswer && userAnswer && userAnswer.trim().length > 0) {
+      setJustSaved(true);
+      const timer = setTimeout(() => setJustSaved(false), 1400);
+      prevAnswerRef.current = userAnswer;
+      return () => clearTimeout(timer);
+    }
+    prevAnswerRef.current = userAnswer;
+  }, [userAnswer]);
 
   // Canonicalize question type to standard IELTS enum
   const qType = canonicalizeQuestionType(question.question_type);
@@ -189,7 +206,7 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
 
       {/* Question Header Badge & Type */}
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center space-x-2.5">
+        <div className="flex items-center space-x-2.5 flex-wrap gap-y-1.5">
           <span className="w-7 h-7 rounded-xl bg-[#503A7A] text-white font-black text-xs flex items-center justify-center font-mono shrink-0 shadow-sm">
             {questionNumber}
           </span>
@@ -197,14 +214,39 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
             {qType.replace(/_/g, ' ')}
           </span>
           {isMultiSelect && (
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-extrabold border border-indigo-200">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-extrabold border border-indigo-200 shrink-0">
               CHOOSE {targetMultiCount} ANSWERS
+            </span>
+          )}
+
+          {/* Micro-indicator: Instant auto-save visibility (Heuristic #1) */}
+          {justSaved && (
+            <span className="flex items-center gap-1 text-[10px] font-extrabold text-emerald-800 bg-emerald-100/90 border border-emerald-300 px-2 py-0.5 rounded-full animate-fadeIn shadow-2xs">
+              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+              <span>Saved</span>
             </span>
           )}
         </div>
 
         <div className="flex items-center space-x-2 shrink-0">
-          {isFilled && (
+          {/* Flag for Review Button */}
+          {onToggleFlag && (
+            <button
+              type="button"
+              onClick={() => onToggleFlag(question.question_id)}
+              className={`px-2.5 py-1 rounded-xl text-[11px] font-bold border transition flex items-center gap-1.5 cursor-pointer ${
+                isFlagged
+                  ? 'bg-amber-100 text-amber-900 border-amber-300 shadow-2xs'
+                  : 'bg-white text-slate-500 hover:text-amber-800 border-slate-200 hover:border-amber-200'
+              }`}
+              title={isFlagged ? "Marked for review" : "Click to flag for review"}
+            >
+              <Flag className={`w-3 h-3 ${isFlagged ? 'fill-amber-600 text-amber-600' : 'text-slate-400'}`} />
+              <span>{isFlagged ? 'Review' : 'Flag'}</span>
+            </button>
+          )}
+
+          {isFilled && !justSaved && (
             <span className="flex items-center space-x-1 text-emerald-800 bg-emerald-100 border border-emerald-200 text-xs font-bold px-2.5 py-0.5 rounded-xl">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
               <span>Answered</span>

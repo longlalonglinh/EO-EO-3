@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { TableData, TableRow, TableCell } from '../../types';
-import { Plus, Trash2, Columns, Rows, Table, Check, Sparkles } from 'lucide-react';
+import { Plus, Trash2, Columns, Rows, Table, Check, Sparkles, Undo2, Redo2 } from 'lucide-react';
 
 interface VisualTableEditorProps {
   initialData?: TableData;
@@ -40,7 +40,96 @@ export const VisualTableEditor: React.FC<VisualTableEditorProps> = ({
         ]
   );
 
+  // History Stack for Undo/Redo
+  const [history, setHistory] = useState<Array<{ title: string; headers: string[]; rows: TableRow[] }>>(() => [
+    {
+      title: initialData?.title || 'Summary Table',
+      headers: initialData?.headers || ['Category / Aspect', 'Historical Period', 'Key Findings'],
+      rows: initialData?.rows || [
+        {
+          cells: [
+            { text: 'Solar Thermal', is_blank: false },
+            { text: '19th Century', is_blank: false },
+            { text: '', is_blank: true, question_id: questionId, placeholder: 'Enter discovery...' }
+          ]
+        },
+        {
+          cells: [
+            { text: 'Photovoltaic', is_blank: false },
+            { text: '1954', is_blank: false },
+            { text: 'Bell Laboratories', is_blank: false }
+          ]
+        }
+      ]
+    }
+  ]);
+  const [historyIndex, setHistoryIndex] = useState(0);
+
+  const pushHistory = (newTitle: string, newHeaders: string[], newRows: TableRow[]) => {
+    const nextHistory = history.slice(0, historyIndex + 1);
+    nextHistory.push({
+      title: newTitle,
+      headers: JSON.parse(JSON.stringify(newHeaders)),
+      rows: JSON.parse(JSON.stringify(newRows))
+    });
+    // Keep max 30 snapshots
+    if (nextHistory.length > 30) nextHistory.shift();
+    setHistory(nextHistory);
+    setHistoryIndex(nextHistory.length - 1);
+  };
+
+  const handleUndo = () => {
+    if (historyIndex > 0) {
+      const prev = history[historyIndex - 1];
+      setTitle(prev.title);
+      setHeaders(prev.headers);
+      setRows(prev.rows);
+      setHistoryIndex(historyIndex - 1);
+      onChange({
+        title: prev.title,
+        headers: prev.headers,
+        rows: prev.rows
+      });
+    }
+  };
+
+  const handleRedo = () => {
+    if (historyIndex < history.length - 1) {
+      const next = history[historyIndex + 1];
+      setTitle(next.title);
+      setHeaders(next.headers);
+      setRows(next.rows);
+      setHistoryIndex(historyIndex + 1);
+      onChange({
+        title: next.title,
+        headers: next.headers,
+        rows: next.rows
+      });
+    }
+  };
+
+  // Keyboard shortcut Ctrl+Z / Cmd+Z / Ctrl+Y
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+        if (e.shiftKey) {
+          e.preventDefault();
+          handleRedo();
+        } else {
+          e.preventDefault();
+          handleUndo();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [historyIndex, history]);
+
   const notifyChange = (newTitle: string, newHeaders: string[], newRows: TableRow[]) => {
+    pushHistory(newTitle, newHeaders, newRows);
     onChange({
       title: newTitle,
       headers: newHeaders,
@@ -169,6 +258,31 @@ export const VisualTableEditor: React.FC<VisualTableEditorProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5 flex-wrap">
+          {/* Undo / Redo controls */}
+          <div className="flex items-center bg-[#FAF8FE] border border-purple-200 rounded-lg p-0.5 mr-1">
+            <button
+              type="button"
+              onClick={handleUndo}
+              disabled={historyIndex <= 0}
+              className="px-2 py-1 text-[10px] font-bold text-[#503A7A] hover:bg-purple-100 disabled:opacity-40 disabled:cursor-not-allowed rounded flex items-center gap-1 transition cursor-pointer"
+              title="Undo last change (Ctrl+Z)"
+            >
+              <Undo2 className="w-3 h-3 text-[#6B51A5]" />
+              <span>Undo</span>
+            </button>
+            <div className="w-px h-3 bg-purple-200" />
+            <button
+              type="button"
+              onClick={handleRedo}
+              disabled={historyIndex >= history.length - 1}
+              className="px-2 py-1 text-[10px] font-bold text-[#503A7A] hover:bg-purple-100 disabled:opacity-40 disabled:cursor-not-allowed rounded flex items-center gap-1 transition cursor-pointer"
+              title="Redo change (Ctrl+Y)"
+            >
+              <Redo2 className="w-3 h-3 text-[#6B51A5]" />
+              <span>Redo</span>
+            </button>
+          </div>
+
           <span className="text-[10px] font-bold text-[#7C68A5] flex items-center gap-1">
             <Sparkles className="w-3 h-3 text-[#6B51A5]" />
             Presets:

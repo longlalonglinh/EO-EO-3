@@ -61,6 +61,16 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
   const [fontScale, setFontScale] = useState<'sm' | 'base' | 'lg'>('base');
   const [autoSaveTime, setAutoSaveTime] = useState<string>('');
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [flaggedQuestions, setFlaggedQuestions] = useState<Set<string>>(new Set());
+
+  const handleToggleFlag = (qid: string) => {
+    setFlaggedQuestions(prev => {
+      const next = new Set(prev);
+      if (next.has(qid)) next.delete(qid);
+      else next.add(qid);
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (Object.keys(userAnswers).length > 0) {
@@ -772,6 +782,8 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
                     userAnswer={userAnswers[q.question_id] || ''}
                     onAnswerChange={onAnswerChange}
                     headingsList={q.headings_list}
+                    isFlagged={flaggedQuestions.has(q.question_id)}
+                    onToggleFlag={handleToggleFlag}
                   />
                 </div>
               ))
@@ -785,8 +797,8 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
       <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-purple-200/80 shadow-2xl px-4 py-3">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
           
-          {/* Left metrics */}
-          <div className="flex items-center gap-3 shrink-0">
+          {/* Left metrics & Legend (Heuristic #4 & #6 Recognition rather than recall) */}
+          <div className="flex items-center gap-3 shrink-0 flex-wrap">
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
               <span className="text-xs font-black text-[#3C2A63]">Question Matrix:</span>
@@ -794,32 +806,57 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
             <span className="text-xs font-bold text-[#6B51A5] bg-purple-50 px-2.5 py-1 rounded-xl border border-purple-100">
               {totalAnswered} / {all40Questions.length} Answered
             </span>
+
+            {/* 3-State Legend */}
+            <div className="hidden lg:flex items-center gap-2.5 text-[10px] text-[#7C68A5] font-semibold border-l border-purple-100 pl-3">
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded bg-slate-100 border border-slate-300 inline-block" />
+                <span>Unanswered</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded bg-emerald-600 inline-block" />
+                <span>Answered</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded bg-amber-400 border border-amber-500 inline-block" />
+                <span>Flagged</span>
+              </span>
+            </div>
           </div>
 
-          {/* Center 40 Questions Grid */}
+          {/* Center 40 Questions Grid with 3 unambiguous states */}
           <div className="flex-1 overflow-x-auto max-w-full pb-1">
             <div className="flex items-center gap-1 min-w-max justify-center">
               {all40Questions.map((q, idx) => {
                 const isAnswered = !!userAnswers[q.question_id] && userAnswers[q.question_id].trim() !== '';
+                const isFlagged = flaggedQuestions.has(q.question_id);
                 const isCurrentPassage = activePassageIndex === q.assignedPassage;
+
+                let stateClasses = 'bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200'; // Unanswered
+                if (isFlagged) {
+                  stateClasses = 'bg-amber-400 text-amber-950 font-black border border-amber-500 shadow-2xs hover:bg-amber-500'; // Flagged
+                } else if (isAnswered) {
+                  stateClasses = 'bg-emerald-600 text-white font-black shadow-xs hover:bg-emerald-700'; // Answered
+                } else if (isCurrentPassage) {
+                  stateClasses = 'bg-purple-50 text-[#503A7A] border border-purple-300 hover:bg-purple-100 font-bold'; // Current passage unattempted
+                }
 
                 return (
                   <button
                     key={`${q.question_id || 'all40'}-${idx}`}
                     type="button"
                     onClick={() => handleJumpToQuestion(q)}
-                    className={`w-7 h-7 rounded-lg text-[11px] font-black transition-all cursor-pointer flex items-center justify-center ${
-                      isAnswered
-                        ? 'bg-emerald-600 text-white shadow-sm hover:bg-emerald-700'
-                        : isCurrentPassage
-                        ? 'bg-[#E2DDEC] hover:bg-[#D4CEE2] text-[#3C2A63] border border-purple-300'
-                        : 'bg-[#F5F2F9] text-[#7C68A5] hover:bg-[#E2DDEC]'
-                    } ${
-                      highlightedQuestionId === q.question_id ? 'ring-2 ring-[#6B51A5] scale-110' : ''
+                    className={`w-7 h-7 rounded-lg text-[11px] font-black transition-all cursor-pointer flex items-center justify-center relative ${stateClasses} ${
+                      highlightedQuestionId === q.question_id ? 'ring-2 ring-[#6B51A5] scale-110 z-10' : ''
                     }`}
-                    title={`Question ${q.globalNumber} (Passage ${q.assignedPassage}) - ${isAnswered ? 'Answered' : 'Not answered'}`}
+                    title={`Question ${q.globalNumber} (Passage ${q.assignedPassage}) - ${
+                      isFlagged ? 'Flagged for review' : isAnswered ? 'Answered' : 'Not answered'
+                    }`}
                   >
-                    {q.globalNumber}
+                    <span>{q.globalNumber}</span>
+                    {isFlagged && (
+                      <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber-800" />
+                    )}
                   </button>
                 );
               })}

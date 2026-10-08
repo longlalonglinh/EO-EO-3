@@ -320,7 +320,7 @@ export function updateStoredWritingScore(
     return {
       success: false,
       conflict: true,
-      message: 'DỮ LIỆU ĐÃ ĐƯỢC CẬP NHẬT BỞI NGƯỜI KHÁC. VUI LÒNG TẢI LẠI TRANG'
+      message: 'DATA HAS BEEN MODIFIED BY ANOTHER EXAMINER. PLEASE REFRESH THE PAGE (DỮ LIỆU ĐÃ ĐƯỢC CẬP NHẬT BỞI NGƯỜI KHÁC)'
     };
   }
 

@@ -116,20 +116,18 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
     return (
       <div className={`relative flex items-center space-x-2 px-3 py-1.5 rounded-2xl text-xs font-bold transition-all overflow-hidden ${
         isUnder5Min
-          ? 'bg-amber-50 text-amber-900 border border-amber-300'
-          : isUnder10Min
-          ? 'bg-amber-50/80 text-amber-800 border border-amber-200'
+          ? 'bg-amber-50 text-amber-900 border border-amber-300 ring-2 ring-amber-400/30'
           : 'bg-[#E2DDEC] text-[#3C2A63] border border-purple-200/80'
       } ${className}`}>
         {/* Subtle Ambient Background Bar for peripheral vision */}
         <div 
           className={`absolute bottom-0 left-0 h-0.5 transition-all duration-1000 ${
-            isUnder5Min ? 'bg-amber-500' : isUnder10Min ? 'bg-amber-400' : 'bg-[#6B51A5]'
+            isUnder5Min ? 'bg-amber-500' : 'bg-[#6B51A5]'
           }`}
           style={{ width: `${progressPercent}%` }}
         />
 
-        <Clock className="w-3.5 h-3.5 text-[#6B51A5] shrink-0" />
+        <Clock className={`w-3.5 h-3.5 shrink-0 ${isUnder5Min ? 'text-amber-700' : 'text-[#6B51A5]'}`} />
         
         {isTimeHidden ? (
           <span className="font-sans text-[11px] text-[#7C68A5]">Time hidden</span>
@@ -163,9 +161,7 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
   return (
     <div className={`relative bg-white border rounded-3xl p-4 shadow-sm flex flex-col justify-between gap-3 transition-all overflow-hidden ${
       isUnder5Min
-        ? 'border-amber-300/80 bg-amber-50/20'
-        : isUnder10Min
-        ? 'border-amber-200/80 bg-amber-50/10'
+        ? 'border-amber-300/80 bg-amber-50/20 ring-2 ring-amber-300/30'
         : 'border-purple-100/90 bg-white'
     } ${className}`}>
       
@@ -176,8 +172,6 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
           <div className={`w-9 h-9 rounded-2xl flex items-center justify-center transition-all ${
             isUnder5Min
               ? 'bg-amber-100 text-amber-800'
-              : isUnder10Min
-              ? 'bg-amber-50 text-amber-700'
               : 'bg-purple-100 text-[#6B51A5]'
           }`}>
             <Hourglass className="w-4 h-4" />
@@ -203,7 +197,7 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
                 </div>
               ) : (
                 <span className={`font-mono text-xl font-black tracking-tight ${
-                  isUnder5Min ? 'text-amber-700' : isUnder10Min ? 'text-amber-800' : 'text-[#3C2A63]'
+                  isUnder5Min ? 'text-amber-700 animate-pulse' : 'text-[#3C2A63]'
                 }`}>
                   {formattedTime}
                 </span>
@@ -211,7 +205,7 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
 
               {!isTimeHidden && (
                 <span className="text-[11px] text-[#7C68A5] font-medium hidden sm:inline">
-                  {isUnder5Min ? '• Under 5 minutes (ending soon)' : isUnder10Min ? '• Under 10 minutes' : '• Counting down'}
+                  {isUnder5Min ? '• Under 5 minutes remaining (check uncompleted questions)' : '• Counting down'}
                 </span>
               )}
             </div>

@@ -1273,6 +1273,54 @@ Designing transparent explainable AI (XAI) frameworks is therefore not merely a 
     writing_task1_imageUrl: 'https://images.unsplash.com/photo-1543269865-cbf427effbad?w=800&auto=format&fit=crop&q=60',
     writing_task2_prompt: 'Some people believe that international tourism brings only positive benefits to host countries, while others argue that it causes environmental and cultural harm. Discuss both views and give your own opinion.\n\nWrite at least 250 words.',
     questions: []
+  },
+  {
+    exam_code: 'RW2001',
+    title: 'IELTS Academic Reading & Writing Dual-Skill Paper (Set RW2001)',
+    test_type: 'PRACTICE',
+    exam_type: 'two_skills',
+    skills: ['reading', 'writing'],
+    duration_mins: 120,
+    listening_duration_mins: 0,
+    reading_duration_mins: 60,
+    writing_duration_mins: 60,
+    passage_title: 'The Evolution of Modern Artificial Intelligence',
+    passage_text: 'Artificial intelligence (AI) has developed rapidly over the past decade, moving from narrow machine learning models to multimodal foundational models capable of human-level reasoning across complex tasks.\n\nIn medicine, deep neural networks are increasingly employed to assist radiologists in detecting malignancies with unprecedented accuracy. Autonomous systems are revolutionizing logistical supply chains, optimizing freight routes and reducing carbon emissions globally.\n\nHowever, ethical concerns regarding data governance, algorithmic bias, and cognitive dependency remain active areas of public and regulatory debate.',
+    passages: [
+      {
+        passage_index: 1,
+        title: 'The Evolution of Modern Artificial Intelligence',
+        text: 'Artificial intelligence (AI) has developed rapidly over the past decade, moving from narrow machine learning models to multimodal foundational models capable of human-level reasoning across complex tasks.\n\nIn medicine, deep neural networks are increasingly employed to assist radiologists in detecting malignancies with unprecedented accuracy. Autonomous systems are revolutionizing logistical supply chains, optimizing freight routes and reducing carbon emissions globally.\n\nHowever, ethical concerns regarding data governance, algorithmic bias, and cognitive dependency remain active areas of public and regulatory debate.',
+        questions: []
+      }
+    ],
+    writing_task1_prompt: "The bar chart illustrates the percentage of global corporate investment in artificial intelligence, cloud infrastructure, and cybersecurity between 2018 and 2024.\n\nSummarise the information by selecting and reporting the main features, and make comparisons where relevant.\n\nWrite at least 150 words.",
+    writing_task1_image: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop&q=60',
+    writing_task1_image_url: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop&q=60',
+    writing_task1_imageUrl: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop&q=60',
+    writing_task2_prompt: 'With the rapid advancement of artificial intelligence, many routine white-collar jobs are being automated. Some argue this will cause widespread unemployment, while others believe AI will generate new higher-value industries. Discuss both views and give your opinion.\n\nWrite at least 250 words.',
+    questions: [
+      {
+        question_id: 'rw2001_q1',
+        question_number: 1,
+        section: 'reading',
+        passage_index: 1,
+        question_text: '1. AI algorithms are currently used in hospitals to aid in detecting health conditions.',
+        question_type: 'true_false_not_given',
+        correct_answer: 'TRUE',
+        max_score: 1
+      },
+      {
+        question_id: 'rw2001_q2',
+        question_number: 2,
+        section: 'reading',
+        passage_index: 1,
+        question_text: '2. All governments have established uniform worldwide standards for AI regulation.',
+        question_type: 'true_false_not_given',
+        correct_answer: 'FALSE',
+        max_score: 1
+      }
+    ]
   }
 ];
 
@@ -1375,4 +1423,6 @@ export const DEFAULT_EXAMS: Exam[] = RAW_DEFAULT_EXAMS.map(exam => {
     imageUrl: resolvedT1Img
   } as Exam;
 });
+
+export default DEFAULT_EXAMS;
 

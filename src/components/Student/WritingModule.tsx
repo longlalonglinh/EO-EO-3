@@ -8,7 +8,11 @@ import {
   X,
   AlertTriangle,
   CheckCircle2,
-  Sparkles
+  Sparkles,
+  Flag,
+  Send,
+  MessageSquare,
+  ImageOff
 } from 'lucide-react';
 import { 
   saveWritingDraftToIndexedDB, 
@@ -17,6 +21,7 @@ import {
 import { WritingTask } from '../../types';
 import { CountdownTimer } from './CountdownTimer';
 import { normalizeGoogleDriveImageUrl } from '../../utils/imageUrl';
+import { Task1DiagramViewer } from './Task1DiagramViewer';
 
 interface WritingModuleProps {
   task1Prompt?: string;
@@ -64,10 +69,14 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
   
   // Image zoom modal
   const [isZoomOpen, setIsZoomOpen] = useState(false);
+  const [zoomImageError, setZoomImageError] = useState(false);
   
+  // Guaranteed IELTS Academic Task 1 default image fallback
+  const DEFAULT_TASK1_FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop&q=60';
+
   // Extract task image using full property fallback cascade
   const task1FromList = tasks?.find(t => t.task_number === 1) || tasks?.[0];
-  const detectedImage = task1Image || imageUrl || image_url || task1FromList?.image_url || task1FromList?.imageUrl || (task1FromList as any)?.image;
+  const detectedImage = task1Image || imageUrl || image_url || task1FromList?.image_url || task1FromList?.imageUrl || (task1FromList as any)?.image || DEFAULT_TASK1_FALLBACK_IMAGE;
 
   // Persist image in local state so re-renders (keystrokes, autosave, timer ticks) never clear it
   const [cachedImage, setCachedImage] = useState<string>(() => {
@@ -82,6 +91,47 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
   }, [detectedImage]);
 
   const cleanTask1Image = cachedImage || normalizeGoogleDriveImageUrl(detectedImage) || null;
+
+  // Report Issue Modal & Feedback State
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [reportTask, setReportTask] = useState<'task1' | 'task2'>('task1');
+  const [reportCategory, setReportCategory] = useState<string>('image_failed');
+  const [reportDetails, setReportDetails] = useState('');
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [reportSuccessMsg, setReportSuccessMsg] = useState<string | null>(null);
+
+  const handleSubmitIssueReport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmittingReport(true);
+    try {
+      const taskLabel = reportTask === 'task1' ? 'Writing Task 1' : 'Writing Task 2';
+      const payload = {
+        sbd: candidateId || 'CANDIDATE',
+        exam_code: examCode || 'EXAM',
+        violation_type: 'WRITING_ISSUE_REPORT',
+        description: `Candidate feedback on [${taskLabel}]: Category=[${reportCategory}]. Note=[${reportDetails.trim() || 'N/A'}]. Diagram URL=[${cleanTask1Image || 'None'}]`,
+        timestamp: new Date().toISOString()
+      };
+
+      await fetch('/api/cheat-logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).catch(err => console.warn('Failed to submit writing issue report to server:', err));
+
+      const refId = `REP-W${Date.now().toString(36).toUpperCase()}`;
+      setReportSuccessMsg(`Your issue report has been recorded with the invigilator (Ref: #${refId}). Our exam proctors will assist you.`);
+      setTimeout(() => {
+        setIsReportModalOpen(false);
+        setReportSuccessMsg(null);
+        setReportDetails('');
+      }, 2600);
+    } catch (err) {
+      console.error('Error submitting writing issue report:', err);
+    } finally {
+      setIsSubmittingReport(false);
+    }
+  };
 
   // Split-view and small screen responsive states
   const [splitRatio, setSplitRatio] = useState<number>(45); // 45% left (prompt), 55% right (editor)
@@ -403,6 +453,22 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
               </button>
             </div>
           )}
+
+          {/* Prominent Report Issue Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setReportTask(activeTab);
+              setReportCategory(activeTab === 'task1' ? 'image_failed' : 'prompt_content');
+              setIsReportModalOpen(true);
+            }}
+            className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-extrabold flex items-center gap-1.5 transition cursor-pointer text-xs shrink-0 shadow-xs"
+            title="Report issue with task image or prompt content"
+            aria-label="Report Issue"
+          >
+            <Flag className="w-3.5 h-3.5 text-rose-600" />
+            <span>Report Issue</span>
+          </button>
         </div>
       </div>
 
@@ -451,7 +517,22 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
               <span className="text-xs px-3 py-1 rounded-full bg-purple-100 text-[#503A7A] font-extrabold border border-purple-200">
                 TASK 1 PROMPT &amp; DATA
               </span>
-              <span className="text-[11px] text-[#7C68A5] font-semibold">Spend ~20 mins</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-[#7C68A5] font-semibold hidden sm:inline">Spend ~20 mins</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReportTask('task1');
+                    setReportCategory('image_failed');
+                    setIsReportModalOpen(true);
+                  }}
+                  className="px-2 py-0.5 rounded-lg text-[11px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                  title="Report image failure or prompt issue"
+                >
+                  <Flag className="w-3 h-3 text-rose-600" />
+                  <span>Report Issue</span>
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 p-4 sm:p-6 overflow-y-auto overscroll-contain space-y-4">
@@ -459,42 +540,22 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
                 {task1Prompt || 'You should spend about 20 minutes on this task. Summarise the information by selecting and reporting the main features, and make comparisons where relevant. Write at least 150 words.'}
               </div>
 
-              {/* Task 1 Graphic / Chart Image Display */}
-              {cleanTask1Image && (
-                <div className="my-4 rounded-xl overflow-hidden border border-slate-200 bg-white p-2 shadow-sm">
-                  <div className="relative group rounded-lg overflow-hidden bg-white">
-                    <img
-                      src={cleanTask1Image}
-                      alt="Task 1 Graphic / Chart"
-                      className="w-full h-auto max-h-[420px] object-contain mx-auto bg-white cursor-pointer transition duration-200 group-hover:scale-[1.01]"
-                      onClick={() => setIsZoomOpen(true)}
-                      loading="lazy"
-                      referrerPolicy="no-referrer"
-                      onError={() => {
-                        console.error('Cannot load Task 1 image from URL:', cleanTask1Image);
-                      }}
-                    />
-                    
-                    {/* Overlay button to zoom */}
-                    <button
-                      type="button"
-                      onClick={() => setIsZoomOpen(true)}
-                      className="absolute top-2 right-2 bg-[#3C2A63]/80 hover:bg-[#3C2A63] text-white p-2 rounded-xl backdrop-blur transition shadow-md cursor-pointer opacity-90 group-hover:opacity-100 flex items-center gap-1 text-[11px] font-bold"
-                      title="Zoom chart image"
-                    >
-                      <Maximize2 className="w-3.5 h-3.5" />
-                      <span>Zoom</span>
-                    </button>
-
-                    <div className="p-2.5 bg-white/90 border-t border-purple-100 flex items-center justify-between text-xs text-[#7C68A5]">
-                      <span className="font-semibold text-[11px]">📊 Task 1 Visual / Chart Material</span>
-                      <span className="text-[10px] text-purple-600 font-bold bg-purple-50 px-2 py-0.5 rounded-md">
-                        Click to enlarge
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
+              {/* Task 1 Graphic / Chart Image Display & Issue Reporting */}
+              <Task1DiagramViewer
+                imageUrl={cleanTask1Image}
+                task1Prompt={task1Prompt}
+                examCode={examCode}
+                candidateId={candidateId}
+                onOpenZoom={() => {
+                  setZoomImageError(false);
+                  setIsZoomOpen(true);
+                }}
+                onReportIssue={() => {
+                  setReportTask('task1');
+                  setReportCategory('image_failed');
+                  setIsReportModalOpen(true);
+                }}
+              />
 
               <div className="p-3.5 bg-white rounded-2xl border border-purple-100 text-xs text-[#7C68A5] font-medium leading-relaxed">
                 💡 <strong>Requirement:</strong> Summarise main features and trends. Minimum requirement is <strong>150 words</strong>.
@@ -604,23 +665,74 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
                 <ImageIcon className="w-4 h-4 text-[#6B51A5]" />
                 IELTS Task 1 Graphic / Chart View
               </span>
-              <button
-                type="button"
-                onClick={() => setIsZoomOpen(false)}
-                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500 transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsZoomOpen(false);
+                    setReportTask('task1');
+                    setReportCategory('image_failed');
+                    setIsReportModalOpen(true);
+                  }}
+                  className="px-2.5 py-1 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-extrabold flex items-center gap-1.5 transition cursor-pointer text-[11px]"
+                  title="Report issue with diagram image"
+                >
+                  <Flag className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Report Issue</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsZoomOpen(false)}
+                  className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500 transition cursor-pointer"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
-            <img
-              src={cleanTask1Image}
-              alt="Full Task 1 Diagram"
-              className="max-w-full max-h-[75vh] object-contain rounded-xl"
-              referrerPolicy="no-referrer"
-              onError={() => {
-                console.error('Cannot load full zoom Task 1 image from URL:', cleanTask1Image);
-              }}
-            />
+
+            {zoomImageError ? (
+              <div className="p-8 max-w-md w-full flex flex-col items-center justify-center text-center space-y-4 bg-rose-50/50 rounded-2xl border-2 border-dashed border-rose-200 my-4">
+                <div className="p-4 rounded-3xl bg-rose-100 text-rose-600 shadow-sm ring-4 ring-rose-50">
+                  <ImageOff className="w-12 h-12 text-rose-600" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="text-base font-extrabold text-[#3C2A63] flex items-center justify-center gap-2">
+                    <span>Image Unavailable</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-200 text-rose-900 uppercase tracking-wider">
+                      Load Error
+                    </span>
+                  </h4>
+                  <p className="text-xs text-[#7C68A5] leading-relaxed">
+                    The enlarged diagram image could not be loaded due to a network connection error. Please report this issue to your exam invigilator.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsZoomOpen(false);
+                    setReportTask('task1');
+                    setReportCategory('image_failed');
+                    setIsReportModalOpen(true);
+                  }}
+                  className="px-6 py-2.5 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-lg shadow-rose-900/20 transition flex items-center gap-2 cursor-pointer ring-4 ring-rose-300/50 hover:scale-[1.02] active:scale-95"
+                >
+                  <Flag className="w-4 h-4 text-white" />
+                  <span>Report Issue to Invigilator</span>
+                </button>
+              </div>
+            ) : (
+              <img
+                src={cleanTask1Image}
+                alt="Full Task 1 Diagram"
+                className="max-w-full max-h-[75vh] object-contain rounded-xl"
+                referrerPolicy="no-referrer"
+                onError={() => {
+                  console.error('Cannot load full zoom Task 1 image from URL:', cleanTask1Image);
+                  setZoomImageError(true);
+                }}
+              />
+            )}
           </div>
         </div>
       )}
@@ -642,7 +754,22 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
               <span className="text-xs px-3 py-1 rounded-full bg-purple-100 text-[#503A7A] font-extrabold border border-purple-200">
                 TASK 2 PROMPT
               </span>
-              <span className="text-[11px] text-[#7C68A5] font-semibold">Spend ~40 mins (2/3 score)</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-[#7C68A5] font-semibold hidden sm:inline">Spend ~40 mins (2/3 score)</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReportTask('task2');
+                    setReportCategory('prompt_content');
+                    setIsReportModalOpen(true);
+                  }}
+                  className="px-2 py-0.5 rounded-lg text-[11px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                  title="Report issue with Task 2 prompt content"
+                >
+                  <Flag className="w-3 h-3 text-rose-600" />
+                  <span>Report Issue</span>
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 p-4 sm:p-6 overflow-y-auto overscroll-contain space-y-4">
@@ -724,6 +851,175 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
               <span>Auto-saved to IndexedDB every 1000ms {autoSaveTime && `(${autoSaveTime})`}</span>
               <span>Spellcheck: Disabled | Paste: Blocked</span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+       * REPORT ISSUE & FEEDBACK MODAL (Task Image Failure & Prompt Issues)
+       * ========================================================================= */}
+      {isReportModalOpen && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => setIsReportModalOpen(false)}
+        >
+          <div 
+            className="bg-white border border-purple-200 rounded-3xl p-5 sm:p-6 max-w-lg w-full shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-purple-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 rounded-2xl bg-rose-100 text-rose-700">
+                  <Flag className="w-5 h-5 text-rose-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-[#3C2A63]">Report Writing Issue / Feedback</h3>
+                  <p className="text-[11px] text-[#7C68A5]">Report broken task diagram or prompt content problems</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsReportModalOpen(false)}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500 transition cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {reportSuccessMsg ? (
+              <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs text-emerald-800 space-y-2 text-center animate-fade-in">
+                <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
+                <p className="font-extrabold text-sm">{reportSuccessMsg}</p>
+                <p className="text-[11px] text-emerald-700">You may continue writing your responses. Our system has safely recorded your feedback.</p>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmitIssueReport} className="space-y-4 text-xs">
+                {/* Exam & Candidate Metadata Card */}
+                <div className="p-3 bg-purple-50 rounded-2xl border border-purple-100 space-y-1">
+                  <div className="flex justify-between text-[#503A7A] font-bold text-xs">
+                    <span>Candidate: {candidateId || 'CANDIDATE'}</span>
+                    <span>Exam: {examCode || 'IELTS'}</span>
+                  </div>
+                  <div className="text-[11px] text-[#7C68A5] flex items-center justify-between">
+                    <span>Active Section: Academic Writing</span>
+                    <span className="font-semibold text-[#6B51A5]">{reportTask === 'task1' ? 'Task 1 (Report & Chart)' : 'Task 2 (Essay Prompt)'}</span>
+                  </div>
+                </div>
+
+                {/* Target Task Selector */}
+                <div className="space-y-1.5">
+                  <label className="font-bold text-[#3C2A63] block">Select Task with Issue:</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReportTask('task1');
+                        if (reportCategory === 'word_count_issue' || reportCategory === 'missing_instructions') {
+                          setReportCategory('image_failed');
+                        }
+                      }}
+                      className={`p-2.5 rounded-xl border font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                        reportTask === 'task1'
+                          ? 'bg-[#6B51A5] text-white border-purple-400 shadow-xs'
+                          : 'bg-slate-50 text-slate-700 border-purple-200 hover:bg-purple-50'
+                      }`}
+                    >
+                      <ImageIcon className="w-3.5 h-3.5" />
+                      <span>Task 1 (Graphic &amp; Prompt)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReportTask('task2');
+                        if (reportCategory.startsWith('image_') || reportCategory === 'diagram_mismatch') {
+                          setReportCategory('prompt_content');
+                        }
+                      }}
+                      className={`p-2.5 rounded-xl border font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                        reportTask === 'task2'
+                          ? 'bg-[#6B51A5] text-white border-purple-400 shadow-xs'
+                          : 'bg-slate-50 text-slate-700 border-purple-200 hover:bg-purple-50'
+                      }`}
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>Task 2 (Essay Prompt)</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Issue Category Dropdown */}
+                <div className="space-y-1.5">
+                  <label className="font-bold text-[#3C2A63] block">What issue are you experiencing?</label>
+                  <select
+                    value={reportCategory}
+                    onChange={(e) => setReportCategory(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-purple-200 rounded-xl font-medium text-[#3C2A63] focus:outline-none focus:ring-2 focus:ring-[#6B51A5]"
+                  >
+                    {reportTask === 'task1' ? (
+                      <>
+                        <option value="image_failed">🖼️ Task image fails to load / Blank diagram box</option>
+                        <option value="image_blurry">🔍 Image is blurry / Numbers or text unreadable</option>
+                        <option value="prompt_content">📝 Issue with prompt instructions or wording</option>
+                        <option value="diagram_mismatch">⚠️ Diagram does not match the prompt description</option>
+                        <option value="network_blocked">🌐 Image blocked by firewall or network error</option>
+                        <option value="other">📌 Other issue</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="prompt_content">📝 Issue with essay prompt wording or topic</option>
+                        <option value="missing_instructions">❓ Missing instructions or unclear topic statement</option>
+                        <option value="word_count_issue">⏱️ Word counter or timer discrepancy</option>
+                        <option value="other">📌 Other issue</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+
+                {/* Helpful Tip when image issue is selected */}
+                {reportTask === 'task1' && (reportCategory === 'image_failed' || reportCategory === 'image_blurry' || reportCategory === 'network_blocked') && (
+                  <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-[11px] flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <strong>Need to see the chart immediately?</strong>
+                      <p className="mt-0.5">The Task 1 Diagram viewer includes a built-in high-contrast vector safe chart that you can use right away without waiting.</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Additional Details */}
+                <div className="space-y-1.5">
+                  <label className="font-bold text-[#3C2A63] block">Additional Details or Specific Errors (Optional):</label>
+                  <textarea
+                    value={reportDetails}
+                    onChange={(e) => setReportDetails(e.target.value)}
+                    placeholder="Describe what you see or what needs to be fixed..."
+                    rows={3}
+                    className="w-full p-2.5 bg-slate-50 border border-purple-200 rounded-xl text-xs text-[#3C2A63] placeholder-[#7C68A5] focus:outline-none focus:ring-2 focus:ring-[#6B51A5]"
+                  />
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex items-center justify-end gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsReportModalOpen(false)}
+                    className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 font-bold transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingReport}
+                    className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold transition shadow-md shadow-rose-900/10 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>{isSubmittingReport ? 'Submitting...' : 'Submit Report'}</span>
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

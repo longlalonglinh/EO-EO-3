@@ -22,7 +22,9 @@ import {
   FileText, 
   CheckCircle2, 
   Send, 
+  Wifi,
   WifiOff, 
+  X,
   RefreshCw, 
   Database, 
   Code, 
@@ -820,17 +822,36 @@ export default function App() {
     }
   }, [gasUrl]);
 
+  const [networkToast, setNetworkToast] = useState<{ type: 'offline' | 'online'; message: string } | null>(null);
+
   useEffect(() => {
     const handleOnline = () => {
       console.log('Network online restored. Triggering background submission sync...');
       triggerOfflineRetry();
+      setNetworkToast({
+        type: 'online',
+        message: 'Internet connection restored. Test progress synced safely.'
+      });
+      setTimeout(() => setNetworkToast(null), 4000);
     };
+
+    const handleOffline = () => {
+      setNetworkToast({
+        type: 'offline',
+        message: 'Network offline. Your answers are safely backed up to IndexedDB and will auto-sync upon reconnection.'
+      });
+    };
+
     window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
     const interval = setInterval(() => {
       triggerOfflineRetry();
     }, 10000);
+
     return () => {
       window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
       clearInterval(interval);
     };
   }, [triggerOfflineRetry]);
@@ -1385,6 +1406,30 @@ function doPost(e) {
         onTriggerReload={() => setIsReloadModalOpen(true)}
       />
 
+      {/* Non-blocking Offline / Online Toast Notification */}
+      {networkToast && (
+        <div className={`fixed bottom-5 right-5 z-50 p-3.5 rounded-2xl shadow-2xl border flex items-center gap-2.5 max-w-sm text-xs font-bold transition-all duration-300 animate-fadeIn ${
+          networkToast.type === 'offline'
+            ? 'bg-amber-900 text-amber-50 border-amber-700/80 shadow-amber-950/30'
+            : 'bg-emerald-900 text-emerald-50 border-emerald-700/80 shadow-emerald-950/30'
+        }`}>
+          {networkToast.type === 'offline' ? (
+            <WifiOff className="w-4 h-4 text-amber-300 shrink-0 animate-pulse" />
+          ) : (
+            <Wifi className="w-4 h-4 text-emerald-300 shrink-0" />
+          )}
+          <span className="leading-snug">{networkToast.message}</span>
+          <button
+            type="button"
+            onClick={() => setNetworkToast(null)}
+            className="ml-auto text-white/70 hover:text-white p-0.5 rounded cursor-pointer"
+            aria-label="Dismiss notification"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Offline Pending Submission Alert */}
       {offlinePending && (
         <div className="bg-amber-100 border-b border-amber-200 px-4 py-2 text-xs text-amber-900 flex items-center justify-between">
@@ -1726,7 +1771,7 @@ function doPost(e) {
                         (task1Obj as any)?.image || 
                         examData.image_url || 
                         (examData as any).imageUrl || 
-                        '';
+                        'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop&q=60';
                       const resolvedTask2Prompt = examData.writing_task2_prompt || task2Obj?.prompt;
 
                       return (
