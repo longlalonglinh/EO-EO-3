@@ -27,6 +27,21 @@ import {
 } from './indexedDb';
 import { gradeExamAnswers, computeAnswersChecksum } from './answerScoring';
 import { DEFAULT_EXAMS } from '../data/defaultExams';
+import { 
+  fetchExamViaGviz, 
+  getStoredSpreadsheetId, 
+  setStoredSpreadsheetId, 
+  extractSpreadsheetId, 
+  testGvizConnection 
+} from './gvizService';
+
+export { 
+  fetchExamViaGviz, 
+  getStoredSpreadsheetId, 
+  setStoredSpreadsheetId, 
+  extractSpreadsheetId, 
+  testGvizConnection 
+};
 
 export const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbySNk5foVr4UMC5ZVP1YTlxjxT9qFgdI85cH5nyQ63ffqXdYVZ7SJKbmD0B3xNO3DEe/exec";
 
@@ -1204,6 +1219,20 @@ export function prefetchExam(
       }
     } catch (e) {}
 
+    // 3. Fast Google Visualization API (GViz / tq) prefetch (~50-200ms)
+    const activeSpreadsheetId = getStoredSpreadsheetId();
+    if (activeSpreadsheetId) {
+      try {
+        const gvizRes = await fetchExamViaGviz(activeSpreadsheetId, cleanCode);
+        if (gvizRes.success && gvizRes.exam) {
+          const standardized = standardizeExamData(gvizRes.exam, cleanCode);
+          examMemoryCache.set(cleanCode, standardized);
+          saveExamToIndexedDB(standardized).catch(() => {});
+          return { success: true, exam: standardized };
+        }
+      } catch (e) {}
+    }
+
     // 4. Background fetch from GAS
     if (apiUrl && !apiUrl.includes('mock_ielts_exam_system_gas_url') && !apiUrl.includes('AKfycbx_mock')) {
       try {
@@ -1410,6 +1439,26 @@ export async function fetchExam(
       }
     } catch (e) {
       console.warn('Error reading from localStorage:', e);
+    }
+  }
+
+  // Tier 5: Ultra-Fast Direct Google Visualization API (GViz / tq) Query (~50ms - 200ms)
+  // Bypasses Apps Script container startup, queries Google Sheets edge C++ engine directly
+  const activeSpreadsheetId = getStoredSpreadsheetId();
+  if (activeSpreadsheetId) {
+    try {
+      const gvizRes = await fetchExamViaGviz(activeSpreadsheetId, cleanCode);
+      if (gvizRes.success && gvizRes.exam) {
+        const standardized = standardizeExamData(gvizRes.exam, cleanCode);
+        examMemoryCache.set(cleanCode, standardized);
+        saveExamToIndexedDB(standardized).catch(() => {});
+        try {
+          localStorage.setItem('ielts_current_exam', JSON.stringify(standardized));
+        } catch (e) {}
+        return { success: true, exam: standardized, source: 'gviz' as any };
+      }
+    } catch (gvizErr) {
+      console.warn('[GViz Query Notice] Direct query failed, falling back to Apps Script:', gvizErr);
     }
   }
 

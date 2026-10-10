@@ -191,6 +191,7 @@ export interface WordBankItem {
 
 export interface Question {
   question_id: string;
+  question_number?: number;
   section: 'listening' | 'reading';
   part?: 1 | 2 | 3 | 4; // Listening Part 1, 2, 3, 4 (10 questions each)
   passage_index?: 1 | 2 | 3; // Reading Passage 1, 2, 3
