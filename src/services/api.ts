@@ -40,7 +40,7 @@ export {
   getStoredSpreadsheetId, 
   setStoredSpreadsheetId, 
   extractSpreadsheetId, 
-  testGvizConnection 
+  testGvizConnection
 };
 
 export const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbySNk5foVr4UMC5ZVP1YTlxjxT9qFgdI85cH5nyQ63ffqXdYVZ7SJKbmD0B3xNO3DEe/exec";
@@ -1351,6 +1351,41 @@ export async function clearExamCache(examCode: string): Promise<void> {
   } catch (e) {}
 }
 
+let memoryCachedSpreadsheetId: string = '';
+
+/**
+ * Dynamically resolves the active Google Spreadsheet ID from:
+ * 1. LocalStorage ('ielts_spreadsheet_id')
+ * 2. In-memory cache
+ * 3. Server Config ('/api/config')
+ * 4. Fallback to VITE_GOOGLE_SPREADSHEET_ID
+ */
+export async function getDynamicSpreadsheetId(): Promise<string> {
+  const localId = getStoredSpreadsheetId();
+  if (localId) {
+    memoryCachedSpreadsheetId = localId;
+    return localId;
+  }
+
+  if (memoryCachedSpreadsheetId) {
+    return memoryCachedSpreadsheetId;
+  }
+
+  try {
+    const serverCfg = await fetchServerConfig();
+    if (serverCfg?.spreadsheet_id) {
+      const extracted = extractSpreadsheetId(serverCfg.spreadsheet_id);
+      if (extracted) {
+        memoryCachedSpreadsheetId = extracted;
+        setStoredSpreadsheetId(extracted);
+        return extracted;
+      }
+    }
+  } catch (e) {}
+
+  return '';
+}
+
 /**
  * Ultra-fast Exam Fetching with Cache-First & Stale-While-Revalidate architecture.
  * Loads in ~0ms if in-memory, ~2ms if in IndexedDB/LocalStorage, or resolves prefetch.
@@ -1360,7 +1395,7 @@ export async function fetchExam(
   apiUrl: string, 
   examCode: string,
   forceFresh: boolean = false
-): Promise<{ success: boolean; exam?: ExamData; error?: string; source?: 'gas' | 'idb' | 'local' | 'default' | 'memory' }> {
+): Promise<{ success: boolean; exam?: ExamData; error?: string; source?: 'gas' | 'idb' | 'local' | 'default' | 'memory' | 'gviz' | 'server' }> {
   const cleanCode = (examCode || 'TEST01').trim().toUpperCase();
 
   if (forceFresh) {
@@ -1444,7 +1479,11 @@ export async function fetchExam(
 
   // Tier 5: Ultra-Fast Direct Google Visualization API (GViz / tq) Query (~50ms - 200ms)
   // Bypasses Apps Script container startup, queries Google Sheets edge C++ engine directly
-  const activeSpreadsheetId = getStoredSpreadsheetId();
+  let activeSpreadsheetId = getStoredSpreadsheetId();
+  if (!activeSpreadsheetId) {
+    activeSpreadsheetId = await getDynamicSpreadsheetId();
+  }
+
   if (activeSpreadsheetId) {
     try {
       const gvizRes = await fetchExamViaGviz(activeSpreadsheetId, cleanCode);
@@ -1455,10 +1494,13 @@ export async function fetchExam(
         try {
           localStorage.setItem('ielts_current_exam', JSON.stringify(standardized));
         } catch (e) {}
-        return { success: true, exam: standardized, source: 'gviz' as any };
+        saveExamToServerDb(standardized).catch(() => {});
+        return { success: true, exam: standardized, source: 'gviz' };
+      } else {
+        console.warn(`[GViz Query Notice] Exam [${cleanCode}] not retrieved via GViz (${gvizRes.error || 'No rows'}), falling back to Apps Script.`);
       }
     } catch (gvizErr) {
-      console.warn('[GViz Query Notice] Direct query failed, falling back to Apps Script:', gvizErr);
+      console.warn('[GViz Query Notice] Direct GViz query failed, falling back to Apps Script:', gvizErr);
     }
   }
 
@@ -1804,9 +1846,9 @@ export async function saveExamToServerDb(exam: ExamData): Promise<boolean> {
 }
 
 /**
- * Fetch server configuration (e.g. centralized gas_url)
+ * Fetch server configuration (e.g. centralized gas_url and spreadsheet_id)
  */
-export async function fetchServerConfig(): Promise<{ gas_url?: string; last_synced_at?: string } | null> {
+export async function fetchServerConfig(): Promise<{ gas_url?: string; spreadsheet_id?: string; last_synced_at?: string } | null> {
   try {
     const res = await fetch('/api/config');
     if (res.ok) {
@@ -1845,14 +1887,17 @@ export async function uploadImageToServer(dataUrlOrFile: string, filename?: stri
 }
 
 /**
- * Save server configuration (e.g. update gas_url for all connected devices)
+ * Save server configuration (e.g. update gas_url and/or spreadsheet_id for all connected devices)
  */
-export async function saveServerConfig(gasUrl: string): Promise<boolean> {
+export async function saveServerConfig(
+  config: { gas_url?: string; spreadsheet_id?: string } | string
+): Promise<boolean> {
   try {
+    const payload = typeof config === 'string' ? { gas_url: config } : config;
     const res = await fetch('/api/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ gas_url: gasUrl })
+      body: JSON.stringify(payload)
     });
     return res.ok;
   } catch (err) {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ExamData } from '../../types';
 import { 
   Eye, 
@@ -13,11 +13,24 @@ import {
   Music, 
   Check, 
   Image as ImageIcon,
-  Sliders
+  Sliders,
+  Zap,
+  RefreshCw,
+  FileSpreadsheet,
+  CheckCircle2,
+  XCircle,
+  Save as SaveIcon
 } from 'lucide-react';
 import { VisualExamBuilder } from './VisualExamBuilder';
 import { saveExamToIndexedDB } from '../../services/indexedDb';
-import { saveExamToServerDb } from '../../services/api';
+import { saveExamToServerDb, saveServerConfig, fetchServerConfig } from '../../services/api';
+import { 
+  getStoredSpreadsheetId, 
+  setStoredSpreadsheetId, 
+  extractSpreadsheetId, 
+  testGvizConnection,
+  fetchExamViaGviz 
+} from '../../services/gvizService';
 import { sanitizeExamForSkills } from '../../utils/examUtils';
 
 const BLANK_TEMPLATE: ExamData = {
@@ -48,6 +61,91 @@ export const PreviewModule: React.FC<PreviewModuleProps> = ({
   const [activeTab, setActiveTab] = useState<'builder' | 'preview'>('builder');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [copied, setCopied] = useState(false);
+
+  // GViz Speed Test State
+  const [spreadsheetIdInput, setSpreadsheetIdInput] = useState<string>('');
+  const [isTestingGviz, setIsTestingGviz] = useState<boolean>(false);
+  const [isSavingGvizId, setIsSavingGvizId] = useState<boolean>(false);
+  const [gvizSaveSuccess, setGvizSaveSuccess] = useState<boolean>(false);
+  const [gvizSpeedResult, setGvizSpeedResult] = useState<{
+    success: boolean;
+    latencyMs: number;
+    message: string;
+    examsFound: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const localId = getStoredSpreadsheetId();
+    if (localId) {
+      setSpreadsheetIdInput(localId);
+    } else {
+      fetchServerConfig().then((cfg) => {
+        if (cfg?.spreadsheet_id) {
+          setSpreadsheetIdInput(cfg.spreadsheet_id);
+          setStoredSpreadsheetId(cfg.spreadsheet_id);
+        }
+      }).catch(() => {});
+    }
+  }, []);
+
+  const extractedSheetId = extractSpreadsheetId(spreadsheetIdInput);
+
+  const handleSaveSpreadsheetId = async () => {
+    setIsSavingGvizId(true);
+    setGvizSaveSuccess(false);
+    try {
+      if (extractedSheetId) {
+        setStoredSpreadsheetId(extractedSheetId);
+        await saveServerConfig({ spreadsheet_id: extractedSheetId });
+      } else {
+        setStoredSpreadsheetId('');
+        await saveServerConfig({ spreadsheet_id: '' });
+      }
+      setGvizSaveSuccess(true);
+      setTimeout(() => setGvizSaveSuccess(false), 2500);
+    } finally {
+      setIsSavingGvizId(false);
+    }
+  };
+
+  const handleRunGvizSpeedTest = async () => {
+    if (!extractedSheetId) {
+      setGvizSpeedResult({
+        success: false,
+        latencyMs: 0,
+        message: 'Vui lòng nhập Google Spreadsheet ID hoặc link bảng tính hợp lệ.',
+        examsFound: 0
+      });
+      return;
+    }
+
+    setIsTestingGviz(true);
+    setGvizSpeedResult(null);
+
+    try {
+      const connResult = await testGvizConnection(extractedSheetId);
+      const examResult = await fetchExamViaGviz(extractedSheetId, exam.exam_code || 'TEST01');
+      const latency = examResult.latencyMs || connResult.latencyMs;
+
+      setGvizSpeedResult({
+        success: connResult.success,
+        latencyMs: latency,
+        message: connResult.success 
+          ? `GViz phản hồi trong ${latency}ms (<200ms Edge CDN). ${connResult.examsFound} đề thi có sẵn trong sheet.`
+          : connResult.message,
+        examsFound: connResult.examsFound
+      });
+    } catch (err: any) {
+      setGvizSpeedResult({
+        success: false,
+        latencyMs: 0,
+        message: `Lỗi kết nối GViz: ${err.message}`,
+        examsFound: 0
+      });
+    } finally {
+      setIsTestingGviz(false);
+    }
+  };
 
   // Handle save from VisualExamBuilder
   const handleSaveExam = async (updatedExam: ExamData) => {
@@ -232,6 +330,106 @@ export const PreviewModule: React.FC<PreviewModuleProps> = ({
                 <p className="text-base font-black text-[#3C2A63]">{totalPassages} Passages</p>
               </div>
             </div>
+          </div>
+
+          {/* Google Visualization API (GViz/TQ) Edge Connection & Speed Test */}
+          <div className="bg-white border border-purple-100/90 rounded-3xl p-6 shadow-xl shadow-purple-950/5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-purple-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-purple-100 text-[#6B51A5] rounded-xl">
+                  <Zap className="w-5 h-5 text-amber-500" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black text-[#3C2A63] uppercase tracking-wider flex items-center gap-2">
+                    <span>Google Visualization API (GViz / TQ) Connection</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      Edge CDN &lt;200ms
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-[#7C68A5]">
+                    Trích xuất trực tiếp từ Google Sheets, bypass hoàn toàn Apps Script runtime
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+              <div className="md:col-span-8 space-y-1">
+                <label className="text-[11px] font-bold text-[#503A7A] block">
+                  Google Spreadsheet ID / URL:
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={spreadsheetIdInput}
+                    onChange={(e) => setSpreadsheetIdInput(e.target.value)}
+                    placeholder="https://docs.google.com/spreadsheets/d/.../edit hoặc Spreadsheet ID"
+                    className="w-full px-3.5 py-2.5 bg-[#F8F6FC] border border-purple-200 rounded-xl text-xs font-mono text-[#3C2A63] placeholder-[#7C68A5] focus:outline-none focus:ring-2 focus:ring-[#6B51A5]"
+                  />
+                  <FileSpreadsheet className="w-4 h-4 text-[#7C68A5] absolute right-3.5 top-3" />
+                </div>
+              </div>
+
+              <div className="md:col-span-4 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSaveSpreadsheetId}
+                  disabled={isSavingGvizId}
+                  className="flex-1 py-2.5 px-3 bg-[#E2DDEC] hover:bg-[#D5CEE4] text-[#3C2A63] font-bold text-xs rounded-xl border border-purple-200 transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <SaveIcon className="w-3.5 h-3.5 text-[#6B51A5]" />
+                  <span>{gvizSaveSuccess ? 'Đã lưu!' : 'Lưu ID'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleRunGvizSpeedTest}
+                  disabled={isTestingGviz || !extractedSheetId}
+                  className="flex-1 py-2.5 px-3 bg-[#6B51A5] hover:bg-[#583F8F] disabled:opacity-50 text-white font-black text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isTestingGviz ? 'animate-spin' : ''}`} />
+                  <span>{isTestingGviz ? 'Đang test...' : 'Speed Test'}</span>
+                </button>
+              </div>
+            </div>
+
+            {extractedSheetId && (
+              <div className="text-[11px] text-[#7C68A5] flex items-center gap-1.5">
+                <span>Clean Spreadsheet ID:</span>
+                <span className="font-mono text-[#503A7A] bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                  {extractedSheetId}
+                </span>
+              </div>
+            )}
+
+            {gvizSpeedResult && (
+              <div className={`p-3.5 rounded-2xl border text-xs flex items-start gap-2.5 animate-fadeIn ${
+                gvizSpeedResult.success
+                  ? 'bg-emerald-50/80 border-emerald-200 text-emerald-950'
+                  : 'bg-rose-50/80 border-rose-200 text-rose-950'
+              }`}>
+                {gvizSpeedResult.success ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                ) : (
+                  <XCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                )}
+                <div className="space-y-0.5">
+                  <div className="font-black flex items-center gap-2">
+                    <span>{gvizSpeedResult.success ? 'GViz Kết Nối Thành Công' : 'Lỗi Kết Nối GViz'}</span>
+                    {gvizSpeedResult.latencyMs > 0 && (
+                      <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-black border ${
+                        gvizSpeedResult.latencyMs <= 200
+                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                          : 'bg-amber-100 text-amber-800 border-amber-300'
+                      }`}>
+                        ⚡ {gvizSpeedResult.latencyMs}ms {gvizSpeedResult.latencyMs <= 200 ? '(<200ms)' : ''}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] opacity-90">{gvizSpeedResult.message}</p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Reading Passages Summary Audit */}

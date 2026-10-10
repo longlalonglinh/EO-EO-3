@@ -379,17 +379,17 @@ export function saveStoredCheatLog(log: any): any {
 }
 
 // ---------------- SERVER CONFIG ----------------
-export function getStoredConfig(): { gas_url: string; last_synced_at?: string } {
+export function getStoredConfig(): { gas_url: string; spreadsheet_id?: string; last_synced_at?: string } {
   if (cachedConfig) return cachedConfig;
-  const def = { gas_url: DEFAULT_GAS_URL };
-  cachedConfig = safeReadJson<{ gas_url: string; last_synced_at?: string }>(CONFIG_FILE, def);
+  const def = { gas_url: DEFAULT_GAS_URL, spreadsheet_id: '' };
+  cachedConfig = safeReadJson<{ gas_url: string; spreadsheet_id?: string; last_synced_at?: string }>(CONFIG_FILE, def);
   if (!cachedConfig.gas_url) {
     cachedConfig.gas_url = DEFAULT_GAS_URL;
   }
   return cachedConfig;
 }
 
-export function saveStoredConfig(newConfig: Partial<{ gas_url: string; last_synced_at: string }>): any {
+export function saveStoredConfig(newConfig: Partial<{ gas_url: string; spreadsheet_id: string; last_synced_at: string }>): any {
   const current = getStoredConfig();
   cachedConfig = {
     ...current,

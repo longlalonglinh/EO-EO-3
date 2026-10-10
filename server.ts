@@ -910,15 +910,18 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
     }
   });
 
-  // Server Configuration (Shared GAS URL across all devices)
+  // Server Configuration (Shared GAS URL & Spreadsheet ID across all devices)
   app.get('/api/config', (req, res) => {
     const config = getStoredConfig();
     res.json({ success: true, config });
   });
 
   app.post('/api/config', (req, res) => {
-    const { gas_url } = req.body;
-    const updated = saveStoredConfig({ gas_url: String(gas_url || '').trim() });
+    const { gas_url, spreadsheet_id } = req.body;
+    const updateData: any = {};
+    if (gas_url !== undefined) updateData.gas_url = String(gas_url || '').trim();
+    if (spreadsheet_id !== undefined) updateData.spreadsheet_id = String(spreadsheet_id || '').trim();
+    const updated = saveStoredConfig(updateData);
     res.json({ success: true, config: updated });
   });
 

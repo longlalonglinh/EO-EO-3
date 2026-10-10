@@ -4,22 +4,34 @@ import { ExamData, Question, QuestionType, ReadingPassageItem } from '../types';
  * Extracts a valid Google Spreadsheet ID from either a raw ID string
  * or a full Google Sheets URL (e.g., https://docs.google.com/spreadsheets/d/1AbCdEfG.../edit)
  */
-export function extractSpreadsheetId(input?: string): string {
-  if (!input || typeof input !== 'string') return '';
+export function extractSpreadsheetId(input?: string | null): string | null {
+  if (!input || typeof input !== 'string') return null;
   const trimmed = input.trim();
+  if (!trimmed) return null;
   
   // Check if it's a URL matching /spreadsheets/d/([a-zA-Z0-9-_]+)
   const match = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
   if (match && match[1]) {
     return match[1];
   }
+
+  // Check if it's an exported pubhtml or alternative pattern
+  const pubMatch = trimmed.match(/\/spreadsheets\/d\/e\/([a-zA-Z0-9-_]+)/);
+  if (pubMatch && pubMatch[1]) {
+    return pubMatch[1];
+  }
   
-  // If it's already a raw ID (typically 30-50 alphanumeric characters with dashes/underscores)
+  // If it's already a raw ID (typically 20-70 alphanumeric characters with dashes/underscores)
   if (/^[a-zA-Z0-9-_]{20,70}$/.test(trimmed)) {
     return trimmed;
   }
+
+  // Fallback: if no slashes or spaces and reasonable length
+  if (!trimmed.includes('/') && !trimmed.includes(' ') && trimmed.length >= 15) {
+    return trimmed;
+  }
   
-  return trimmed;
+  return null;
 }
 
 /**
@@ -28,13 +40,15 @@ export function extractSpreadsheetId(input?: string): string {
 export function getStoredSpreadsheetId(): string {
   if (typeof window === 'undefined') return '';
   const fromStorage = localStorage.getItem('ielts_spreadsheet_id') || '';
-  if (fromStorage.trim()) return extractSpreadsheetId(fromStorage);
+  const fromStorageClean = extractSpreadsheetId(fromStorage);
+  if (fromStorageClean) return fromStorageClean;
   
   // Environment variable fallback if configured
   try {
     const fromEnv = (import.meta as any).env?.VITE_GOOGLE_SPREADSHEET_ID;
     if (fromEnv && typeof fromEnv === 'string') {
-      return extractSpreadsheetId(fromEnv);
+      const fromEnvClean = extractSpreadsheetId(fromEnv);
+      if (fromEnvClean) return fromEnvClean;
     }
   } catch (e) {
     // Ignore environment lookup in environments without import.meta.env
@@ -187,7 +201,7 @@ export async function fetchExamViaGviz(
       querySheetGviz(
         cleanId,
         'EXAMS',
-        `SELECT A, B, C, D, E, F, G, H, I WHERE UPPER(A) = '${cleanCode}' LIMIT 1`
+        `SELECT A, B, C, D, E, F, G, H, I, J WHERE UPPER(A) = '${cleanCode}' LIMIT 1`
       ),
       querySheetGviz(
         cleanId,
@@ -218,6 +232,7 @@ export async function fetchExamViaGviz(
     const writingTask1Prompt = examRow[6]?.v ? String(examRow[6].v).trim() : '';
     const writingTask2Prompt = examRow[7]?.v ? String(examRow[7].v).trim() : '';
     const writingTask1Image = examRow[8]?.v ? String(examRow[8].v).trim() : '';
+    const audioTitle = examRow[9]?.v ? String(examRow[9].v).trim() : '';
 
     // Parse QUESTIONS result
     const listeningQuestions: Question[] = [];
@@ -295,6 +310,7 @@ export async function fetchExamViaGviz(
       skills: detectedSkills,
       duration_mins: durationMins,
       audio_url: audioUrl,
+      audio_title: audioTitle,
       passage_title: 'Reading Passage 1',
       passage_text: readingPassage,
       reading_passage: readingPassage,
