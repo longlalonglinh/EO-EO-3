@@ -1589,6 +1589,36 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server IELTS Exam System running on http://0.0.0.0:${PORT}`);
+
+    // Server Startup Hook: Automatically warm up In-Memory Cache (<20ms) from Google Sheets & Local Storage
+    setTimeout(async () => {
+      try {
+        console.log('[Server Startup]: Initializing and warming up Exam In-Memory Cache...');
+        // Load locally saved exams into memory first
+        const localExams = getStoredExams();
+        for (const ex of localExams) {
+          if (ex && ex.exam_code) {
+            setCachedExam(ex.exam_code, ex);
+          }
+        }
+        console.log(`[Server Startup]: Preloaded ${localExams.length} locally stored exams into RAM Cache.`);
+
+        // If Google Service Account is configured, synchronize latest questions directly from private Google Sheet
+        if (isServiceAccountConfigured()) {
+          console.log('[Server Startup]: Google Service Account detected. Syncing all exams from Google Sheets...');
+          const syncResult = await syncAllExamsFromGoogleSheets();
+          if (syncResult.success) {
+            console.log(`[Server Startup]: Successfully warmed up ${syncResult.count} exams from Google Sheets!`);
+          } else {
+            console.warn('[Server Startup]: Google Sheets sync completed with notice:', syncResult.error);
+          }
+        } else {
+          console.log('[Server Startup]: Google Service Account not configured yet. Server is ready to serve from local storage & memory.');
+        }
+      } catch (err: any) {
+        console.warn('[Server Startup Hook Error]:', err.message);
+      }
+    }, 500);
   });
 }
 

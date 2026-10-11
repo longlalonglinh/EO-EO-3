@@ -26,7 +26,8 @@ import {
   Lock,
   Key,
   Layers,
-  Inbox
+  Inbox,
+  Globe
 } from 'lucide-react';
 import { 
   FullDiagnosticReport, 
@@ -593,14 +594,23 @@ export const DatabaseDiagnosticsModal: React.FC<DatabaseDiagnosticsModalProps> =
           {activeTab === 'gviz' && (
             <div className="space-y-4">
               
-              {/* Architecture Highlight Banner */}
-              <div className="p-4 bg-indigo-950/40 border border-indigo-500/30 rounded-2xl space-y-1.5">
-                <div className="flex items-center gap-2 text-xs font-extrabold text-indigo-300">
-                  <Sparkles className="w-4 h-4 text-indigo-400" />
-                  <span>Google Visualization Query Protocol (`gviz/tq`)</span>
+              {/* Architecture Highlight Banner & GitHub Pages Static Mode Notice */}
+              <div className="p-4 bg-amber-950/40 border border-amber-500/40 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2 text-xs font-black text-amber-300">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>Đang chạy chế độ GitHub Pages (Static Mode)</span>
+                  </div>
+                  <span className="text-[10px] px-2.5 py-0.5 rounded-full font-black bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                    <Globe className="w-3 h-3" />
+                    GitHub Pages Pure Static SPA
+                  </span>
+                </div>
+                <div className="text-[11px] text-amber-200/90 leading-relaxed font-medium bg-amber-900/30 p-2.5 rounded-xl border border-amber-500/20">
+                  ⚠️ <strong>Yêu cầu cấu hình Google Sheet:</strong> Bắt buộc Google Sheet phải bật quyền <strong>&quot;Anyone with the link can view&quot;</strong> (Bất kỳ ai có liên kết đều có thể xem) để giao thức GViz/TQ có thể nạp dữ liệu câu hỏi trực tiếp trên trình duyệt thí sinh.
                 </div>
                 <p className="text-[11px] text-slate-300 leading-relaxed">
-                  Truy vấn đề thi trực tiếp qua hạ tầng <strong>Google C++ Edge Engine &amp; CDN</strong>. Bỏ qua hoàn toàn độ trễ khởi động V8 của Apps Script, hạ thời gian tải đề thi từ <strong>2s – 5s</strong> xuống còn <strong>~50ms – 200ms</strong>, không tốn hạn ngạch tài khoản Google.
+                  Giao thức Google Visualization (`gviz/tq`) truy vấn trực tiếp qua hạ tầng Google C++ Edge Engine &amp; CDN, tải đề thi siêu tốc <strong>~50ms – 180ms</strong> mà không phụ thuộc vào máy chủ Node.js backend.
                 </p>
               </div>
 

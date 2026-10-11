@@ -201,7 +201,7 @@ export async function fetchExamViaGviz(
       querySheetGviz(
         cleanId,
         'EXAMS',
-        `SELECT A, B, C, D, E, F, G, H, I, J WHERE UPPER(A) = '${cleanCode}' LIMIT 1`
+        `SELECT A, B, C, D, E, F, G, H, I, J, K WHERE UPPER(A) = '${cleanCode}' LIMIT 1`
       ),
       querySheetGviz(
         cleanId,
@@ -248,8 +248,8 @@ export async function fetchExamViaGviz(
 
         const qId = String(c[1]?.v || `Q${index + 1}`).trim();
         const section = String(c[2]?.v || 'reading').toLowerCase().trim() as 'listening' | 'reading';
-        const questionText = String(c[3]?.v || '').trim();
-        const questionType = String(c[4]?.v || 'multiple_choice').toLowerCase().trim() as QuestionType;
+        let questionText = String(c[3]?.v || '').trim();
+        let questionType = String(c[4]?.v || 'multiple_choice').toLowerCase().trim() as QuestionType;
 
         // Parse options array safely from JSON, pipe-delimited (|), or newline-separated (\n)
         let options: string[] = [];
@@ -259,7 +259,23 @@ export async function fetchExamViaGviz(
           if (strOptions) {
             try {
               const parsedJson = JSON.parse(strOptions);
-              if (Array.isArray(parsedJson)) {
+              // Backward Compatibility: If Col F contains legacy JSON object with question_text
+              // and Col D was stored as a short token ("A", "B", "C", "D", "TRUE", "FALSE")
+              if (parsedJson && typeof parsedJson === 'object' && !Array.isArray(parsedJson)) {
+                if (parsedJson.question_text) {
+                  const upperText = questionText.toUpperCase();
+                  const shortFlags = ['A', 'B', 'C', 'D', 'TRUE', 'FALSE', 'NOT GIVEN', 'YES', 'NO'];
+                  if (shortFlags.includes(upperText) || questionText.length <= 4) {
+                    questionText = String(parsedJson.question_text).trim();
+                  }
+                }
+                if (parsedJson.question_type) {
+                  questionType = String(parsedJson.question_type).toLowerCase().trim() as QuestionType;
+                }
+                if (Array.isArray(parsedJson.options)) {
+                  options = parsedJson.options.map((opt: any) => String(opt).trim()).filter(Boolean);
+                }
+              } else if (Array.isArray(parsedJson)) {
                 options = parsedJson.map((opt: any) => String(opt).trim()).filter(Boolean);
               } else if (typeof parsedJson === 'string') {
                 options = [parsedJson.trim()];

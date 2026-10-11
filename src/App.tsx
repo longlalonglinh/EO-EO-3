@@ -825,36 +825,52 @@ export default function App() {
   const [networkToast, setNetworkToast] = useState<{ type: 'offline' | 'online'; message: string } | null>(null);
 
   useEffect(() => {
-    const handleOnline = () => {
-      console.log('Network online restored. Triggering background submission sync...');
-      triggerOfflineRetry();
+    const handleOnline = async () => {
+      console.log('[Auto-Resync]: Internet connection restored. Processing offline pending submissions...');
       setNetworkToast({
         type: 'online',
-        message: 'Internet connection restored. Test progress synced safely.'
+        message: 'Network restored! Auto-syncing pending exam submissions to Google Sheets...'
       });
-      setTimeout(() => setNetworkToast(null), 4000);
+
+      try {
+        const syncOutcome = await syncPendingSubmissions(gasUrl);
+        setOfflinePending(syncOutcome.remaining > 0);
+        if (syncOutcome.synced > 0) {
+          setNetworkToast({
+            type: 'online',
+            message: `Successfully synced ${syncOutcome.synced} pending exam submission(s) to Google Sheets!`
+          });
+        }
+      } catch (err) {
+        console.warn('[Auto-Resync Error]:', err);
+      } finally {
+        setTimeout(() => setNetworkToast(null), 5000);
+      }
     };
 
     const handleOffline = () => {
       setNetworkToast({
         type: 'offline',
-        message: 'Network offline. Your answers are safely backed up to IndexedDB and will auto-sync upon reconnection.'
+        message: 'Network offline. Your exam answers are safely preserved in IndexedDB vault and will auto-sync upon reconnection.'
       });
     };
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
+    // Initial check on mount in case there are pending submissions
+    triggerOfflineRetry();
+
     const interval = setInterval(() => {
       triggerOfflineRetry();
-    }, 10000);
+    }, 12000);
 
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       clearInterval(interval);
     };
-  }, [triggerOfflineRetry]);
+  }, [gasUrl, triggerOfflineRetry]);
 
   // Complete GAS Code Script Template
   const gasBackendScript = `/**
@@ -1907,6 +1923,35 @@ function doPost(e) {
         {activeView === 'admin' && (
           <div className="space-y-6">
             
+            {/* GitHub Pages Static Mode Info Alert */}
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-3xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center space-x-3">
+                <div className="p-2.5 bg-amber-500/20 text-amber-300 rounded-2xl">
+                  <AlertTriangle className="w-5 h-5 text-amber-400" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-extrabold text-amber-300 text-xs uppercase tracking-wide">
+                      Đang chạy chế độ GitHub Pages (Static Mode)
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-500/20 text-amber-200 border border-amber-500/40">
+                      Pure Static SPA
+                    </span>
+                  </div>
+                  <p className="text-amber-200/90 text-[11px] mt-0.5">
+                    Yêu cầu Google Sheet phải bật quyền <strong>&quot;Anyone with the link can view&quot;</strong> để GViz có thể nạp câu hỏi siêu tốc mà không cần máy chủ trung gian.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDiagnosticsOpen(true)}
+                className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xl text-[11px] transition shrink-0 cursor-pointer shadow-md"
+              >
+                Cấu hình Sheet &amp; GViz
+              </button>
+            </div>
+
             {/* GAS Endpoint URL Config Bar */}
             <div className="bg-white/90 border border-purple-100/80 rounded-3xl p-5 shadow-xl shadow-purple-950/5 flex flex-col md:flex-row items-center justify-between gap-4">
               <div className="flex items-center space-x-3 w-full md:w-auto">

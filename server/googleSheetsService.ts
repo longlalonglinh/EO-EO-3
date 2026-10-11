@@ -178,7 +178,7 @@ export async function fetchExamsFromSheet(spreadsheetId?: string): Promise<any[]
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: sheetId,
-    range: 'EXAMS!A2:J',
+    range: 'EXAMS!A2:K',
     valueRenderOption: 'UNFORMATTED_VALUE'
   });
 
@@ -199,6 +199,7 @@ export async function fetchExamsFromSheet(spreadsheetId?: string): Promise<any[]
     const writingTask2Prompt = String(row[7] || '').trim();
     const writingTask1Image = String(row[8] || '').trim();
     const audioTitle = String(row[9] || '').trim();
+    const createdAt = String(row[10] || '').trim();
 
     return {
       exam_code: examCode,
@@ -210,7 +211,8 @@ export async function fetchExamsFromSheet(spreadsheetId?: string): Promise<any[]
       reading_passage: readingPassage,
       writing_task1_prompt: writingTask1Prompt,
       writing_task2_prompt: writingTask2Prompt,
-      writing_task1_image: writingTask1Image
+      writing_task1_image: writingTask1Image,
+      created_at: createdAt
     };
   }).filter(e => Boolean(e.exam_code));
 }
@@ -605,26 +607,35 @@ export async function flushSubmissionQueue(): Promise<{ success: boolean; count:
         reading: sub.reading_answers || {}
       });
 
+      const writingScoresStr = typeof sub.writing_scores === 'object' && sub.writing_scores !== null
+        ? JSON.stringify(sub.writing_scores)
+        : (typeof sub.detailed_results?.writing === 'object' ? JSON.stringify(sub.detailed_results.writing) : JSON.stringify({ TR: 0, CC: 0, LR: 0, GRA: 0 }));
+
       return [
-        sub.submission_id || `SUB_${Date.now()}`,
-        sub.sbd || '',
-        sub.student_name || sub.candidate_name || '',
-        sub.exam_code || '',
-        sub.submitted_at || new Date().toISOString(),
-        sub.overall_band ?? sub.band_score ?? '',
-        sub.listening_score ?? sub.listening_band ?? '',
-        sub.reading_score ?? sub.reading_band ?? '',
-        sub.writing_task1_response || sub.writing_responses?.task1 || '',
-        sub.writing_task2_response || sub.writing_responses?.task2 || '',
-        userAnswersStr,
-        sub.cheat_count ?? 0,
-        sub.status || 'SUBMITTED'
+        sub.submission_id || `SUB_${Date.now()}`,               // Col 1 (A): SUBMISSION_ID
+        sub.sbd || '',                                          // Col 2 (B): SBD
+        sub.student_name || sub.candidate_name || '',           // Col 3 (C): STUDENT_NAME
+        sub.exam_code || '',                                    // Col 4 (D): EXAM_CODE
+        sub.test_mode || 'TEST',                                // Col 5 (E): TEST_MODE
+        sub.listening_raw_score ?? sub.listening_raw ?? '',     // Col 6 (F): LISTENING_RAW
+        sub.listening_band ?? sub.listening_score ?? '',        // Col 7 (G): LISTENING_BAND
+        sub.reading_raw_score ?? sub.reading_raw ?? '',         // Col 8 (H): READING_RAW
+        sub.reading_band ?? sub.reading_score ?? '',            // Col 9 (I): READING_BAND
+        sub.writing_task1_text || sub.writing_task1_response || sub.writing_responses?.task1 || '', // Col 10 (J): WRITING_TASK1_TEXT
+        sub.writing_task2_text || sub.writing_task2_response || sub.writing_responses?.task2 || '', // Col 11 (K): WRITING_TASK2_TEXT
+        userAnswersStr,                                         // Col 12 (L): ANSWERS_JSON
+        writingScoresStr,                                       // Col 13 (M): WRITING_SCORES_JSON
+        sub.writing_band ?? '',                                 // Col 14 (N): WRITING_BAND
+        sub.overall_band ?? sub.band_score ?? '',               // Col 15 (O): OVERALL_BAND
+        sub.status || sub.writing_status || 'PENDING_TEACHER',  // Col 16 (P): STATUS
+        sub.submitted_at || new Date().toISOString(),           // Col 17 (Q): SUBMITTED_AT
+        sub.violations_count ?? sub.cheat_count ?? 0            // Col 18 (R): VIOLATIONS_COUNT
       ];
     });
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: sheetId,
-      range: 'SUBMISSIONS!A:M',
+      range: 'SUBMISSIONS!A:R',
       valueInputOption: 'USER_ENTERED',
       insertDataOption: 'INSERT_ROWS',
       requestBody: {
@@ -658,7 +669,7 @@ export async function flushSubmissionQueue(): Promise<{ success: boolean; count:
 }
 
 /**
- * Appends a specific batch of submissions directly to Google Sheets.
+ * Appends a specific batch of submissions directly to Google Sheets (18 standard columns A-R).
  */
 export async function batchAppendSubmissions(submissions: any[]): Promise<{ success: boolean; count: number; error?: string }> {
   if (!Array.isArray(submissions) || submissions.length === 0) {
@@ -673,25 +684,42 @@ export async function batchAppendSubmissions(submissions: any[]): Promise<{ succ
   }
 
   try {
-    const rows = submissions.map(sub => [
-      sub.submission_id || `SUB_${Date.now()}`,
-      sub.sbd || '',
-      sub.student_name || sub.candidate_name || '',
-      sub.exam_code || '',
-      sub.submitted_at || new Date().toISOString(),
-      sub.overall_band ?? sub.band_score ?? '',
-      sub.listening_score ?? sub.listening_band ?? '',
-      sub.reading_score ?? sub.reading_band ?? '',
-      sub.writing_task1_response || sub.writing_responses?.task1 || '',
-      sub.writing_task2_response || sub.writing_responses?.task2 || '',
-      JSON.stringify(sub.answers || {}),
-      sub.cheat_count ?? 0,
-      sub.status || 'SUBMITTED'
-    ]);
+    const rows = submissions.map(sub => {
+      const userAnswersStr = JSON.stringify({
+        answers: sub.answers || {},
+        listening: sub.listening_answers || {},
+        reading: sub.reading_answers || {}
+      });
+
+      const writingScoresStr = typeof sub.writing_scores === 'object' && sub.writing_scores !== null
+        ? JSON.stringify(sub.writing_scores)
+        : (typeof sub.detailed_results?.writing === 'object' ? JSON.stringify(sub.detailed_results.writing) : JSON.stringify({ TR: 0, CC: 0, LR: 0, GRA: 0 }));
+
+      return [
+        sub.submission_id || `SUB_${Date.now()}`,               // Col 1 (A): SUBMISSION_ID
+        sub.sbd || '',                                          // Col 2 (B): SBD
+        sub.student_name || sub.candidate_name || '',           // Col 3 (C): STUDENT_NAME
+        sub.exam_code || '',                                    // Col 4 (D): EXAM_CODE
+        sub.test_mode || 'TEST',                                // Col 5 (E): TEST_MODE
+        sub.listening_raw_score ?? sub.listening_raw ?? '',     // Col 6 (F): LISTENING_RAW
+        sub.listening_band ?? sub.listening_score ?? '',        // Col 7 (G): LISTENING_BAND
+        sub.reading_raw_score ?? sub.reading_raw ?? '',         // Col 8 (H): READING_RAW
+        sub.reading_band ?? sub.reading_score ?? '',            // Col 9 (I): READING_BAND
+        sub.writing_task1_text || sub.writing_task1_response || sub.writing_responses?.task1 || '', // Col 10 (J): WRITING_TASK1_TEXT
+        sub.writing_task2_text || sub.writing_task2_response || sub.writing_responses?.task2 || '', // Col 11 (K): WRITING_TASK2_TEXT
+        userAnswersStr,                                         // Col 12 (L): ANSWERS_JSON
+        writingScoresStr,                                       // Col 13 (M): WRITING_SCORES_JSON
+        sub.writing_band ?? '',                                 // Col 14 (N): WRITING_BAND
+        sub.overall_band ?? sub.band_score ?? '',               // Col 15 (O): OVERALL_BAND
+        sub.status || sub.writing_status || 'PENDING_TEACHER',  // Col 16 (P): STATUS
+        sub.submitted_at || new Date().toISOString(),           // Col 17 (Q): SUBMITTED_AT
+        sub.violations_count ?? sub.cheat_count ?? 0            // Col 18 (R): VIOLATIONS_COUNT
+      ];
+    });
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: sheetId,
-      range: 'SUBMISSIONS!A:M',
+      range: 'SUBMISSIONS!A:R',
       valueInputOption: 'USER_ENTERED',
       insertDataOption: 'INSERT_ROWS',
       requestBody: { values: rows }

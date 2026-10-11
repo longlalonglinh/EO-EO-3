@@ -26,13 +26,13 @@ export const GOOGLE_APPS_SCRIPT_CODE = `/**
 function setupInitialSheets() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   
-  // Tab 1: EXAMS
+  // Tab 1: EXAMS (11 standard columns A-K)
   var sheetExams = ss.getSheetByName('EXAMS') || ss.insertSheet('EXAMS');
   if (sheetExams.getLastRow() === 0) {
     sheetExams.appendRow([
       'EXAM_CODE', 'TITLE', 'TEST_TYPE', 'DURATION_MINS', 
       'AUDIO_URL', 'READING_PASSAGE', 'WRITING_TASK1_PROMPT', 'WRITING_TASK2_PROMPT', 
-      'WRITING_TASK1_IMAGE', 'CREATED_AT'
+      'WRITING_TASK1_IMAGE', 'AUDIO_TITLE', 'CREATED_AT'
     ]);
     sheetExams.getRange("1:1").setFontWeight("bold").setBackground("#e2e8f0");
   }
@@ -47,13 +47,13 @@ function setupInitialSheets() {
     sheetQuestions.getRange("1:1").setFontWeight("bold").setBackground("#e2e8f0");
   }
   
-  // Tab 3: SUBMISSIONS
+  // Tab 3: SUBMISSIONS (18 standard columns A-R)
   var sheetSubmissions = ss.getSheetByName('SUBMISSIONS') || ss.insertSheet('SUBMISSIONS');
   if (sheetSubmissions.getLastRow() === 0) {
     sheetSubmissions.appendRow([
-      'SUBMISSION_ID', 'SBD', 'EXAM_CODE', 'TEST_MODE', 
+      'SUBMISSION_ID', 'SBD', 'STUDENT_NAME', 'EXAM_CODE', 'TEST_MODE', 
       'LISTENING_RAW', 'LISTENING_BAND', 'READING_RAW', 'READING_BAND',
-      'WRITING_TASK1_TEXT', 'WRITING_TASK2_TEXT', 'WRITING_SCORES_JSON', 
+      'WRITING_TASK1_TEXT', 'WRITING_TASK2_TEXT', 'ANSWERS_JSON', 'WRITING_SCORES_JSON', 
       'WRITING_BAND', 'OVERALL_BAND', 'STATUS', 'SUBMITTED_AT', 'VIOLATIONS_COUNT'
     ]);
     sheetSubmissions.getRange("1:1").setFontWeight("bold").setBackground("#e2e8f0");
@@ -283,20 +283,24 @@ function doGet(e) {
         submissions.push({
           submission_id: r[0],
           sbd: r[1],
-          exam_code: r[2],
-          test_mode: r[3],
-          listening_raw: r[4],
-          listening_band: r[5],
-          reading_raw: r[6],
-          reading_band: r[7],
-          writing_task1_text: r[8],
-          writing_task2_text: r[9],
-          writing_scores: parseJsonSafe(r[10]),
-          writing_band: r[11],
-          overall_band: r[12],
-          writing_status: r[13] || 'PENDING_TEACHER',
-          submitted_at: r[14],
-          violations_count: r[15] || 0
+          student_name: r[2] || '',
+          exam_code: r[3],
+          test_mode: r[4],
+          listening_raw: r[5],
+          listening_band: r[6],
+          reading_raw: r[7],
+          reading_band: r[8],
+          writing_task1_text: r[9],
+          writing_task2_text: r[10],
+          answers: parseJsonSafe(r[11]),
+          answers_json: r[11],
+          writing_scores: parseJsonSafe(r[12]),
+          writing_band: r[13],
+          overall_band: r[14],
+          status: r[15] || 'PENDING_TEACHER',
+          writing_status: r[15] || 'PENDING_TEACHER',
+          submitted_at: r[16],
+          violations_count: r[17] || 0
         });
       }
       return createJsonResponse({ status: 'success', success: true, count: submissions.length, data: submissions, submissions: submissions });
@@ -423,10 +427,21 @@ function doPost(e) {
         readingBand = convertRawToIeltsBand(readingRaw, rMax || 40);
       }
       
+      var studentName = payload.student_name || payload.candidate_name || '';
+      var answersJson = JSON.stringify({
+        answers: payload.answers || {},
+        listening: payload.listening_answers || {},
+        reading: payload.reading_answers || {}
+      });
+      var writingScoresJson = JSON.stringify(payload.writing_scores || { TR: 0, CC: 0, LR: 0, GRA: 0 });
+      var writingBand = payload.writing_band || 0;
+      var status = payload.status || 'PENDING_TEACHER';
+
       var sheetSubmissions = ss.getSheetByName('SUBMISSIONS') || ss.insertSheet('SUBMISSIONS');
       sheetSubmissions.appendRow([
         submissionId,
         sbd,
+        studentName,
         examCode,
         testMode,
         listeningRaw,
@@ -435,10 +450,11 @@ function doPost(e) {
         readingBand,
         writingTask1Text,
         writingTask2Text,
-        JSON.stringify({ TR: 0, CC: 0, LR: 0, GRA: 0 }),
-        0, // Writing band
+        answersJson,
+        writingScoresJson,
+        writingBand,
         payload.overall_band || 0,
-        'PENDING_TEACHER',
+        status,
         submittedAt,
         violationsCount
       ]);
@@ -487,14 +503,14 @@ function doPost(e) {
         var dataS = sheetS.getDataRange().getValues();
         for (var rowIdx = 1; rowIdx < dataS.length; rowIdx++) {
           if (String(dataS[rowIdx][0]) === String(subId)) {
-            var lB = Number(dataS[rowIdx][5]) || 0;
-            var rB = Number(dataS[rowIdx][7]) || 0;
+            var lB = Number(dataS[rowIdx][6]) || 0;
+            var rB = Number(dataS[rowIdx][8]) || 0;
             var overallB = Math.round(((lB + rB + writingBand) / 3) * 2) / 2;
             
-            sheetS.getRange(rowIdx + 1, 11).setValue(JSON.stringify(scores));
-            sheetS.getRange(rowIdx + 1, 12).setValue(writingBand);
-            sheetS.getRange(rowIdx + 1, 13).setValue(overallB);
-            sheetS.getRange(rowIdx + 1, 14).setValue('GRADED');
+            sheetS.getRange(rowIdx + 1, 13).setValue(JSON.stringify(scores));
+            sheetS.getRange(rowIdx + 1, 14).setValue(writingBand);
+            sheetS.getRange(rowIdx + 1, 15).setValue(overallB);
+            sheetS.getRange(rowIdx + 1, 16).setValue('GRADED');
             
             response = {
               status: 'success',
@@ -545,6 +561,7 @@ function doPost(e) {
       var rawTask1Img = allowWriting ? (exam.writing_task1_image || exam.writing_task1_image_url || exam.writing_task1_imageUrl || '') : '';
       // Limit cell character length to avoid Google Sheets 50k cell overflow error
       var eW1Img = (rawTask1Img && rawTask1Img.length > 45000 && rawTask1Img.indexOf('data:image') === 0) ? '' : rawTask1Img;
+      var eAudioTitle = exam.audio_title || '';
 
       var nowTime = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss");
       
@@ -558,7 +575,7 @@ function doPost(e) {
         }
       }
       
-      var examRow = [eCode, eTitle, eType, eDuration, eAudio, ePassage, eW1, eW2, eW1Img, nowTime];
+      var examRow = [eCode, eTitle, eType, eDuration, eAudio, ePassage, eW1, eW2, eW1Img, eAudioTitle, nowTime];
       if (existingRowIdx > 0) {
         sheetE.getRange(existingRowIdx, 1, 1, examRow.length).setValues([examRow]);
       } else {
