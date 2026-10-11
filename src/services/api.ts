@@ -1890,7 +1890,14 @@ export async function uploadImageToServer(dataUrlOrFile: string, filename?: stri
  * Save server configuration (e.g. update gas_url and/or spreadsheet_id for all connected devices)
  */
 export async function saveServerConfig(
-  config: { gas_url?: string; spreadsheet_id?: string } | string
+  config: { 
+    gas_url?: string; 
+    spreadsheet_id?: string;
+    service_account_email?: string;
+    service_account_private_key?: string;
+    service_account_json?: string;
+    service_account_project_id?: string;
+  } | string
 ): Promise<boolean> {
   try {
     const payload = typeof config === 'string' ? { gas_url: config } : config;
@@ -1904,6 +1911,71 @@ export async function saveServerConfig(
     console.warn('Could not save server config:', err);
     return false;
   }
+}
+
+/**
+ * Trigger Google Sheets Cache synchronization on Server Node.js (/api/sync-sheet)
+ * Reads private Google Sheet via Service Account and populates Server RAM cache (< 20ms).
+ */
+export async function triggerServerSheetSync(
+  examCode?: string,
+  spreadsheetId?: string
+): Promise<{ success: boolean; message: string; synced_count?: number; latencyMs?: number }> {
+  const startTime = Date.now();
+  try {
+    const res = await fetch('/api/sync-sheet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ exam_code: examCode, spreadsheet_id: spreadsheetId })
+    });
+    const latencyMs = Date.now() - startTime;
+    const data = await res.json();
+    return {
+      success: data.success,
+      message: data.message || (data.success ? 'Server in-memory cache synchronized successfully.' : data.error),
+      synced_count: data.synced_count,
+      latencyMs
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: 'Failed to contact server sync endpoint: ' + err.message,
+      latencyMs: Date.now() - startTime
+    };
+  }
+}
+
+/**
+ * Fetch Google Apps Script Webhook trigger script code for installable onEdit trigger
+ */
+export async function fetchAppsScriptWebhookCode(): Promise<string> {
+  try {
+    const res = await fetch('/api/admin/apps-script-webhook');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.script) {
+        return data.script;
+      }
+    }
+  } catch (err) {
+    console.warn('Could not fetch webhook script from server:', err);
+  }
+  return '';
+}
+
+/**
+ * Manually flush pending submissions queue from server to Google Sheets
+ */
+export async function flushServerSubmissionsQueue(): Promise<{ success: boolean; count: number }> {
+  try {
+    const res = await fetch('/api/admin/flush-submissions-queue', { method: 'POST' });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('Could not flush submissions queue:', err);
+  }
+  return { success: false, count: 0 };
 }
 
 /**

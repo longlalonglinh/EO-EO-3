@@ -226,7 +226,9 @@ export async function fetchExamViaGviz(
     const examRow = examTable.rows[0].c;
     const title = examRow[1]?.v ? String(examRow[1].v) : `IELTS Exam - ${cleanCode}`;
     const testType = (examRow[2]?.v === 'PRACTICE' ? 'PRACTICE' : 'TEST') as 'TEST' | 'PRACTICE';
-    const durationMins = Number(examRow[3]?.v) || 120;
+    const rawDuration = examRow[3]?.v;
+    const parsedDuration = typeof rawDuration === 'number' ? rawDuration : Number(rawDuration);
+    const durationMins = (!isNaN(parsedDuration) && parsedDuration > 0) ? parsedDuration : 120;
     const audioUrl = examRow[4]?.v ? String(examRow[4].v).trim() : '';
     const readingPassage = examRow[5]?.v ? String(examRow[5].v).trim() : '';
     const writingTask1Prompt = examRow[6]?.v ? String(examRow[6].v).trim() : '';
@@ -249,14 +251,28 @@ export async function fetchExamViaGviz(
         const questionText = String(c[3]?.v || '').trim();
         const questionType = String(c[4]?.v || 'multiple_choice').toLowerCase().trim() as QuestionType;
 
-        // Parse options array from JSON or pipe-delimited format
+        // Parse options array safely from JSON, pipe-delimited (|), or newline-separated (\n)
         let options: string[] = [];
         const rawOptions = c[5]?.v;
-        if (typeof rawOptions === 'string' && rawOptions.trim()) {
-          try {
-            options = JSON.parse(rawOptions);
-          } catch {
-            options = rawOptions.split('|').map((opt: string) => opt.trim());
+        if (rawOptions !== undefined && rawOptions !== null) {
+          const strOptions = String(rawOptions).trim();
+          if (strOptions) {
+            try {
+              const parsedJson = JSON.parse(strOptions);
+              if (Array.isArray(parsedJson)) {
+                options = parsedJson.map((opt: any) => String(opt).trim()).filter(Boolean);
+              } else if (typeof parsedJson === 'string') {
+                options = [parsedJson.trim()];
+              }
+            } catch {
+              if (strOptions.includes('|')) {
+                options = strOptions.split('|').map((opt: string) => opt.trim()).filter(Boolean);
+              } else if (strOptions.includes('\n')) {
+                options = strOptions.split('\n').map((opt: string) => opt.trim()).filter(Boolean);
+              } else {
+                options = [strOptions];
+              }
+            }
           }
         }
 
@@ -281,17 +297,45 @@ export async function fetchExamViaGviz(
       });
     }
 
-    // Build standard reading passages structure
-    const passages: ReadingPassageItem[] = readingPassage
-      ? [
+    // Build standard reading passages structure (Supports Multi-Passage split with '--- Passage Divider ---')
+    let passages: ReadingPassageItem[] = [];
+    if (readingPassage) {
+      if (readingPassage.includes('--- Passage Divider ---')) {
+        const passageChunks = readingPassage
+          .split(/\r?\n\s*---\s*Passage Divider\s*---\s*\r?\n|--- Passage Divider ---/i)
+          .map(chunk => chunk.trim())
+          .filter(Boolean);
+
+        const totalReadingCount = readingQuestions.length;
+        const chunkCount = Math.max(passageChunks.length, 1);
+
+        passages = passageChunks.map((chunkText, pIdx) => {
+          const pIndex = Math.min(Math.max(pIdx + 1, 1), 3) as 1 | 2 | 3;
+          const startIdx = Math.floor((pIdx * totalReadingCount) / chunkCount);
+          const endIdx = Math.floor(((pIdx + 1) * totalReadingCount) / chunkCount);
+          const assignedQuestions = readingQuestions.slice(startIdx, endIdx).map(q => ({
+            ...q,
+            passage_index: pIndex
+          }));
+
+          return {
+            passage_index: pIndex,
+            title: `Reading Passage ${pIndex}`,
+            text: chunkText,
+            questions: assignedQuestions
+          };
+        });
+      } else {
+        passages = [
           {
             passage_index: 1,
             title: 'Reading Passage 1',
             text: readingPassage,
-            questions: readingQuestions
+            questions: readingQuestions.map(q => ({ ...q, passage_index: 1 }))
           }
-        ]
-      : [];
+        ];
+      }
+    }
 
     // Detect skills
     const detectedSkills: ('listening' | 'reading' | 'writing')[] = [];

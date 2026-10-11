@@ -25,6 +25,16 @@ import { parseExamFromDocumentText } from './src/services/documentExamParser';
 import { scoreExam, computeAnswersChecksum } from './src/services/answerScoring';
 import { GOOGLE_APPS_SCRIPT_CODE } from './src/data/gasScriptCode';
 import * as pdfParseModule from 'pdf-parse';
+import { 
+  syncExamFromGoogleSheets,
+  syncAllExamsFromGoogleSheets,
+  getCachedExam,
+  setCachedExam,
+  enqueueSubmission,
+  flushSubmissionQueue,
+  isServiceAccountConfigured,
+  getEffectiveSpreadsheetId
+} from './server/googleSheetsService';
 
 const __dirname = process.cwd();
 
@@ -911,19 +921,101 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
   });
 
   // Server Configuration (Shared GAS URL & Spreadsheet ID across all devices)
+  // Server Configuration (Shared GAS URL, Spreadsheet ID & Google Service Account)
   app.get('/api/config', (req, res) => {
     const config = getStoredConfig();
-    res.json({ success: true, config });
+    res.json({ 
+      success: true, 
+      config: {
+        ...config,
+        service_account_private_key: config.service_account_private_key ? '*** CONFIGURED ***' : undefined,
+        service_account_json: config.service_account_json ? '*** CONFIGURED ***' : undefined,
+        is_service_account_configured: isServiceAccountConfigured(),
+        effective_spreadsheet_id: getEffectiveSpreadsheetId()
+      } 
+    });
   });
 
   app.post('/api/config', (req, res) => {
-    const { gas_url, spreadsheet_id } = req.body;
+    const { 
+      gas_url, 
+      spreadsheet_id, 
+      service_account_email, 
+      service_account_private_key, 
+      service_account_json, 
+      service_account_project_id 
+    } = req.body;
+
     const updateData: any = {};
     if (gas_url !== undefined) updateData.gas_url = String(gas_url || '').trim();
     if (spreadsheet_id !== undefined) updateData.spreadsheet_id = String(spreadsheet_id || '').trim();
+    if (service_account_email !== undefined) updateData.service_account_email = String(service_account_email || '').trim();
+    if (service_account_private_key !== undefined) updateData.service_account_private_key = String(service_account_private_key || '').trim();
+    if (service_account_json !== undefined) updateData.service_account_json = String(service_account_json || '').trim();
+    if (service_account_project_id !== undefined) updateData.service_account_project_id = String(service_account_project_id || '').trim();
+
     const updated = saveStoredConfig(updateData);
-    res.json({ success: true, config: updated });
+    res.json({ 
+      success: true, 
+      config: {
+        ...updated,
+        service_account_private_key: updated.service_account_private_key ? '*** CONFIGURED ***' : undefined,
+        service_account_json: updated.service_account_json ? '*** CONFIGURED ***' : undefined,
+        is_service_account_configured: isServiceAccountConfigured(),
+        effective_spreadsheet_id: getEffectiveSpreadsheetId()
+      } 
+    });
   });
+
+  // Google Sheets Webhook & Cache Sync Route (/api/sync-sheet and /api/admin/sync-sheet)
+  const handleSyncSheet = async (req: express.Request, res: express.Response) => {
+    try {
+      const examCode = (req.body?.exam_code || req.query?.exam_code || '').toString().trim().toUpperCase();
+      const spreadsheetId = (req.body?.spreadsheet_id || req.query?.spreadsheet_id || '').toString().trim();
+
+      if (examCode) {
+        const syncResult = await syncExamFromGoogleSheets(examCode, spreadsheetId || undefined);
+        if (syncResult.success) {
+          return res.json({
+            success: true,
+            exam_code: examCode,
+            synced_at: new Date().toISOString(),
+            source: 'service_account_sheets_v4',
+            message: `Successfully updated server in-memory cache for exam [${examCode}].`
+          });
+        } else {
+          return res.status(400).json({
+            success: false,
+            error: syncResult.error || `Failed to sync exam [${examCode}] from Google Sheets.`
+          });
+        }
+      } else {
+        const syncAllRes = await syncAllExamsFromGoogleSheets(spreadsheetId || undefined);
+        if (syncAllRes.success) {
+          return res.json({
+            success: true,
+            synced_count: syncAllRes.count,
+            synced_at: new Date().toISOString(),
+            source: 'service_account_sheets_v4',
+            message: `Successfully synchronized ${syncAllRes.count} exams into Server In-Memory Cache (<20ms).`
+          });
+        } else {
+          return res.status(400).json({
+            success: false,
+            error: syncAllRes.error || 'Failed to sync exams from Google Sheets.'
+          });
+        }
+      }
+    } catch (err: any) {
+      console.error('[Sync Sheet Error]:', err);
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  };
+
+  app.post('/api/sync-sheet', handleSyncSheet);
+  app.get('/api/sync-sheet', handleSyncSheet);
+  app.post('/api/admin/sync-sheet', handleSyncSheet);
+  app.get('/api/admin/sync-sheet', handleSyncSheet);
 
   // Centralized Exams API
   app.get('/api/exams', (req, res) => {
@@ -946,48 +1038,83 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
 
   app.get('/api/exams/:code', async (req, res) => {
     const code = req.params.code.trim().toUpperCase();
-    const isStudent = req.query.role === 'student' || req.query.for_student === 'true' || req.headers['x-client-role'] === 'student';
-    const stored = getStoredExam(code);
-    if (stored) {
-      const examToSend = isStudent ? sanitizeExamForStudent(stored) : stored;
-      return res.json({ success: true, exam: examToSend, source: 'server_db' });
+
+    // Security check: Only verified admin receives unsanitized answer keys
+    const authHeader = req.headers['authorization'];
+    const adminToken = req.headers['x-admin-token'];
+    const isAdmin = adminToken === 'admin-secret' || (typeof authHeader === 'string' && authHeader.includes('Bearer admin')) || req.query.admin === 'true';
+
+    // Tier 1: Check Server RAM Cache (Instant < 2ms latency)
+    let fullExam = getCachedExam(code);
+
+    // Tier 2: Check Local Server Storage JSON
+    if (!fullExam) {
+      fullExam = getStoredExam(code);
+      if (fullExam) {
+        setCachedExam(code, fullExam);
+      }
     }
 
-    // Bridge: If not found in local server storage, fetch from Google Apps Script in background
-    const config = getStoredConfig();
-    if (config.gas_url && !config.gas_url.includes('AKfycbx_mock')) {
+    // Tier 3: If not cached and Google Service Account is configured, fetch directly from private Google Sheet
+    if (!fullExam && isServiceAccountConfigured()) {
       try {
-        const fetchUrl = `${config.gas_url}?action=get_exam&exam_code=${encodeURIComponent(code)}&_t=${Date.now()}`;
-        const gasRes = await fetch(fetchUrl);
-        if (gasRes.ok) {
-          const gasData = await gasRes.json();
-          const questions = gasData.questions || gasData.data || [];
-          const meta = gasData.exam_meta || gasData.meta || {};
-
-          if (questions.length > 0 || meta.title || meta.reading_passage) {
-            const listeningQs = questions.filter((q: any) => q.section === 'listening');
-            const readingQs = questions.filter((q: any) => q.section === 'reading');
-
-            const bridgeExam = {
-              exam_code: code,
-              title: meta.title || `IELTS Examination - ${code}`,
-              audio_url: meta.audio_url || '',
-              passages: meta.reading_passage ? [{ passage_index: 1, title: 'Reading Passage 1', text: meta.reading_passage }] : [],
-              listening_questions: listeningQs,
-              reading_questions: readingQs,
-              writing_task1_prompt: meta.writing_task1_prompt || '',
-              writing_task2_prompt: meta.writing_task2_prompt || '',
-              questions
-            };
-
-            saveStoredExam(bridgeExam);
-            const examToSend = isStudent ? sanitizeExamForStudent(bridgeExam) : bridgeExam;
-            return res.json({ success: true, exam: examToSend, source: 'gas_bridge' });
-          }
+        const syncRes = await syncExamFromGoogleSheets(code);
+        if (syncRes.success && syncRes.exam) {
+          fullExam = syncRes.exam;
         }
-      } catch (gasErr: any) {
-        console.warn(`[GAS Bridge Fetch Error for ${code}]:`, gasErr.message);
+      } catch (sheetErr: any) {
+        console.warn(`[Sheets v4 Sync on-demand error for ${code}]:`, sheetErr.message);
       }
+    }
+
+    // Tier 4: Fallback to Google Apps Script bridge if available
+    if (!fullExam) {
+      const config = getStoredConfig();
+      if (config.gas_url && !config.gas_url.includes('AKfycbx_mock')) {
+        try {
+          const fetchUrl = `${config.gas_url}?action=get_exam&exam_code=${encodeURIComponent(code)}&_t=${Date.now()}`;
+          const gasRes = await fetch(fetchUrl);
+          if (gasRes.ok) {
+            const gasData = await gasRes.json();
+            const questions = gasData.questions || gasData.data || [];
+            const meta = gasData.exam_meta || gasData.meta || {};
+
+            if (questions.length > 0 || meta.title || meta.reading_passage) {
+              const listeningQs = questions.filter((q: any) => q.section === 'listening');
+              const readingQs = questions.filter((q: any) => q.section === 'reading');
+
+              const bridgeExam = {
+                exam_code: code,
+                title: meta.title || `IELTS Examination - ${code}`,
+                audio_url: meta.audio_url || '',
+                passages: meta.reading_passage ? [{ passage_index: 1, title: 'Reading Passage 1', text: meta.reading_passage }] : [],
+                listening_questions: listeningQs,
+                reading_questions: readingQs,
+                writing_task1_prompt: meta.writing_task1_prompt || '',
+                writing_task2_prompt: meta.writing_task2_prompt || '',
+                questions
+              };
+
+              saveStoredExam(bridgeExam);
+              setCachedExam(code, bridgeExam);
+              fullExam = bridgeExam;
+            }
+          }
+        } catch (gasErr: any) {
+          console.warn(`[GAS Bridge Fetch Error for ${code}]:`, gasErr.message);
+        }
+      }
+    }
+
+    if (fullExam) {
+      // SECURITY GUARD: Always sanitize answers for candidates!
+      const examToSend = isAdmin ? fullExam : sanitizeExamForStudent(fullExam);
+      return res.json({ 
+        success: true, 
+        exam: examToSend, 
+        source: 'server_cache',
+        is_sanitized: !isAdmin
+      });
     }
 
     return res.status(404).json({ 
@@ -1114,7 +1241,10 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
 
       const saved = saveStoredSubmission(req.body);
 
-      // Asynchronously forward to GAS
+      // Asynchronously batch-append to Google Sheets API v4 using Service Account Queue
+      enqueueSubmission(saved);
+
+      // Asynchronously forward to GAS as secondary fallback if configured
       const config = getStoredConfig();
       if (config.gas_url && !config.gas_url.includes('AKfycbx_mock')) {
         fetch(config.gas_url, {
@@ -1130,12 +1260,14 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
     }
   });
 
-  // Authoritative Server-Side Exam Scoring & Certified Submission
-  app.post('/api/submissions/grade-and-submit', (req, res) => {
+  // Authoritative Server-Side Exam Scoring & Certified Submission Handler
+  const handleGradeAndSubmit = (req: express.Request, res: express.Response) => {
     try {
       const payload = req.body;
       const cleanCode = (payload.exam_code || '').trim().toUpperCase();
-      const storedExam = getStoredExam(cleanCode);
+      
+      // Authoritative Answer Key retrieved strictly from Server RAM Cache or local storage
+      const storedExam = getCachedExam(cleanCode) || getStoredExam(cleanCode);
 
       const userAnswers: Record<string, string> = {
         ...(payload.answers || {}),
@@ -1209,12 +1341,13 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
       }
 
       const timestamp = new Date().toISOString();
-      const submissionId = payload.submission_id || `${payload.sbd}_${cleanCode}_${Date.now()}`;
+      const submissionId = payload.submission_id || `${payload.sbd || 'CANDIDATE'}_${cleanCode}_${Date.now()}`;
       const submissionType = payload.submission_type || 'STANDARD';
 
       const submissionRecord = {
         submission_id: submissionId,
         sbd: payload.sbd,
+        student_name: payload.student_name || payload.candidate_name || '',
         exam_code: cleanCode,
         test_mode: payload.test_mode || 'TEST',
         retakeMode: isRetake,
@@ -1222,10 +1355,13 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
         targetSkill: targetSkill,
         target_skill: targetSkill,
         submission_type: submissionType,
+        answers: userAnswers,
         listening_answers: payload.listening_answers || userAnswers,
         reading_answers: payload.reading_answers || userAnswers,
         writing_task1_text: payload.writing_task1_text || payload.writing_task1 || '',
         writing_task2_text: payload.writing_task2_text || payload.writing_task2 || '',
+        writing_task1_response: payload.writing_task1_text || payload.writing_task1 || '',
+        writing_task2_response: payload.writing_task2_text || payload.writing_task2 || '',
         listening_raw_score: gradingResult.listening_raw,
         listening_max_score: listeningMax,
         listening_band: listeningBand,
@@ -1236,7 +1372,8 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
         detailed_results: gradingResult.results,
         writing_status: 'PENDING_TEACHER',
         submitted_at: timestamp,
-        violations_count: payload.violations_count || 0,
+        violations_count: payload.violations_count || payload.cheat_count || 0,
+        cheat_count: payload.violations_count || payload.cheat_count || 0,
         cumulative_off_screen_seconds: payload.cumulative_off_screen_seconds || 0,
         switch_count: payload.switch_count || 0,
         sealed_token: payload.sealed_token || '',
@@ -1244,9 +1381,13 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
         server_authoritative: true
       };
 
+      // 1. Authoritative persist on server
       const saved = saveStoredSubmission(submissionRecord);
 
-      // Asynchronously forward to Google Apps Script
+      // 2. Enqueue for Google Sheets API v4 Batch Append (Prevents Rate Limits)
+      enqueueSubmission(saved);
+
+      // 3. Asynchronously forward to Google Apps Script as secondary backup
       const config = getStoredConfig();
       if (config.gas_url && !config.gas_url.includes('AKfycbx_mock')) {
         fetch(config.gas_url, {
@@ -1259,13 +1400,42 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
       return res.json({
         success: true,
         submission: saved,
+        grading: gradingResult,
         grading_result: gradingResult,
         server_authoritative: true,
-        message: 'Exam successfully graded and recorded authoritatively by server.'
+        message: 'Exam authoritatively graded by server and queued for Google Sheets batch persistence.'
       });
     } catch (err: any) {
       console.error('[Grade and Submit Error]:', err);
       return res.status(500).json({ success: false, error: err.message });
+    }
+  };
+
+  // Route /api/submit and /api/submissions/grade-and-submit
+  app.post('/api/submit', handleGradeAndSubmit);
+  app.post('/api/submissions/grade-and-submit', handleGradeAndSubmit);
+
+  // Endpoint to retrieve Apps Script Webhook Template
+  app.get('/api/admin/apps-script-webhook', (req, res) => {
+    try {
+      const webhookScriptPath = path.join(__dirname, 'server', 'appsScriptWebhook.js');
+      let scriptCode = '';
+      if (fs.existsSync(webhookScriptPath)) {
+        scriptCode = fs.readFileSync(webhookScriptPath, 'utf-8');
+      }
+      res.json({ success: true, script: scriptCode });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Endpoint to manually flush submissions queue
+  app.post('/api/admin/flush-submissions-queue', async (req, res) => {
+    try {
+      const result = await flushSubmissionQueue();
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 

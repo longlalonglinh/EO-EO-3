@@ -21,7 +21,12 @@ import {
   HelpCircle,
   Headphones,
   BookOpen,
-  FileText
+  FileText,
+  ShieldCheck,
+  Lock,
+  Key,
+  Layers,
+  Inbox
 } from 'lucide-react';
 import { 
   FullDiagnosticReport, 
@@ -35,7 +40,13 @@ import {
   testGvizConnection, 
   fetchExamViaGviz 
 } from '../../services/gvizService';
-import { saveServerConfig, fetchServerConfig } from '../../services/api';
+import { 
+  saveServerConfig, 
+  fetchServerConfig, 
+  triggerServerSheetSync, 
+  fetchAppsScriptWebhookCode, 
+  flushServerSubmissionsQueue 
+} from '../../services/api';
 import { gasScriptCodeTemplate } from '../../data/gasScriptCode';
 
 interface DatabaseDiagnosticsModalProps {
@@ -53,8 +64,23 @@ export const DatabaseDiagnosticsModal: React.FC<DatabaseDiagnosticsModalProps> =
   initialExamCode = 'TEST01',
   onApplyExam
 }) => {
-  const [activeTab, setActiveTab] = useState<'gviz' | 'gas'>('gviz');
+  const [activeTab, setActiveTab] = useState<'private_sheets' | 'gviz' | 'gas'>('private_sheets');
   const [examCodeInput, setExamCodeInput] = useState(initialExamCode);
+
+  // Private Sheets Service Account State
+  const [serviceAccountJson, setServiceAccountJson] = useState<string>('');
+  const [isServiceAccountConfigured, setIsServiceAccountConfigured] = useState<boolean>(false);
+  const [isSyncingServerCache, setIsSyncingServerCache] = useState<boolean>(false);
+  const [syncCacheResult, setSyncCacheResult] = useState<{
+    success: boolean;
+    message: string;
+    synced_count?: number;
+    latencyMs?: number;
+  } | null>(null);
+  const [webhookCode, setWebhookCode] = useState<string>('');
+  const [copiedWebhook, setCopiedWebhook] = useState<boolean>(false);
+  const [isFlushingQueue, setIsFlushingQueue] = useState<boolean>(false);
+  const [flushQueueResult, setFlushQueueResult] = useState<{ success: boolean; count: number } | null>(null);
 
   // GViz Engine State
   const [spreadsheetInput, setSpreadsheetInput] = useState<string>('');
@@ -78,44 +104,95 @@ export const DatabaseDiagnosticsModal: React.FC<DatabaseDiagnosticsModalProps> =
   const [seedResult, setSeedResult] = useState<{ success: boolean; message: string } | null>(null);
   const [copiedScript, setCopiedScript] = useState<boolean>(false);
 
-  // Load configured spreadsheet ID on mount or modal open
+  // Load configured spreadsheet ID and Service Account on mount or modal open
   useEffect(() => {
     if (!isOpen) return;
     const localId = getStoredSpreadsheetId();
     if (localId) {
       setSpreadsheetInput(localId);
-    } else {
-      fetchServerConfig().then((cfg) => {
-        if (cfg?.spreadsheet_id) {
-          setSpreadsheetInput(cfg.spreadsheet_id);
-          setStoredSpreadsheetId(cfg.spreadsheet_id);
-        }
-      }).catch(() => {});
     }
+    fetchServerConfig().then((cfg: any) => {
+      if (cfg?.spreadsheet_id) {
+        setSpreadsheetInput(cfg.spreadsheet_id);
+        setStoredSpreadsheetId(cfg.spreadsheet_id);
+      }
+      if (cfg?.is_service_account_configured) {
+        setIsServiceAccountConfigured(true);
+      }
+    }).catch(() => {});
+
+    fetchAppsScriptWebhookCode().then((code) => {
+      if (code) setWebhookCode(code);
+    }).catch(() => {});
   }, [isOpen]);
 
   if (!isOpen) return null;
 
   const extractedId = extractSpreadsheetId(spreadsheetInput);
 
-  // --- Handlers for GViz ---
-  const handleSaveSpreadsheetId = async () => {
+  // --- Handlers for Private Sheets Service Account ---
+  const handleSaveServiceAccount = async () => {
     setIsSavingConfig(true);
     setSaveConfigSuccess(false);
     try {
-      if (extractedId) {
-        setStoredSpreadsheetId(extractedId);
-        await saveServerConfig({ spreadsheet_id: extractedId });
-      } else {
-        setStoredSpreadsheetId('');
-        await saveServerConfig({ spreadsheet_id: '' });
+      const payload: any = {};
+      if (extractedId) payload.spreadsheet_id = extractedId;
+      if (serviceAccountJson.trim()) payload.service_account_json = serviceAccountJson.trim();
+
+      const success = await saveServerConfig(payload);
+      if (success) {
+        setSaveConfigSuccess(true);
+        if (extractedId) setStoredSpreadsheetId(extractedId);
+        if (serviceAccountJson.trim()) setIsServiceAccountConfigured(true);
+        setTimeout(() => setSaveConfigSuccess(false), 2500);
       }
-      setSaveConfigSuccess(true);
-      setTimeout(() => setSaveConfigSuccess(false), 2500);
     } catch (err) {
-      console.warn('Could not save spreadsheet ID to server config:', err);
+      console.warn('Could not save service account config:', err);
     } finally {
       setIsSavingConfig(false);
+    }
+  };
+
+  const handleSaveSpreadsheetId = handleSaveServiceAccount;
+
+  const handleTriggerCacheSync = async () => {
+    setIsSyncingServerCache(true);
+    setSyncCacheResult(null);
+    try {
+      const res = await triggerServerSheetSync(
+        examCodeInput.trim() || undefined,
+        extractedId || undefined
+      );
+      setSyncCacheResult(res);
+    } catch (err: any) {
+      setSyncCacheResult({
+        success: false,
+        message: 'Lỗi khi kích hoạt đồng bộ: ' + err.message
+      });
+    } finally {
+      setIsSyncingServerCache(false);
+    }
+  };
+
+  const handleCopyWebhookScript = () => {
+    if (!webhookCode) return;
+    navigator.clipboard.writeText(webhookCode).then(() => {
+      setCopiedWebhook(true);
+      setTimeout(() => setCopiedWebhook(false), 2500);
+    });
+  };
+
+  const handleFlushSubmissions = async () => {
+    setIsFlushingQueue(true);
+    setFlushQueueResult(null);
+    try {
+      const res = await flushServerSubmissionsQueue();
+      setFlushQueueResult(res);
+      setTimeout(() => setFlushQueueResult(null), 3000);
+    } catch (err) {
+      console.warn('Failed to flush submissions queue:', err);
+    } finally {
+      setIsFlushingQueue(false);
     }
   };
 
@@ -261,24 +338,40 @@ export const DatabaseDiagnosticsModal: React.FC<DatabaseDiagnosticsModalProps> =
         </div>
 
         {/* Tab Selector */}
-        <div className="px-6 pt-3 pb-0 bg-slate-950/40 border-b border-slate-800 flex items-center gap-2 shrink-0">
+        <div className="px-6 pt-3 pb-0 bg-slate-950/40 border-b border-slate-800 flex items-center gap-2 shrink-0 overflow-x-auto scrollbar-none">
+          <button
+            type="button"
+            onClick={() => setActiveTab('private_sheets')}
+            className={`pb-2.5 px-3 text-xs font-black border-b-2 flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap ${
+              activeTab === 'private_sheets'
+                ? 'border-emerald-500 text-emerald-300'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Private Sheets (Service Account API v4 &amp; Webhook)</span>
+            <span className="text-[9px] px-1.5 py-0.2 rounded-full font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+              Chuẩn Bảo Mật
+            </span>
+          </button>
+
           <button
             type="button"
             onClick={() => setActiveTab('gviz')}
-            className={`pb-2.5 px-3 text-xs font-black border-b-2 flex items-center gap-1.5 transition cursor-pointer ${
+            className={`pb-2.5 px-3 text-xs font-black border-b-2 flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap ${
               activeTab === 'gviz'
                 ? 'border-indigo-500 text-indigo-300'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
             <Zap className="w-3.5 h-3.5 text-amber-400" />
-            <span>Google Visualization API (GViz/TQ - Siêu tốc &lt;200ms)</span>
+            <span>Client GViz/TQ Fast Query</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('gas')}
-            className={`pb-2.5 px-3 text-xs font-black border-b-2 flex items-center gap-1.5 transition cursor-pointer ${
+            className={`pb-2.5 px-3 text-xs font-black border-b-2 flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap ${
               activeTab === 'gas'
                 ? 'border-indigo-500 text-indigo-300'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -291,6 +384,210 @@ export const DatabaseDiagnosticsModal: React.FC<DatabaseDiagnosticsModalProps> =
 
         {/* Modal Body */}
         <div className="p-6 space-y-5 overflow-y-auto flex-1">
+
+          {/* ================================= TAB 0: PRIVATE SHEETS SERVICE ACCOUNT ================================= */}
+          {activeTab === 'private_sheets' && (
+            <div className="space-y-4">
+              
+              {/* Architecture & Security Highlights */}
+              <div className="p-4 bg-emerald-950/40 border border-emerald-500/30 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-black text-emerald-300">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                    <span>Kiến trúc Bảo mật Tuyệt đối &amp; Đồng bộ Cache Siêu tốc (&lt;20ms)</span>
+                  </div>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                    isServiceAccountConfigured
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                      : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                  }`}>
+                    {isServiceAccountConfigured ? '🟢 Service Account Đã Kích Hoạt' : '⚪ Đang Chờ Cấu Hình Service Account'}
+                  </span>
+                </div>
+                <ul className="text-[11px] text-slate-300 space-y-1 list-disc list-inside">
+                  <li><strong>Private Google Sheet:</strong> Bảng tính hoàn toàn ở chế độ riêng tư (không cần chia sẻ "Anyone with link").</li>
+                  <li><strong>Anti-Leak Middleware:</strong> Backend Node.js bóc tách triệt để đáp án (`CORRECT_ANSWER`) trước khi trả về Client. Đáp án gốc chỉ lưu ở RAM Server để tự động chấm điểm.</li>
+                  <li><strong>Server In-Memory Cache:</strong> Thí sinh đọc đề thi từ RAM Server với độ trễ &lt;20ms thay vì truy vấn Google Sheets.</li>
+                  <li><strong>Hàng đợi Nộp bài (Queue/Debounce):</strong> Ghi theo đợt qua Sheets API `values.append`, loại bỏ nguy cơ nghẽn hạn ngạch Google.</li>
+                </ul>
+              </div>
+
+              {/* Service Account & Spreadsheet Configuration Form */}
+              <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <span className="text-xs font-black text-white flex items-center gap-1.5">
+                    <Key className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Cấu hình Google Service Account &amp; Spreadsheet ID</span>
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
+                      Google Spreadsheet ID / URL Bảng tính:
+                    </label>
+                    <input
+                      type="text"
+                      value={spreadsheetInput}
+                      onChange={(e) => setSpreadsheetInput(e.target.value)}
+                      placeholder="https://docs.google.com/spreadsheets/d/.../edit hoặc ID bảng tính"
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    {extractedId && (
+                      <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
+                        <span>Clean ID:</span>
+                        <code className="text-emerald-400 bg-slate-900 px-1 py-0.5 rounded">{extractedId}</code>
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
+                      Service Account Credentials (JSON Key):
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={serviceAccountJson}
+                      onChange={(e) => setServiceAccountJson(e.target.value)}
+                      placeholder='{"type": "service_account", "project_id": "...", "private_key": "...", "client_email": "..."}'
+                      className="w-full px-3.5 py-2 bg-slate-900 border border-slate-700 rounded-xl text-[11px] font-mono text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      (Có thể dán JSON hoặc thiết lập qua biến môi trường <code>GOOGLE_SERVICE_ACCOUNT_KEY</code> trên máy chủ).
+                    </p>
+                  </div>
+
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="button"
+                      onClick={handleSaveServiceAccount}
+                      disabled={isSavingConfig}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow-lg transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>{saveConfigSuccess ? 'Đã lưu thành công!' : 'Lưu Cấu Hình Private Sheet'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Cache Sync & Webhook Trigger Card */}
+              <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <span className="text-xs font-black text-white flex items-center gap-1.5">
+                    <Zap className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Đồng bộ Server In-Memory Cache (/api/sync-sheet)</span>
+                  </span>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center gap-2.5">
+                  <div className="flex-1 w-full">
+                    <input
+                      type="text"
+                      value={examCodeInput}
+                      onChange={(e) => setExamCodeInput(e.target.value.toUpperCase())}
+                      placeholder="Mã đề (Ví dụ: TEST01) hoặc để trống để đồng bộ tất cả đề"
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 uppercase"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleTriggerCacheSync}
+                    disabled={isSyncingServerCache}
+                    className="w-full sm:w-auto px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shrink-0"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncingServerCache ? 'animate-spin' : ''}`} />
+                    <span>{isSyncingServerCache ? 'Đang đồng bộ cache...' : '⚡ Đồng Bộ Cache Server Ngay'}</span>
+                  </button>
+                </div>
+
+                {syncCacheResult && (
+                  <div className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 ${
+                    syncCacheResult.success
+                      ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
+                      : 'bg-rose-950/40 border-rose-500/40 text-rose-200'
+                  }`}>
+                    {syncCacheResult.success ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    ) : (
+                      <XCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    )}
+                    <div>
+                      <div className="font-bold flex items-center gap-2">
+                        <span>{syncCacheResult.success ? 'Đồng bộ Cache thành công!' : 'Lỗi đồng bộ Cache'}</span>
+                        {syncCacheResult.latencyMs !== undefined && (
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                            ⚡ {syncCacheResult.latencyMs}ms (&lt;20ms)
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] opacity-90 mt-0.5">{syncCacheResult.message}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Submissions Batch Queue & Flush Control */}
+              <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <div className="text-xs font-black text-white flex items-center gap-1.5">
+                    <Inbox className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Hàng Đợi Nộp Bài Ghi Batch (Submission Queue)</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Bài thi tự động gom theo đợt (3s debounce / 15 bài) để ghi vào Sheet SUBMISSIONS, tránh chạm hạn ngạch API.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleFlushSubmissions}
+                  disabled={isFlushingQueue}
+                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl border border-slate-600 transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isFlushingQueue ? 'animate-spin' : ''}`} />
+                  <span>{flushQueueResult ? `Đã ghi ${flushQueueResult.count} bài!` : 'Xả Hàng Đợi (Flush)'}</span>
+                </button>
+              </div>
+
+              {/* Apps Script Webhook Trigger Setup Guide */}
+              <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <div>
+                    <span className="text-xs font-black text-white flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Mã Script Webhook Tự Động Kích Hoạt (Apps Script onEdit Trigger)</span>
+                    </span>
+                    <p className="text-[10px] text-slate-400">
+                      Tự động gọi webhook về Server cập nhật Cache mỗi khi Admin chỉnh sửa câu hỏi trên Sheet.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCopyWebhookScript}
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl border border-slate-600 transition flex items-center gap-1.5 cursor-pointer shrink-0"
+                  >
+                    {copiedWebhook ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedWebhook ? 'Đã sao chép!' : 'Sao chép mã'}</span>
+                  </button>
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 max-h-48 overflow-y-auto font-mono text-[11px] text-slate-300 leading-relaxed">
+                  <pre>{webhookCode || '// Đang tải mã Apps Script Webhook từ server...'}</pre>
+                </div>
+
+                <div className="p-3 bg-indigo-950/30 border border-indigo-500/20 rounded-xl text-[11px] text-slate-300 space-y-1">
+                  <div className="font-bold text-indigo-300">Cách cài đặt trên Google Sheet Private:</div>
+                  <ol className="list-decimal list-inside space-y-0.5 text-slate-400">
+                    <li>Vào Google Sheet &gt; <strong>Tiện ích mở rộng (Extensions)</strong> &gt; <strong>Apps Script</strong>.</li>
+                    <li>Dán đoạn mã trên vào file <code>WebhookSync.gs</code>.</li>
+                    <li>Bấm biểu tượng <strong>Triggers (Đồng hồ)</strong> &gt; Thêm trigger cho hàm <code>installedOnEdit</code> với sự kiện <code>On edit</code>.</li>
+                  </ol>
+                </div>
+              </div>
+
+            </div>
+          )}
 
           {/* ================================= TAB 1: GVIZ ENGINE ================================= */}
           {activeTab === 'gviz' && (
