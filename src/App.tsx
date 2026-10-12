@@ -1650,11 +1650,11 @@ function doPost(e) {
 
                     </div>
 
-                    {/* SUBMIT BUTTON */}
+                    {/* SUBMIT BUTTON: Distinct visual hierarchy separating final submission from navigation tabs */}
                     <button
                       onClick={() => setIsConfirmSubmitOpen(true)}
                       disabled={isSubmitting}
-                      className="px-5 sm:px-6 py-2.5 sm:py-3 bg-[#6B51A5] hover:bg-[#583F8F] text-white font-extrabold text-[11px] sm:text-xs uppercase tracking-wider rounded-xl sm:rounded-2xl shadow-lg shadow-purple-900/15 flex items-center justify-center gap-2 transition disabled:opacity-50 cursor-pointer shrink-0"
+                      className="px-5 sm:px-6 py-2.5 sm:py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-[11px] sm:text-xs uppercase tracking-wider rounded-xl sm:rounded-2xl shadow-lg shadow-emerald-950/15 flex items-center justify-center gap-2 transition disabled:opacity-50 cursor-pointer shrink-0 active:scale-95"
                     >
                       {isSubmitting ? (
                         <>

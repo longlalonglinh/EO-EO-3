@@ -1,5 +1,81 @@
 [
   {
+    "submission_id": "TEST_CONCURRENT_1791742132398",
+    "sbd": "SBD_CONCUR_01",
+    "exam_code": "WT1004",
+    "grading_version": 2,
+    "writing_status": "GRADED",
+    "received_at": "2026-10-11T18:08:52.399Z",
+    "writing_band": 6.5,
+    "writing_scores": {
+      "TR": 6.5,
+      "CC": 6.5,
+      "LR": 6.5,
+      "GRA": 6.5
+    },
+    "writing_feedback": "Good response",
+    "graded_by": "Examiner_A",
+    "graded_at": "2026-10-11T18:08:52.400Z",
+    "overall_band": 6.5
+  },
+  {
+    "submission_id": "TEST_CONCURRENT_1791741591374",
+    "sbd": "SBD_CONCUR_01",
+    "exam_code": "WT1004",
+    "grading_version": 2,
+    "writing_status": "GRADED",
+    "received_at": "2026-10-11T17:59:51.375Z",
+    "writing_band": 6.5,
+    "writing_scores": {
+      "TR": 6.5,
+      "CC": 6.5,
+      "LR": 6.5,
+      "GRA": 6.5
+    },
+    "writing_feedback": "Good response",
+    "graded_by": "Examiner_A",
+    "graded_at": "2026-10-11T17:59:51.376Z",
+    "overall_band": 6.5
+  },
+  {
+    "submission_id": "TEST_CONCURRENT_1791741311286",
+    "sbd": "SBD_CONCUR_01",
+    "exam_code": "WT1004",
+    "grading_version": 2,
+    "writing_status": "GRADED",
+    "received_at": "2026-10-11T17:55:11.287Z",
+    "writing_band": 6.5,
+    "writing_scores": {
+      "TR": 6.5,
+      "CC": 6.5,
+      "LR": 6.5,
+      "GRA": 6.5
+    },
+    "writing_feedback": "Good response",
+    "graded_by": "Examiner_A",
+    "graded_at": "2026-10-11T17:55:11.288Z",
+    "overall_band": 6.5
+  },
+  {
+    "submission_id": "TEST_CONCURRENT_1791741107793",
+    "sbd": "SBD_CONCUR_01",
+    "exam_code": "WT1004",
+    "grading_version": 2,
+    "writing_status": "GRADED",
+    "received_at": "2026-10-11T17:51:47.794Z",
+    "writing_band": 6.5,
+    "writing_scores": {
+      "TR": 6.5,
+      "CC": 6.5,
+      "LR": 6.5,
+      "GRA": 6.5
+    },
+    "writing_feedback": "Good response",
+    "graded_by": "Examiner_A",
+    "graded_at": "2026-10-11T17:51:47.795Z",
+    "overall_band": 6.5
+  },
+  {
     "submission_id": "TEST_STUDENT_01_TEST01_1791732356746",
     "sbd": "TEST_STUDENT_01",
     "student_name": "Nguyen Van A",

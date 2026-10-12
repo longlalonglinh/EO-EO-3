@@ -189,10 +189,11 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
           : 'bg-[#FAF8FD] border-purple-100 hover:border-purple-300'
       }`}
     >
-      {/* RED THEME - Instruction or Word Limit Banner */}
+      {/* Instruction or Requirement Banner */}
       {(question.instruction || question.word_limit) && (
-        <div className="px-5 py-2.5 bg-[#D32F2F] text-white text-xs md:text-sm font-bold flex items-center gap-2 -mx-5 -mt-5 mb-4 md:-mx-6 md:-mt-6 shadow-sm">
-          <span>{question.instruction || `Requirement: ${question.word_limit}`}</span>
+        <div className="px-5 py-2.5 bg-[#3C2A63] text-purple-50 text-xs md:text-sm font-bold flex items-center gap-2 -mx-5 -mt-5 mb-4 md:-mx-6 md:-mt-6 shadow-xs border-b border-purple-900/20">
+          <Info className="w-4 h-4 text-purple-300 shrink-0" />
+          <span className="leading-snug">{question.instruction || `Requirement: ${question.word_limit}`}</span>
         </div>
       )}
 
