@@ -13,7 +13,8 @@ import {
   Layers,
   ArrowRight,
   Info,
-  Flag
+  Flag,
+  Check
 } from 'lucide-react';
 import { IELTSTableCompletion } from '../Common/IELTSTableCompletion';
 import { IELTSFlowChartCompletion } from '../Common/IELTSFlowChartCompletion';

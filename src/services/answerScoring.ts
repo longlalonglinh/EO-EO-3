@@ -9,6 +9,11 @@ import { ExamData, Question } from '../types';
  * - Removing redundant punctuation: /[.,/#!$%^&*;:{}=\-_~()]/g
  * - Collapsing multiple consecutive whitespaces and trimming
  */
+export function sanitizeAnswerString(input: string | undefined | null): string {
+  if (!input) return '';
+  return input.toString().trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
 export function normalizeAnswer(input: string | undefined | null): string {
   if (!input) return '';
 
@@ -111,6 +116,11 @@ export function isAnswerCorrect(
 
     // Direct normalized equality match
     if (normUser === normOption) {
+      return true;
+    }
+
+    // Direct sanitized string equality match (trim, lower, single spaces)
+    if (sanitizeAnswerString(rawUser) === sanitizeAnswerString(option)) {
       return true;
     }
 
@@ -326,9 +336,11 @@ export function gradeExamAnswers(
     };
   }
 
-  const allListeningQuestions = isReadingRetake 
+  // 1. Exclude demonstrative example questions (e.g. Paragraph A: viii) from scoring & band-score counts
+  const allListeningQuestions = (isReadingRetake 
     ? [] 
-    : (exam.listening_questions || (exam.questions || []).filter(q => q.section === 'listening'));
+    : (exam.listening_questions || (exam.questions || []).filter(q => q.section === 'listening'))
+  ).filter(q => !q.is_example);
   
   // Collect reading questions directly from standardized passages first
   let allReadingQuestions: Question[] = [];
@@ -343,25 +355,28 @@ export function gradeExamAnswers(
     if (allReadingQuestions.length === 0) {
       allReadingQuestions = exam.reading_questions || (exam.questions || []).filter(q => q.section === 'reading');
     }
+    allReadingQuestions = allReadingQuestions.filter(q => !q.is_example);
   }
 
   let listeningRaw = 0;
   let readingRaw = 0;
   const results: Record<string, QuestionGradingResult> = {};
 
-  // Helper: Grades questions supporting set-intersection matching for coupled "Choose TWO/THREE" items
+  // Helper: Grades questions supporting set-intersection matching for coupled "Choose TWO/THREE" items & multi_group_id
   const gradeQuestionList = (
     questions: Question[],
     section: 'listening' | 'reading'
   ): number => {
     let sectionRaw = 0;
     const handledMultiGroup = new Set<string>();
+    const activeQuestions = questions.filter(q => !q.is_example);
 
-    for (let i = 0; i < questions.length; i++) {
-      const q = questions[i];
+    for (let i = 0; i < activeQuestions.length; i++) {
+      const q = activeQuestions[i];
       if (handledMultiGroup.has(q.question_id)) continue;
 
-      // Detect coupled multi-choice questions sharing "Choose TWO/THREE" instruction or identical answer pools
+      // Detect coupled multi-choice questions sharing multi_group_id, "Choose TWO/THREE" instruction or identical answer pools
+      const hasMultiGroupId = Boolean(q.multi_group_id);
       const isMultiInstruction = Boolean(
         q.instruction && /choose\s+(?:two|three|four|2|3|4)\b/i.test(q.instruction)
       );
@@ -370,9 +385,10 @@ export function gradeExamAnswers(
       );
 
       const groupQuestions: Question[] = [q];
-      if (isMultiInstruction || hasSharedPool) {
-        for (let j = i + 1; j < questions.length; j++) {
-          const nextQ = questions[j];
+      if (hasMultiGroupId || isMultiInstruction || hasSharedPool) {
+        for (let j = i + 1; j < activeQuestions.length; j++) {
+          const nextQ = activeQuestions[j];
+          const sameMultiGroupId = Boolean(hasMultiGroupId && nextQ.multi_group_id === q.multi_group_id);
           const sameInstruction = Boolean(q.instruction && nextQ.instruction && q.instruction === nextQ.instruction);
           const samePool = Boolean(
             hasSharedPool && 
@@ -381,7 +397,7 @@ export function gradeExamAnswers(
             nextQ.acceptable_answers.every(a => q.acceptable_answers!.includes(a))
           );
 
-          if ((isMultiInstruction && sameInstruction) || samePool) {
+          if (sameMultiGroupId || (isMultiInstruction && sameInstruction) || samePool) {
             groupQuestions.push(nextQ);
           } else {
             break;
@@ -392,32 +408,55 @@ export function gradeExamAnswers(
       if (groupQuestions.length > 1) {
         groupQuestions.forEach(item => handledMultiGroup.add(item.question_id));
 
+        // 1. Build acceptable letters/answers pool for the whole group
         const validPool = new Set<string>();
         groupQuestions.forEach(item => {
           const acceptable = parseAcceptableAnswers(item.correct_answer, item.acceptable_answers);
-          acceptable.forEach(ans => validPool.add(ans.toUpperCase().trim()));
+          acceptable.forEach(ans => {
+            const letters = ans.split(/[\s,]+/).map(s => s.trim().toUpperCase()).filter(s => /^[A-Za-z]$/.test(s));
+            if (letters.length > 0) {
+              letters.forEach(l => validPool.add(l));
+            } else {
+              validPool.add(sanitizeAnswerString(ans).toUpperCase());
+            }
+          });
         });
 
+        // 2. Collect candidate entries from questions in this group (supports swapped order e.g. Q8: E, Q9: B)
+        const candidateEntries: { qId: string; answer: string }[] = [];
+        groupQuestions.forEach(item => {
+          const rawAns = userAnswers[item.question_id] || '';
+          const letters = rawAns.split(/[\s,]+/).map(s => s.trim().toUpperCase()).filter(s => /^[A-Za-z]$/.test(s));
+          if (letters.length > 0) {
+            letters.forEach(l => candidateEntries.push({ qId: item.question_id, answer: l }));
+          } else if (rawAns.trim()) {
+            candidateEntries.push({ qId: item.question_id, answer: sanitizeAnswerString(rawAns).toUpperCase() });
+          }
+        });
+
+        // 3. Set-intersection scoring: Each valid letter claimed at most once across the group
         const claimedAnswers = new Set<string>();
+        const questionScores: Record<string, number> = {};
+        groupQuestions.forEach(item => { questionScores[item.question_id] = 0; });
+
+        candidateEntries.forEach(entry => {
+          if (validPool.has(entry.answer) && !claimedAnswers.has(entry.answer)) {
+            claimedAnswers.add(entry.answer);
+            questionScores[entry.qId] = (questionScores[entry.qId] || 0) + 1;
+          }
+        });
 
         groupQuestions.forEach(item => {
           const rawAns = userAnswers[item.question_id] || '';
-          const cleanAns = rawAns.trim().toUpperCase();
-          let isCorrect = false;
-
-          if (cleanAns && validPool.has(cleanAns) && !claimedAnswers.has(cleanAns)) {
-            isCorrect = true;
-            claimedAnswers.add(cleanAns);
-          }
-
-          const score = isCorrect ? (item.max_score || 1) : 0;
+          const maxAllowed = item.max_score || 1;
+          const score = Math.min(maxAllowed, questionScores[item.question_id] || 0);
           sectionRaw += score;
 
           results[item.question_id] = {
             question_id: item.question_id,
             section,
             user_answer: rawAns,
-            is_correct: isCorrect,
+            is_correct: score > 0,
             score_awarded: score,
             acceptable_answers: Array.from(validPool)
           };
@@ -433,6 +472,7 @@ export function gradeExamAnswers(
         (q.instruction && /choose\s+(?:two|three|four|2|3|4)\b/i.test(q.instruction))
       );
 
+      const userAns = userAnswers[q.question_id] || '';
       const targetPool = parseAcceptableAnswers(q.correct_answer, q.acceptable_answers);
 
       if (isMultiChoiceMulti && ((q.max_score && q.max_score > 1) || (q.multi_select_count && q.multi_select_count > 1))) {
@@ -477,7 +517,6 @@ export function gradeExamAnswers(
       }
 
       // Standard single-question grading
-      const userAns = userAnswers[q.question_id] || '';
       const isCorrect = isAnswerCorrect(userAns, q.correct_answer, q.acceptable_answers, q.question_type);
       const score = isCorrect ? (q.max_score || 1) : 0;
       sectionRaw += score;

@@ -652,6 +652,8 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
                   headingsList={q.headings_list}
                   isFlagged={flaggedQuestions.has(q.question_id)}
                   onToggleFlag={handleToggleFlag}
+                  allUserAnswers={userAnswers}
+                  allQuestions={questions}
                 />
               </div>
             ))}

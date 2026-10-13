@@ -219,6 +219,9 @@ export interface Question {
   nb_condition?: boolean | string; // e.g. "NB You may use any letter more than once"
   multi_select_count?: number; // e.g. 2 for "Choose TWO letters"
   context_content?: string; // Container context or table/flowchart markdown embedding [blank_X]
+  is_example?: boolean; // Demonstrative example question (e.g. Paragraph A: viii) - excluded from score
+  multi_group_id?: string; // Group ID for multi-select questions (e.g. Questions 8-9) for set-intersection scoring
+  max_words?: number; // Maximum words limit for gap fill / completion questions
 }
 
 export interface ReadingPassageItem {
@@ -449,6 +452,9 @@ export interface CbtQuestionItem {
   correct_answer: string | null;
   acceptable_answers?: string[];
   explanation: string | null;
+  is_example?: boolean;
+  multi_group_id?: string;
+  max_words?: number;
 }
 
 export interface CbtQuestionGroup {
