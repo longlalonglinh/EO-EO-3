@@ -218,6 +218,7 @@ export interface Question {
   word_bank?: WordBankItem[];
   nb_condition?: boolean | string; // e.g. "NB You may use any letter more than once"
   multi_select_count?: number; // e.g. 2 for "Choose TWO letters"
+  context_content?: string; // Container context or table/flowchart markdown embedding [blank_X]
 }
 
 export interface ReadingPassageItem {
@@ -429,3 +430,57 @@ export interface ParseExamResponse {
   exam?: ExamData;
   error?: string;
 }
+
+export type CanonicalCbtQuestionType =
+  | 'multiple_choice'
+  | 'true_false_not_given'
+  | 'yes_no_not_given'
+  | 'fill_blank'
+  | 'matching_headings'
+  | 'matching_information'
+  | 'matching_features'
+  | 'flow_chart_completion'
+  | 'writing_task';
+
+export interface CbtQuestionItem {
+  question_number: number;
+  question_text: string;
+  options?: string[];
+  correct_answer: string | null;
+  acceptable_answers?: string[];
+  explanation: string | null;
+}
+
+export interface CbtQuestionGroup {
+  group_id: string;
+  instructions: string;
+  question_type: CanonicalCbtQuestionType;
+  context_content?: string;
+  options?: string[];
+  questions: CbtQuestionItem[];
+}
+
+export interface CbtPassageItem {
+  passage_number: number;
+  title: string;
+  content: string;
+  question_groups: CbtQuestionGroup[];
+}
+
+export interface CbtWritingTaskItem {
+  task_number: 1 | 2;
+  title?: string;
+  prompt: string;
+  image_url?: string;
+  min_words: number;
+}
+
+export interface CbtEngineTranspiledExam {
+  exam_id: string;
+  title: string;
+  skill: 'reading' | 'listening' | 'writing';
+  duration_minutes: number;
+  passages?: CbtPassageItem[];
+  writing_tasks?: CbtWritingTaskItem[];
+}
+

@@ -349,42 +349,160 @@ export function gradeExamAnswers(
   let readingRaw = 0;
   const results: Record<string, QuestionGradingResult> = {};
 
-  // Grade Listening
-  allListeningQuestions.forEach(q => {
-    const userAns = userAnswers[q.question_id] || '';
-    const isCorrect = isAnswerCorrect(userAns, q.correct_answer, q.acceptable_answers, q.question_type);
-    const score = isCorrect ? (q.max_score || 1) : 0;
-    listeningRaw += score;
+  // Helper: Grades questions supporting set-intersection matching for coupled "Choose TWO/THREE" items
+  const gradeQuestionList = (
+    questions: Question[],
+    section: 'listening' | 'reading'
+  ): number => {
+    let sectionRaw = 0;
+    const handledMultiGroup = new Set<string>();
 
-    results[q.question_id] = {
-      question_id: q.question_id,
-      section: 'listening',
-      user_answer: userAns,
-      is_correct: isCorrect,
-      score_awarded: score,
-      acceptable_answers: parseAcceptableAnswers(q.correct_answer, q.acceptable_answers)
-    };
-  });
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      if (handledMultiGroup.has(q.question_id)) continue;
+
+      // Detect coupled multi-choice questions sharing "Choose TWO/THREE" instruction or identical answer pools
+      const isMultiInstruction = Boolean(
+        q.instruction && /choose\s+(?:two|three|four|2|3|4)\b/i.test(q.instruction)
+      );
+      const hasSharedPool = Boolean(
+        Array.isArray(q.acceptable_answers) && q.acceptable_answers.length >= 2
+      );
+
+      const groupQuestions: Question[] = [q];
+      if (isMultiInstruction || hasSharedPool) {
+        for (let j = i + 1; j < questions.length; j++) {
+          const nextQ = questions[j];
+          const sameInstruction = Boolean(q.instruction && nextQ.instruction && q.instruction === nextQ.instruction);
+          const samePool = Boolean(
+            hasSharedPool && 
+            Array.isArray(nextQ.acceptable_answers) &&
+            nextQ.acceptable_answers.length === q.acceptable_answers!.length &&
+            nextQ.acceptable_answers.every(a => q.acceptable_answers!.includes(a))
+          );
+
+          if ((isMultiInstruction && sameInstruction) || samePool) {
+            groupQuestions.push(nextQ);
+          } else {
+            break;
+          }
+        }
+      }
+
+      if (groupQuestions.length > 1) {
+        groupQuestions.forEach(item => handledMultiGroup.add(item.question_id));
+
+        const validPool = new Set<string>();
+        groupQuestions.forEach(item => {
+          const acceptable = parseAcceptableAnswers(item.correct_answer, item.acceptable_answers);
+          acceptable.forEach(ans => validPool.add(ans.toUpperCase().trim()));
+        });
+
+        const claimedAnswers = new Set<string>();
+
+        groupQuestions.forEach(item => {
+          const rawAns = userAnswers[item.question_id] || '';
+          const cleanAns = rawAns.trim().toUpperCase();
+          let isCorrect = false;
+
+          if (cleanAns && validPool.has(cleanAns) && !claimedAnswers.has(cleanAns)) {
+            isCorrect = true;
+            claimedAnswers.add(cleanAns);
+          }
+
+          const score = isCorrect ? (item.max_score || 1) : 0;
+          sectionRaw += score;
+
+          results[item.question_id] = {
+            question_id: item.question_id,
+            section,
+            user_answer: rawAns,
+            is_correct: isCorrect,
+            score_awarded: score,
+            acceptable_answers: Array.from(validPool)
+          };
+        });
+        continue;
+      }
+
+      // Detect single multi-select question with max_score > 1 or multiple answers (e.g. Choose TWO, max_score: 2)
+      const isMultiChoiceMulti = Boolean(
+        (q.max_score && q.max_score > 1) ||
+        (q.multi_select_count && q.multi_select_count > 1) ||
+        q.question_type === 'multiple_choice_multi' ||
+        (q.instruction && /choose\s+(?:two|three|four|2|3|4)\b/i.test(q.instruction))
+      );
+
+      const targetPool = parseAcceptableAnswers(q.correct_answer, q.acceptable_answers);
+
+      if (isMultiChoiceMulti && ((q.max_score && q.max_score > 1) || (q.multi_select_count && q.multi_select_count > 1))) {
+        const userLetters = userAns
+          ? userAns.split(/[\s,]+/).map(s => s.trim().toUpperCase()).filter(s => /^[A-Z]$/.test(s))
+          : [];
+        
+        const validLetters = new Set<string>();
+        targetPool.forEach(p => {
+          p.split(/[\s,]+/).forEach(letter => {
+            if (/^[A-Za-z]$/.test(letter.trim())) {
+              validLetters.add(letter.trim().toUpperCase());
+            }
+          });
+        });
+
+        if (validLetters.size > 0) {
+          let matchedCount = 0;
+          const claimed = new Set<string>();
+          userLetters.forEach(l => {
+            if (validLetters.has(l) && !claimed.has(l)) {
+              matchedCount++;
+              claimed.add(l);
+            }
+          });
+
+          // Cap at max_score
+          const maxPossible = q.max_score || q.multi_select_count || 2;
+          const awarded = Math.min(maxPossible, matchedCount);
+          sectionRaw += awarded;
+
+          results[q.question_id] = {
+            question_id: q.question_id,
+            section,
+            user_answer: userAns,
+            is_correct: awarded === maxPossible,
+            score_awarded: awarded,
+            acceptable_answers: Array.from(validLetters)
+          };
+          continue;
+        }
+      }
+
+      // Standard single-question grading
+      const userAns = userAnswers[q.question_id] || '';
+      const isCorrect = isAnswerCorrect(userAns, q.correct_answer, q.acceptable_answers, q.question_type);
+      const score = isCorrect ? (q.max_score || 1) : 0;
+      sectionRaw += score;
+
+      results[q.question_id] = {
+        question_id: q.question_id,
+        section,
+        user_answer: userAns,
+        is_correct: isCorrect,
+        score_awarded: score,
+        acceptable_answers: parseAcceptableAnswers(q.correct_answer, q.acceptable_answers)
+      };
+    }
+
+    return sectionRaw;
+  };
+
+  // Grade Listening
+  listeningRaw = gradeQuestionList(allListeningQuestions, 'listening');
 
   // Grade Reading
-  allReadingQuestions.forEach(q => {
-    const userAns = userAnswers[q.question_id] || '';
-    const isCorrect = isAnswerCorrect(userAns, q.correct_answer, q.acceptable_answers, q.question_type);
-    const score = isCorrect ? (q.max_score || 1) : 0;
-    readingRaw += score;
+  readingRaw = gradeQuestionList(allReadingQuestions, 'reading');
 
-    results[q.question_id] = {
-      question_id: q.question_id,
-      section: 'reading',
-      user_answer: userAns,
-      is_correct: isCorrect,
-      score_awarded: score,
-      acceptable_answers: parseAcceptableAnswers(q.correct_answer, q.acceptable_answers)
-    };
-  });
-
-  const listeningMax = allListeningQuestions.length;
-  const readingMax = allReadingQuestions.length;
+  const listeningMax = allListeningQuestions.reduce((sum, q) => sum + (q.max_score || 1), 0);
+  const readingMax = allReadingQuestions.reduce((sum, q) => sum + (q.max_score || 1), 0);
 
   const listeningBand = listeningMax > 0 ? calculateListeningBand(listeningRaw, listeningMax) : 0;
   const readingBand = readingMax > 0 ? calculateAcademicReadingBand(readingRaw, readingMax) : 0;

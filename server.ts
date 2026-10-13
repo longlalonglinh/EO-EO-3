@@ -1,4 +1,5 @@
 import express from 'express';
+import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { Readable } from 'node:stream';
@@ -21,7 +22,7 @@ import {
   saveStoredPracticeDeck
 } from './server/storage';
 import { verifyAndOptimizeExam } from './src/services/examVerification';
-import { parseExamFromDocumentText } from './src/services/documentExamParser';
+import { parseExamFromDocumentText, transpileFromCbtEngineSchema, transpileToCbtEngineSchema } from './src/services/documentExamParser';
 import { scoreExam, computeAnswersChecksum } from './src/services/answerScoring';
 import { GOOGLE_APPS_SCRIPT_CODE } from './src/data/gasScriptCode';
 import * as pdfParseModule from 'pdf-parse';
@@ -199,6 +200,208 @@ async function startServer() {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
+  // Dedicated Multer storage for Native Multimodal PDF pipeline
+  const pdfUpload = multer({ 
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 35 * 1024 * 1024 }
+  });
+
+  const IELTS_PARSER_SYSTEM_PROMPT = `You are an expert IELTS Assessment Architect and strict JSON Transpiler.
+Extract all content from the attached IELTS PDF document and format it strictly into the target CBT JSON schema.
+
+MANDATORY RULES:
+1. CONTENT: Extract reading passages verbatim without omitting, shortening, or modifying text. Preserve exact paragraph breaks using \\n\\n.
+2. QUESTION GROUPS: Group items strictly by original question sets. Extract verbatim instructions.
+3. INLINE TOKENS: For fill-in-the-blank / completion questions, embed standard [blank_X] tokens inside context_content or question_text where X is the exact integer question number.
+4. MULTI-SELECT MAPPING: When a question instruction says "Choose TWO/THREE", split them into individual sequential question items sharing the same options array.
+5. NO WRAPPING: Output valid raw JSON conforming strictly to the requested schema. No markdown backticks, no explanations.
+
+TARGET SCHEMA:
+{
+  "exam_id": "string",
+  "title": "string",
+  "skill": "reading",
+  "duration_minutes": 60,
+  "audio_url": null,
+  "passages": [
+    {
+      "passage_number": 1,
+      "title": "string",
+      "content": "string",
+      "question_groups": [
+        {
+          "group_id": "string",
+          "instructions": "string",
+          "question_type": "multiple_choice" | "true_false_not_given" | "yes_no_not_given" | "fill_blank" | "matching_headings",
+          "context_content": "string or null",
+          "options": ["string"],
+          "questions": [
+            {
+              "question_number": 1,
+              "question_text": "string",
+              "options": ["string"],
+              "correct_answer": "string",
+              "explanation": "string"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}`;
+
+  // Native Multimodal PDF Pipeline per EO-EO-3 Architecture (TypeScript in server.ts)
+  app.post('/api/admin/parse-pdf', pdfUpload.single('pdf'), async (req, res) => {
+    try {
+      let fileBuffer: Buffer | null = null;
+
+      if (req.file && req.file.buffer) {
+        fileBuffer = req.file.buffer;
+      } else if (req.body && req.body.pdf_base64) {
+        const cleanB64 = req.body.pdf_base64.replace(/^data:application\/pdf;base64,/, '');
+        fileBuffer = Buffer.from(cleanB64, 'base64');
+      }
+
+      if (!fileBuffer || fileBuffer.length === 0) {
+        return res.status(400).json({ success: false, error: 'NO_FILE_UPLOADED' });
+      }
+
+      const base64Data = fileBuffer.toString('base64');
+      const apiKey = process.env.GEMINI_API_KEY;
+
+      // Deterministic fallback extraction directly from PDF buffer
+      let extractedPdfText = '';
+      try {
+        extractedPdfText = await extractTextFromPdfBuffer(fileBuffer);
+      } catch (pdfErr: any) {
+        console.warn('[Admin Parse PDF] Text extractor warning:', pdfErr.message);
+      }
+
+      let parsedExamJson: any = null;
+      let usedGemini = false;
+
+      // Tier 1: Multimodal Gemini Native Pipeline
+      if (isValidGeminiApiKey(apiKey)) {
+        try {
+          const ai = new GoogleGenAI({
+            apiKey: apiKey!.trim(),
+            httpOptions: {
+              headers: {
+                'User-Agent': 'aistudio-build'
+              }
+            }
+          });
+
+          const contents: any[] = [
+            {
+              role: 'user',
+              parts: [
+                {
+                  inlineData: {
+                    data: base64Data,
+                    mimeType: 'application/pdf',
+                  },
+                },
+                {
+                  text: 'Parse the full attached IELTS exam PDF into the standard CBT JSON schema.',
+                },
+              ],
+            },
+          ];
+
+          const response = await ai.models.generateContent({
+            model: 'gemini-3.8-flash',
+            contents: contents,
+            config: {
+              temperature: 0.0,
+              responseMimeType: 'application/json',
+              systemInstruction: IELTS_PARSER_SYSTEM_PROMPT,
+            },
+          });
+
+          const responseText = response.text || '';
+          const cleanedJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+          if (cleanedJson.startsWith('{') && cleanedJson.endsWith('}')) {
+            parsedExamJson = JSON.parse(cleanedJson);
+            usedGemini = true;
+          }
+        } catch (geminiErr: any) {
+          console.warn('[Admin Parse PDF] Gemini call unsuccessful, using deterministic parser fallback:', geminiErr.message);
+        }
+      }
+
+      // Tier 2: Deterministic Parser Fallback
+      let targetExamData: any = null;
+
+      if (parsedExamJson && (parsedExamJson.passages?.length > 0 || parsedExamJson.reading_questions?.length > 0 || parsedExamJson.questions?.length > 0)) {
+        if (parsedExamJson.passages && parsedExamJson.passages[0]?.question_groups) {
+          targetExamData = transpileFromCbtEngineSchema(parsedExamJson);
+        } else {
+          targetExamData = parsedExamJson;
+        }
+      }
+
+      // If still missing questions or Gemini wasn't used/returned empty, parse from extracted text
+      const currentQCount = (targetExamData?.reading_questions?.length || 0) + 
+                            (targetExamData?.listening_questions?.length || 0) + 
+                            (targetExamData?.questions?.length || 0);
+
+      if ((!targetExamData || currentQCount === 0) && extractedPdfText) {
+        const docResult = parseExamFromDocumentText(extractedPdfText);
+        if (docResult.questionsCount > 0 || docResult.hasWriting) {
+          targetExamData = docResult.exam;
+        }
+      }
+
+      if (!targetExamData) {
+        return res.status(422).json({
+          success: false,
+          error: 'Không tìm thấy câu hỏi nào trong nội dung tài liệu. Vui lòng đảm bảo các câu hỏi được đánh số thứ tự rõ ràng (ví dụ: 1., 2., 3., Questions 1-5...). Không đưa câu hỏi giả lập vào trong đề.'
+        });
+      }
+
+      const totalQs = (targetExamData.reading_questions?.length || 0) + 
+                      (targetExamData.listening_questions?.length || 0) + 
+                      (targetExamData.questions?.length || 0);
+      const hasWriting = Boolean(targetExamData.writing_task1_prompt || targetExamData.writing_task2_prompt);
+
+      if (totalQs === 0 && !hasWriting) {
+        return res.status(422).json({
+          success: false,
+          error: 'Không tìm thấy câu hỏi nào trong nội dung tài liệu. Vui lòng đảm bảo các câu hỏi được đánh số thứ tự rõ ràng (ví dụ: 1., 2., 3., Questions 1-5...). Không đưa câu hỏi giả lập vào trong đề.'
+        });
+      }
+
+      // Step 3: Run 6-Point Quality Verification & Auto-Repair Suite
+      const verified = verifyAndOptimizeExam(targetExamData);
+      const verifiedExam = verified.exam;
+
+      // Step 4: Persist directly into server_data/exams.json and in-memory cache
+      try {
+        saveStoredExam(verifiedExam);
+      } catch (saveErr: any) {
+        console.warn('[Admin Parse PDF] Error persisting exam to server store:', saveErr.message);
+      }
+
+      // Generate canonical CBT engine schema representation
+      const cbtSchema = transpileToCbtEngineSchema(verifiedExam);
+
+      return res.json({
+        success: true,
+        exam: verifiedExam,
+        cbtExam: cbtSchema,
+        testReport: verified.report,
+        usedGemini
+      });
+    } catch (error: any) {
+      console.error('[Admin Parse PDF Error]:', error);
+      return res.status(500).json({ 
+        success: false, 
+        error: error.message || 'PARSING_FAILED' 
+      });
+    }
+  });
+
   // AI Exam Parser using Gemini 3.8 Flash & Deterministic PDF/Document Text Engine
   app.post('/api/parse-exam', async (req, res) => {
     try {
@@ -239,7 +442,7 @@ async function startServer() {
       let parsedExam: any = docParsed.exam;
 
       // Step 3: If a valid Gemini API key is configured, also attempt AI extraction
-      if (isValidGeminiApiKey(apiKey) && fullDocumentText) {
+      if (isValidGeminiApiKey(apiKey) && (fullDocumentText || pdf_base64)) {
         try {
           const ai = new GoogleGenAI({ 
             apiKey: apiKey!.trim(),
@@ -249,7 +452,8 @@ async function startServer() {
               }
             }
           });
-          const systemPrompt = `You are an expert IELTS Exam Parser. Your job is to analyze the complete raw IELTS test text or PDF contents and convert it into a strictly formatted JSON object matching this schema:
+          const systemPrompt = `You are an expert IELTS Assessment Engine and Document OCR Transpiler.
+Analyze the complete raw IELTS test text or PDF contents and convert it into a strictly formatted JSON object matching this schema:
 
 {
   "exam_code": "IELTS_AI_PARSED",
@@ -285,12 +489,23 @@ async function startServer() {
   ]
 }
 
-Extract ALL questions found in the document. Do not truncate. Return ONLY raw valid JSON, without any markdown code fences (\`\`\`json).`;
+Extract ALL questions found in the document verbatim. Return ONLY raw valid JSON, without any markdown code fences.`;
 
-          const contents: any[] = [
-            { text: systemPrompt },
-            { text: `Analyze and extract all IELTS exam sections, passages, and questions from this text:\n\n${fullDocumentText}` }
-          ];
+          const contents: any[] = [{ text: systemPrompt }];
+          if (pdf_base64) {
+            const cleanB64 = pdf_base64.replace(/^data:application\/pdf;base64,/, '');
+            contents.push({
+              inlineData: {
+                data: cleanB64,
+                mimeType: 'application/pdf'
+              }
+            });
+          }
+          if (fullDocumentText) {
+            contents.push({
+              text: `Analyze and extract all IELTS exam sections, passages, and questions from this text:\n\n${fullDocumentText}`
+            });
+          }
 
           const response = await ai.models.generateContent({
             model: 'gemini-3.8-flash',
@@ -303,12 +518,26 @@ Extract ALL questions found in the document. Do not truncate. Return ONLY raw va
           const responseText = response.text || '';
           const cleanedJsonText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
           const aiParsedExam = JSON.parse(cleanedJsonText);
-          const aiQCount = (aiParsedExam.reading_questions?.length || 0) + (aiParsedExam.listening_questions?.length || 0);
+          
+          const aiReading = Array.isArray(aiParsedExam.reading_questions) ? aiParsedExam.reading_questions : [];
+          const aiListening = Array.isArray(aiParsedExam.listening_questions) ? aiParsedExam.listening_questions : [];
+          const aiQuestions = Array.isArray(aiParsedExam.questions) ? aiParsedExam.questions : [];
+
+          if (aiQuestions.length > 0 && aiReading.length === 0 && aiListening.length === 0) {
+            for (const q of aiQuestions) {
+              if (q.section === 'listening') aiListening.push(q);
+              else aiReading.push(q);
+            }
+          }
+          aiParsedExam.reading_questions = aiReading;
+          aiParsedExam.listening_questions = aiListening;
+
+          const aiQCount = aiReading.length + aiListening.length + aiQuestions.length;
           if (aiQCount >= docParsed.questionsCount && aiQCount > 0) {
             parsedExam = aiParsedExam;
           }
         } catch (err: any) {
-          console.warn('[Parse Exam] Gemini API call was unsuccessful, using deterministic document parser result.');
+          console.warn('[Parse Exam] Gemini API call was unsuccessful, using enhanced deterministic document parser result.');
         }
       }
 
@@ -319,15 +548,58 @@ Extract ALL questions found in the document. Do not truncate. Return ONLY raw va
         totalDetected = docParsed.questionsCount;
       }
 
+      // Handle Writing Tasks if present
+      const hasWritingTasks = Boolean(
+        parsedExam.writing_task1_prompt || 
+        parsedExam.writing_task2_prompt || 
+        docParsed.hasWriting ||
+        (Array.isArray(parsedExam.writing_tasks) && parsedExam.writing_tasks.length > 0)
+      );
+
+      if (totalDetected === 0 && hasWritingTasks) {
+        const writingQs: any[] = [];
+        if (parsedExam.writing_task1_prompt) {
+          writingQs.push({
+            question_id: 'W1',
+            question_number: 1,
+            section: 'reading',
+            question_type: 'writing_task',
+            question_text: parsedExam.writing_task1_prompt,
+            instruction: 'You should spend about 20 minutes on this task. Write at least 150 words.',
+            max_score: 9
+          });
+        }
+        if (parsedExam.writing_task2_prompt) {
+          writingQs.push({
+            question_id: 'W2',
+            question_number: 2,
+            section: 'reading',
+            question_type: 'writing_task',
+            question_text: parsedExam.writing_task2_prompt,
+            instruction: 'You should spend about 40 minutes on this task. Write at least 250 words.',
+            max_score: 9
+          });
+        }
+        parsedExam.questions = writingQs;
+        totalDetected = writingQs.length;
+      }
+
       if (totalDetected === 0) {
         return res.status(422).json({
           success: false,
-          error: 'Không tìm thấy câu hỏi nào trong nội dung tài liệu. Vui lòng đảm bảo các câu hỏi được đánh số thứ tự rõ ràng (ví dụ: 1., 2., 3., Questions 1-5...). Không đưa câu hỏi giả lập vào trong đề.'
+          error: 'Không tìm thấy câu hỏi hoặc bài đọc nào trong nội dung tài liệu. Vui lòng kiểm tra lại file PDF hoặc dán trực tiếp đề thi.'
         });
       }
 
       // Step 4: Run 6-Point Quality Verification & Auto-Repair on the extracted exam
       const verified = verifyAndOptimizeExam(parsedExam);
+
+      // Persist to central server store
+      try {
+        saveStoredExam(verified.exam);
+      } catch (saveErr: any) {
+        console.warn('[Parse Exam] Could not persist exam to server storage:', saveErr.message);
+      }
 
       return res.json({
         success: true,

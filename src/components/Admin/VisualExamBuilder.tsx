@@ -21,7 +21,10 @@ import {
   XCircle,
   Check,
   ArrowRight,
-  ListCheck
+  ListCheck,
+  Scissors,
+  Columns,
+  Eye
 } from 'lucide-react';
 import { ExamData, Question, ReadingPassageItem, QuestionType, IELTSQuestionType, canonicalizeQuestionType, SkillType, ExamType } from '../../types';
 import { saveExamToIndexedDB } from '../../services/indexedDb';
@@ -29,6 +32,7 @@ import { saveExamToServerDb } from '../../services/api';
 import { Task1ImageUploader } from './Task1ImageUploader';
 import { QuestionEditorItem } from './QuestionEditorItem';
 import { sanitizeExamForSkills } from '../../utils/examUtils';
+import { IELTSQuestionCard } from '../Student/IELTSQuestionCard';
 
 // 1. Zod Validation Schema - Highly flexible to allow single-skill exams & partial question sets
 export const questionZodSchema = z.object({
@@ -94,6 +98,10 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
   const [activeSection, setActiveSection] = useState<'reading' | 'listening' | 'writing' | 'settings'>('reading');
   const [selectedPassageIdx, setSelectedPassageIdx] = useState<0 | 1 | 2>(0);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
+  const [splitScreenPreview, setSplitScreenPreview] = useState(false);
+  const [tokenizerToast, setTokenizerToast] = useState<string | null>(null);
+  const [previewAnswers, setPreviewAnswers] = useState<Record<string, string>>({});
+  const passageTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Helper to format initial passages with embedded questions
   const formatInitialData = (data: ExamData): ExamFormValues => {
@@ -571,6 +579,60 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
     setTimeout(() => setSaveSuccessMessage(null), 4500);
   };
 
+  // WYSIWYG Tokenizer ("Bôi đen tạo câu hỏi"): Highlight text -> click "Tạo ô trống" -> inserts [blank_X] and appends question
+  const handleTokenizeSelection = () => {
+    const textarea = passageTextareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selected = textarea.value.substring(start, end).trim();
+
+    if (!selected) {
+      setTokenizerToast('⚠️ Vui lòng bôi đen từ hoặc cụm từ trong khung văn bản bài đọc trước khi bấm "Tạo ô trống" (ví dụ: bôi đen từ "pesticides").');
+      setTimeout(() => setTokenizerToast(null), 4000);
+      return;
+    }
+
+    // Determine the next question number across all passages
+    const allPassageQs = (watchedPassages || []).flatMap(p => p?.questions || []);
+    const nextQNum = allPassageQs.length + 1;
+    const token = `[blank_${nextQNum}]`;
+
+    // Replace selected range in textarea
+    const fullText = textarea.value;
+    const newText = fullText.substring(0, start) + token + fullText.substring(end);
+    setValue(`passages.${selectedPassageIdx}.text`, newText, { shouldDirty: true });
+
+    // Auto-create matching fill_in_the_blank question item
+    const pNumber = (selectedPassageIdx + 1) as 1 | 2 | 3;
+    const wordCount = selected.split(/\s+/).length;
+    const limitDesc = wordCount <= 1 ? 'NO MORE THAN ONE WORD' : wordCount <= 2 ? 'NO MORE THAN TWO WORDS' : 'NO MORE THAN THREE WORDS';
+
+    currentPassageQuestionsArray.append({
+      question_id: `R${nextQNum}`,
+      section: 'reading',
+      passage_index: pNumber,
+      question_text: `Complete the sentence with ${limitDesc} from the passage: ${token}`,
+      question_type: IELTSQuestionType.FILL_IN_THE_BLANK,
+      options: [],
+      correct_answer: selected,
+      max_score: 1,
+      instruction: `Write ${limitDesc} from the passage for each answer.`,
+      word_limit: limitDesc,
+      explanation: `Extracted verbatim from passage text: "${selected}"`,
+      table_data: undefined,
+      flowchart_steps: undefined,
+      word_bank: undefined,
+      matching_options: undefined,
+      nb_condition: false,
+      multi_select_count: 2
+    });
+
+    setTokenizerToast(`✅ Đã bôi đen "${selected}": Tự động thay bằng ${token} và tạo câu hỏi R${nextQNum} có đáp án "${selected}"!`);
+    setTimeout(() => setTokenizerToast(null), 4500);
+  };
+
   const handleAddQuestionToPassage = () => {
     const pNumber = (selectedPassageIdx + 1) as 1 | 2 | 3;
     const currentList = watchedPassages[selectedPassageIdx]?.questions || [];
@@ -752,6 +814,21 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
               <span className="hidden sm:inline">Redo</span>
             </button>
           </div>
+
+          {/* Split-Screen Preview Toggle (User Request 2) */}
+          <button
+            type="button"
+            onClick={() => setSplitScreenPreview(!splitScreenPreview)}
+            title="Bật/Tắt chế độ chia đôi màn hình xem trước giao diện học sinh trong thời gian thực"
+            className={`px-3.5 py-2 rounded-2xl text-xs font-black transition flex items-center gap-1.5 cursor-pointer border ${
+              splitScreenPreview
+                ? 'bg-[#503A7A] text-white border-[#3C2A63] shadow-md'
+                : 'bg-[#F8F6FC] hover:bg-[#E2DDEC] text-[#3C2A63] border-purple-200'
+            }`}
+          >
+            <Columns className="w-3.5 h-3.5" />
+            <span>{splitScreenPreview ? 'Exit Split Screen' : 'Split-Screen Preview'}</span>
+          </button>
 
           <button
             type="button"
@@ -1063,9 +1140,11 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
 
       {/* SECTION 1: READING MODULE (Passages + Nested Questions) */}
       {activeSection === 'reading' && (
-        <div className="space-y-6">
+        <div className={splitScreenPreview ? "grid grid-cols-1 xl:grid-cols-2 gap-6 items-start" : "space-y-6"}>
           
-          {/* Passage 1, 2, 3 Selector */}
+          {/* Left Column: Visual Builder */}
+          <div className="space-y-6">
+            {/* Passage 1, 2, 3 Selector */}
           <div className="flex items-center gap-2">
             {[0, 1, 2].map((idx) => {
               const pNum = idx + 1;
@@ -1122,17 +1201,51 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
               )}
             </div>
 
-            {/* Passage Text */}
+            {/* Passage Text with WYSIWYG Tokenizer */}
             <div>
-              <label className="block text-xs font-black text-[#3C2A63] mb-1">
-                Passage Text (Academic Reading Article):
-              </label>
-              <textarea
-                rows={10}
-                {...register(`passages.${selectedPassageIdx}.text`)}
-                placeholder="Paste or type full passage paragraphs here..."
-                className="w-full p-4 bg-[#F8F6FC] rounded-2xl border border-purple-100 text-xs font-serif leading-relaxed text-[#3C2A63] focus:outline-none focus:ring-2 focus:ring-[#6B51A5]"
-              />
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-1.5">
+                <label className="block text-xs font-black text-[#3C2A63]">
+                  Passage Text (Academic Reading Article):
+                </label>
+
+                {/* WYSIWYG TOKENIZER TOOLBAR */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleTokenizeSelection}
+                    className="px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl text-xs font-black shadow-sm flex items-center gap-1.5 transition cursor-pointer"
+                    title="Bôi đen một từ/cụm từ trong khung dưới đây rồi bấm nút này để tự động tạo ô trống [blank_X] và câu hỏi điền từ"
+                  >
+                    <Scissors className="w-3.5 h-3.5 text-purple-200" />
+                    <span>Tạo ô trống [blank_X] từ từ bôi đen</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Tokenizer Toast Notification */}
+              {tokenizerToast && (
+                <div className="mb-2 p-2.5 bg-purple-100/90 border border-purple-300 rounded-xl text-xs font-bold text-[#3C2A63] flex items-center gap-2 animate-fadeIn">
+                  <Sparkles className="w-4 h-4 text-[#6B51A5] shrink-0" />
+                  <span>{tokenizerToast}</span>
+                </div>
+              )}
+
+              {/* Textarea with ref for selection extraction */}
+              {(() => {
+                const { ref: formRef, ...rest } = register(`passages.${selectedPassageIdx}.text`);
+                return (
+                  <textarea
+                    rows={10}
+                    {...rest}
+                    ref={(el) => {
+                      formRef(el);
+                      passageTextareaRef.current = el;
+                    }}
+                    placeholder="Dán hoặc nhập toàn bộ nội dung bài đọc tại đây. Để tạo câu hỏi điền từ nhanh, hãy bôi đen bất kỳ từ nào (ví dụ: 'pesticides') rồi bấm nút 'Tạo ô trống' phía trên..."
+                    className="w-full p-4 bg-[#F8F6FC] rounded-2xl border border-purple-100 text-xs font-serif leading-relaxed text-[#3C2A63] focus:outline-none focus:ring-2 focus:ring-[#6B51A5]"
+                  />
+                );
+              })()}
               {errors.passages?.[selectedPassageIdx]?.text && (
                 <p className="text-xs text-rose-600 mt-1 font-bold">
                   {errors.passages[selectedPassageIdx]?.text?.message}
@@ -1186,6 +1299,82 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
               )}
             </div>
           </div>
+        </div>
+
+        {/* Right Column: Real-Time Split-Screen Student CBT Simulation */}
+        {splitScreenPreview && (
+            <div className="sticky top-4 bg-white rounded-3xl p-6 border-2 border-purple-200/90 shadow-2xl space-y-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
+              <div className="flex items-center justify-between pb-3 border-b border-purple-100">
+                <div className="flex items-center gap-2">
+                  <span className="p-1.5 bg-[#6B51A5] text-white rounded-xl shadow-xs">
+                    <Eye className="w-4 h-4" />
+                  </span>
+                  <div>
+                    <h4 className="text-xs font-black uppercase text-[#3C2A63] tracking-wider">
+                      Student CBT Live Simulation
+                    </h4>
+                    <p className="text-[10px] text-[#7C68A5]">
+                      Mô phỏng thời gian thực giao diện học sinh (Passage {selectedPassageIdx + 1})
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setPreviewAnswers({})}
+                  className="px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-50 rounded-lg border border-rose-200 transition cursor-pointer"
+                  title="Xóa câu trả lời đang test thử"
+                >
+                  Xóa đáp án thử
+                </button>
+              </div>
+
+              {/* Passage Article Preview */}
+              <div className="p-4 bg-[#FAF8FD] rounded-2xl border border-purple-100 space-y-2">
+                <h5 className="text-xs font-black text-[#503A7A]">
+                  {watchedPassages[selectedPassageIdx]?.title || `Reading Passage ${selectedPassageIdx + 1}`}
+                </h5>
+                <div className="text-xs font-serif leading-relaxed text-[#3C2A63] whitespace-pre-wrap max-h-56 overflow-y-auto p-2.5 bg-white rounded-xl border border-purple-50">
+                  {watchedPassages[selectedPassageIdx]?.text || 'Chưa có nội dung đoạn văn bài đọc...'}
+                </div>
+              </div>
+
+              {/* Interactive Student Questions Live Preview */}
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-[#3C2A63]">
+                    Câu hỏi ({watchedPassages[selectedPassageIdx]?.questions?.length || 0})
+                  </span>
+                  <span className="text-[10px] text-[#7C68A5] font-semibold">
+                    Interactive CBT Mode
+                  </span>
+                </div>
+
+                {(!watchedPassages[selectedPassageIdx]?.questions || watchedPassages[selectedPassageIdx]?.questions?.length === 0) ? (
+                  <div className="p-6 text-center text-xs text-[#7C68A5] bg-purple-50/50 rounded-2xl border border-dashed border-purple-200">
+                    Chưa có câu hỏi nào. Dùng tính năng bôi đen để tạo ô trống hoặc bấm &quot;Add Question&quot;.
+                  </div>
+                ) : (
+                  watchedPassages[selectedPassageIdx]?.questions?.map((q, qIdx) => {
+                    const fallbackQId = q.question_id || `R${qIdx + 1}`;
+                    return (
+                      <IELTSQuestionCard
+                        key={fallbackQId || qIdx}
+                        question={q as any}
+                        questionNumber={qIdx + 1}
+                        userAnswer={previewAnswers[fallbackQId] || ''}
+                        onAnswerChange={(qid, ans) => {
+                          setPreviewAnswers(prev => ({ ...prev, [qid]: ans }));
+                        }}
+                        allUserAnswers={previewAnswers}
+                        allQuestions={watchedPassages[selectedPassageIdx]?.questions as any}
+                      />
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
 
         </div>
       )}

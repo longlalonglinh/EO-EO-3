@@ -1,4 +1,15 @@
-import { ExamData, Question, QuestionType, ReadingPassageItem } from '../types';
+import { 
+  ExamData, 
+  Question, 
+  QuestionType, 
+  ReadingPassageItem,
+  CanonicalCbtQuestionType,
+  CbtEngineTranspiledExam,
+  CbtPassageItem,
+  CbtQuestionGroup,
+  CbtQuestionItem,
+  CbtWritingTaskItem
+} from '../types';
 
 export interface ParsedDocumentResult {
   exam: Partial<ExamData>;
@@ -500,35 +511,78 @@ export function parseQuestionsList(
 
     // 2. Detect Question Number:
     // Matches:
-    // - "1. Text", "1) Text", "1: Text", "1 - Text", "(1) Text", "[1] Text", "1/ Text", "1 Text"
-    // - "Question 1: Text", "Q1: Text", "Câu 1: Text", "Câu hỏi 1: Text", "Bài 1: Text"
-    // - Single number alone on its line: "1", "1.", "1)", "(1)", "[1]", "Q1", "Câu 1"
-    const qMatch = line.match(/^(?:question\s*|questions\s*|q\s*\.?\s*|câu\s*(?:hỏi\s*)?|bài\s*)?[\(\[]?(\d{1,2})[\.\)\:\-\]\|/]?\s*(.*)$/i);
-    if (qMatch) {
-      const parsedNum = parseInt(qMatch[1], 10);
-      // Ensure number is a valid question number between 1 and 50
+    // - Standalone number alone on its line: "1", "1.", "1)", "(1)", "[1]"
+    // - Number with punctuation: "1. Text", "1) Text", "1: Text", "(1) Text", "[1] Text"
+    // - Question prefix: "Question 1: Text", "Q1: Text", "Câu 1: Text"
+    // - Standalone bare number with text: "1 Which of the following..."
+    let explicitNumMatch: [string, string, string?] | RegExpMatchArray | null = null;
+
+    const singleNumLineMatch = line.match(/^[\(\[]?(\d{1,2})[\.\)\:\-\]]?$/);
+    if (singleNumLineMatch) {
+      explicitNumMatch = [singleNumLineMatch[0], singleNumLineMatch[1], ''];
+    } else {
+      const punctQMatch = line.match(/^(?:question\s*|questions\s*|q\s*\.?\s*|câu\s*(?:hỏi\s*)?|bài\s*)?[\(\[]?(\d{1,2})[\.\)\:\-\]\|/]\s*(.*)$/i);
+      const prefixQMatch = !punctQMatch ? line.match(/^(?:question\s*|questions\s*|q\s*\.?\s*|câu\s*(?:hỏi\s*)?|bài\s*)(\d{1,2})\s*(.*)$/i) : null;
+      explicitNumMatch = punctQMatch || prefixQMatch;
+
+      if (!explicitNumMatch) {
+        // Standalone number without punctuation: e.g. "1 Which of the following..."
+        const bareNumMatch = line.match(/^(\d{1,2})\s+([A-Za-z].*)$/);
+        if (bareNumMatch) {
+          const potentialNum = parseInt(bareNumMatch[1], 10);
+          const remainder = bareNumMatch[2].trim();
+          // Guard: ensure it's not a unit or time duration (e.g. "10 years ago", "50 percent")
+          const isUnitOrDuration = /^(?:years?|months?|days?|hours?|minutes?|seconds?|percent|%|species|people|km|kilometres?|miles?|meters?|kg|pounds?|dollars?|million|billion|century|centuries)\b/i.test(remainder);
+          if (!isUnitOrDuration && potentialNum >= 1 && potentialNum <= 50) {
+            explicitNumMatch = bareNumMatch;
+          }
+        }
+      }
+    }
+
+    if (explicitNumMatch) {
+      const parsedNum = parseInt(explicitNumMatch[1], 10);
       if (!isNaN(parsedNum) && parsedNum >= 1 && parsedNum <= 50) {
         flushQuestion();
         currentQNum = parsedNum;
-        if (qMatch[2] && qMatch[2].trim()) {
-          currentQTextLines.push(qMatch[2].trim());
+        if (explicitNumMatch[2] && explicitNumMatch[2].trim()) {
+          currentQTextLines.push(explicitNumMatch[2].trim());
         }
         continue;
       }
     }
 
-    // 3. Detect embedded blank in line:
-    // e.g. "Edmond Becquerel discovered the photovoltaic effect in (1) ..........."
-    // e.g. "1 ..........."
-    const embeddedBlankMatch = line.match(/^([^\d\n\r]*?)[\(\[]?(\d{1,2})[\)\]]?\s*[\._–-]{3,}(.*)$/);
-    if (embeddedBlankMatch) {
-      const parsedNum = parseInt(embeddedBlankMatch[2], 10);
-      if (!isNaN(parsedNum) && parsedNum >= 1 && parsedNum <= 50) {
-        flushQuestion();
-        currentQNum = parsedNum;
-        currentQTextLines.push(line);
+    // 3. Detect embedded blanks in summary, table, flow-chart, or sentence completion:
+    // Matches: "[blank_1]", "[1]", "(1)", "1 ____", "____ (1)", "____ [1]" anywhere in line
+    const blankMatches = Array.from(line.matchAll(/(?:\[blank_(\d{1,2})\]|\[(\d{1,2})\]|\((\d{1,2})\)|(?:\b|^)(\d{1,2})\s*[\._–-]{2,}|[\._–-]{2,}\s*[\(\[]?(\d{1,2})[\)\]]?)/g));
+    if (blankMatches.length > 0) {
+      for (const bMatch of blankMatches) {
+        const bNum = parseInt(bMatch[1] || bMatch[2] || bMatch[3] || bMatch[4] || bMatch[5], 10);
+        if (!isNaN(bNum) && bNum >= 1 && bNum <= 50) {
+          if (currentQNum !== bNum) {
+            flushQuestion();
+            currentQNum = bNum;
+            // Clean inline representation to canonical [blank_X]
+            const normalizedBlankLine = line.replace(/(?:\[blank_\d+\]|\[\d+\]|\(\d+\)|\b\d+\s*[\._–-]{2,}|[\._–-]{2,}\s*[\(\[]?\d+[\)\]]?)/g, (match) => {
+              const matchedNum = match.replace(/\D/g, '');
+              return matchedNum ? `[blank_${matchedNum}]` : match;
+            });
+            currentQTextLines.push(normalizedBlankLine);
+          }
+        }
+      }
+      if (currentQNum !== null) {
         continue;
       }
+    }
+
+    // 4. Detect unnumbered question (e.g. line ending with "?" or interrogative statement under instruction)
+    if (currentQNum === null && (line.endsWith('?') || /^(?:what|which|where|when|why|how|who|whom|whose)\b/i.test(line))) {
+      const nextNum = (questions.length > 0 ? questions[questions.length - 1].question_number || questions.length : 0) + 1;
+      flushQuestion();
+      currentQNum = nextNum;
+      currentQTextLines.push(line);
+      continue;
     }
 
     // If we haven't started a question yet and line is non-empty, treat as instruction context
@@ -597,14 +651,19 @@ export function extractPassageAndQuestions(text: string, passageIndex: number = 
   }
 
   // Find where questions start:
-  // - "Questions X-Y", "Questions 1-5", "Câu hỏi 1-5"
+  // - "Questions X-Y", "Questions 1-5", "Câu hỏi 1-5", "Questions 1 to 5"
   // - "Complete the...", "Do the following...", "Choose the..."
-  // - Question number starting a line: e.g. "1.", "14.", "27.", "Câu 1", "Q1:"
+  // - Question marker with required punctuation or label: e.g. "1.", "1)", "1:", "Question 1", "Q1:"
+  // - Standalone question number followed by text: "1 Which of the...", "1 The main reason..."
   let questionsStartLineIdx = lines.findIndex((l, idx) => 
     idx >= passageStartIdx && (
       /^(?:questions?|câu\s*(?:hỏi\s*)?)\s*\d+/i.test(l) ||
-      /^(?:do the following statements|choose the correct letter|complete the (?:summary|notes?|sentences?|table))/i.test(l) ||
-      /^\s*(?:question\s*|q\s*\.?\s*|câu\s*(?:hỏi\s*)?|bài\s*)?[\(\[]?(\d{1,2})[\.\)\:\-\]\|/]?\s*/i.test(l)
+      /^(?:do the following statements|choose the (?:correct\s+)?(?:letter|heading|number|words?|two|three)|complete the (?:summary|notes?|sentences?|table|diagram|flow-chart)|which (?:paragraph|section)|look at the following|label the|classify the)/i.test(l) ||
+      /^\s*(?:question\s*|questions\s*|q\s*\.?\s*|câu\s*(?:hỏi\s*)?|bài\s*)\d+/i.test(l) ||
+      /^\s*[\(\[](\d{1,2})[\)\]]/.test(l) ||
+      /^\s*(\d{1,2})[\.\)\:\-\/\]]\s+/.test(l) ||
+      /^\s*(\d{1,2})\s+[A-Za-z]/.test(l) ||
+      /\[blank_\d+\]/i.test(l)
     )
   );
 
@@ -635,8 +694,15 @@ export function extractPassageAndQuestions(text: string, passageIndex: number = 
     // Fallback search in cleanText
     const testQs = parseQuestionsList(cleanText, 'reading', new Map());
     if (testQs.length > 0) {
-      questionsBlock = cleanText;
-      passageText = '';
+      const firstQSnippet = (testQs[0].question_text || '').split('\n')[0].trim().slice(0, 30);
+      const firstQIdx = firstQSnippet ? lines.findIndex((l, idx) => idx >= passageStartIdx && l.includes(firstQSnippet)) : -1;
+      if (firstQIdx > passageStartIdx) {
+        passageText = lines.slice(passageStartIdx, firstQIdx).join('\n\n');
+        questionsBlock = lines.slice(firstQIdx).join('\n');
+      } else {
+        questionsBlock = cleanText;
+        passageText = '';
+      }
     } else {
       passageText = cleanText;
       questionsBlock = '';
@@ -770,6 +836,37 @@ export function parseExamFromDocumentText(rawText: string): ParsedDocumentResult
     }
   }
 
+  // SAFETY NET 2: If Writing Tasks are present, synthesize corresponding writing questions
+  if (allQuestions.length === 0 && (task1 || task2)) {
+    const writingQs: Question[] = [];
+    if (task1) {
+      writingQs.push({
+        question_id: 'W1',
+        question_number: 1,
+        section: 'reading',
+        question_type: 'writing_task' as any,
+        question_text: task1,
+        instruction: 'You should spend about 20 minutes on this task. Write at least 150 words.',
+        max_score: 9
+      });
+    }
+    if (task2) {
+      writingQs.push({
+        question_id: 'W2',
+        question_number: 2,
+        section: 'reading',
+        question_type: 'writing_task' as any,
+        question_text: task2,
+        instruction: 'You should spend about 40 minutes on this task. Write at least 250 words.',
+        max_score: 9
+      });
+    }
+    allQuestions = writingQs;
+  }
+
+  // Note: Do not inject synthetic/dummy questions into exams if none were found in document
+  // (strictly per IELTS assessment architect guidelines)
+
   // If reading passage text was not separated, retain non-empty text
   if (!mainPassageText && textWithoutWriting) {
     mainPassageText = textWithoutWriting;
@@ -828,3 +925,278 @@ export function parseExamFromDocumentText(rawText: string): ParsedDocumentResult
     passageCount: passagesList.length
   };
 }
+
+/**
+ * Normalizes question completion blanks to standardized [blank_X] token notation.
+ * Replaces ellipses ("...", "…"), underscores ("_____"), or parenthesized numbers "(1)"
+ * with the deterministic "[blank_X]" token.
+ */
+export function normalizeInlineTokens(text: string, questionNumber?: number): string {
+  if (!text) return text;
+  let normalized = text;
+
+  if (typeof questionNumber === 'number' && questionNumber > 0) {
+    const specificPatterns = [
+      new RegExp(`\\(${questionNumber}\\)`, 'g'),
+      new RegExp(`\\[${questionNumber}\\]`, 'g'),
+      new RegExp(`\\b${questionNumber}\\.\\s*(?:_{2,}|\\.{3,}|…|\\[\\.{3,}\\])`, 'g'),
+      new RegExp(`_{3,}\\s*\\(${questionNumber}\\)`, 'g'),
+      new RegExp(`\\(${questionNumber}\\)\\s*_{3,}`, 'g')
+    ];
+    specificPatterns.forEach(pattern => {
+      normalized = normalized.replace(pattern, `[blank_${questionNumber}]`);
+    });
+  }
+
+  // Replace generic blank representations if questionNumber is known
+  if (typeof questionNumber === 'number' && questionNumber > 0 && !normalized.includes(`[blank_${questionNumber}]`)) {
+    if (normalized.includes('____') || normalized.includes('....') || normalized.includes('…')) {
+      normalized = normalized.replace(/(?:_{3,}|\.{3,}|…|\[\.{3,}\])/, `[blank_${questionNumber}]`);
+    }
+  }
+
+  return normalized;
+}
+
+/**
+ * Maps arbitrary question type strings strictly to one of the 9 canonical CBT Schema types:
+ * - "multiple_choice"
+ * - "true_false_not_given"
+ * - "yes_no_not_given"
+ * - "fill_blank"
+ * - "matching_headings"
+ * - "matching_information"
+ * - "matching_features"
+ * - "flow_chart_completion"
+ * - "writing_task"
+ */
+export function canonicalizeToCbtQuestionType(rawType: string | undefined | null): CanonicalCbtQuestionType {
+  if (!rawType) return 'multiple_choice';
+  const clean = rawType.toLowerCase().replace(/[-\s]+/g, '_');
+
+  if (clean === 'true_false_not_given' || clean === 'tfng') return 'true_false_not_given';
+  if (clean === 'yes_no_not_given' || clean === 'ynng') return 'yes_no_not_given';
+  if (clean === 'matching_headings') return 'matching_headings';
+  if (clean === 'matching_information') return 'matching_information';
+  if (clean === 'matching_features') return 'matching_features';
+  if (clean === 'flow_chart_completion' || clean === 'flowchart_completion') return 'flow_chart_completion';
+  if (clean === 'writing_task' || clean === 'writing') return 'writing_task';
+
+  if (
+    clean.includes('fill') ||
+    clean.includes('blank') ||
+    clean.includes('completion') ||
+    clean.includes('short_answer') ||
+    clean === 'table_completion' ||
+    clean === 'sentence_completion' ||
+    clean === 'summary_completion' ||
+    clean === 'summary_completion_text' ||
+    clean === 'summary_completion_box'
+  ) {
+    return 'fill_blank';
+  }
+
+  return 'multiple_choice';
+}
+
+/**
+ * Transpiles an ExamData object into the target deterministic CBT Engine Transpiler JSON Schema.
+ */
+export function transpileToCbtEngineSchema(exam: Partial<ExamData>): CbtEngineTranspiledExam {
+  const skill: 'reading' | 'listening' | 'writing' =
+    (exam.skills && exam.skills.length === 1
+      ? exam.skills[0]
+      : (exam.listening_questions && exam.listening_questions.length > 0 ? 'listening' : 'reading')) as any;
+
+  const passages: CbtPassageItem[] = [];
+
+  if (Array.isArray(exam.passages) && exam.passages.length > 0) {
+    exam.passages.forEach((p, pIdx) => {
+      const qList = p.questions || [];
+      const groupsMap = new Map<string, CbtQuestionItem[]>();
+      const groupMeta = new Map<string, { type: CanonicalCbtQuestionType; instruction: string; context?: string }>();
+
+      qList.forEach(q => {
+        const cbtType = canonicalizeToCbtQuestionType(q.question_type);
+        const groupKey = `${cbtType}_${q.instruction || ''}`;
+        if (!groupsMap.has(groupKey)) {
+          groupsMap.set(groupKey, []);
+          groupMeta.set(groupKey, {
+            type: cbtType,
+            instruction: q.instruction || `Questions ${q.question_id}`,
+            context: (q as any).context_content
+          });
+        }
+
+        const qNum = parseInt(q.question_id.replace(/\D/g, ''), 10) || 1;
+        const rawAns = q.correct_answer;
+        const cleanAns = Array.isArray(rawAns) ? rawAns.join(', ') : (rawAns ? String(rawAns) : null);
+
+        groupsMap.get(groupKey)!.push({
+          question_number: qNum,
+          question_text: normalizeInlineTokens(q.question_text, qNum),
+          options: q.options,
+          correct_answer: cleanAns,
+          acceptable_answers: q.acceptable_answers,
+          explanation: q.explanation || null
+        });
+      });
+
+      const questionGroups: CbtQuestionGroup[] = Array.from(groupsMap.entries()).map(([gKey, questions], gIdx) => {
+        const meta = groupMeta.get(gKey)!;
+        return {
+          group_id: `group_${pIdx + 1}_${gIdx + 1}`,
+          instructions: meta.instruction,
+          question_type: meta.type,
+          context_content: meta.context,
+          options: questions[0]?.options,
+          questions
+        };
+      });
+
+      passages.push({
+        passage_number: p.passage_index || pIdx + 1,
+        title: p.title || `Reading Passage ${pIdx + 1}`,
+        content: p.text || '',
+        question_groups: questionGroups
+      });
+    });
+  } else if (exam.passage_text || exam.reading_passage) {
+    const questions = exam.reading_questions || exam.questions || [];
+    const qItems: CbtQuestionItem[] = questions.map(q => {
+      const qNum = parseInt(q.question_id.replace(/\D/g, ''), 10) || 1;
+      const rawAns = q.correct_answer;
+      const cleanAns = Array.isArray(rawAns) ? rawAns.join(', ') : (rawAns ? String(rawAns) : null);
+      return {
+        question_number: qNum,
+        question_text: normalizeInlineTokens(q.question_text, qNum),
+        options: q.options,
+        correct_answer: cleanAns,
+        acceptable_answers: q.acceptable_answers,
+        explanation: q.explanation || null
+      };
+    });
+
+    passages.push({
+      passage_number: 1,
+      title: exam.reading_passage_title || exam.passage_title || 'Reading Passage 1',
+      content: exam.reading_passage || exam.passage_text || '',
+      question_groups: [
+        {
+          group_id: 'group_1_1',
+          instructions: `Questions 1 - ${questions.length}`,
+          question_type: questions.length > 0 ? canonicalizeToCbtQuestionType(questions[0].question_type) : 'multiple_choice',
+          questions: qItems
+        }
+      ]
+    });
+  }
+
+  const writingTasks: CbtWritingTaskItem[] = [];
+  if (exam.writing_task1_prompt) {
+    writingTasks.push({
+      task_number: 1,
+      title: 'Writing Task 1',
+      prompt: exam.writing_task1_prompt,
+      image_url: exam.writing_task1_image,
+      min_words: 150
+    });
+  }
+  if (exam.writing_task2_prompt) {
+    writingTasks.push({
+      task_number: 2,
+      title: 'Writing Task 2',
+      prompt: exam.writing_task2_prompt,
+      min_words: 250
+    });
+  }
+
+  return {
+    exam_id: exam.exam_code || `EXAM_${Date.now()}`,
+    title: exam.title || 'IELTS Practice Examination',
+    skill,
+    duration_minutes: exam.duration_mins || 60,
+    passages: passages.length > 0 ? passages : undefined,
+    writing_tasks: writingTasks.length > 0 ? writingTasks : undefined
+  };
+}
+
+/**
+ * Transpiles the target deterministic CBT Engine Schema back into our full-featured ExamData representation.
+ */
+export function transpileFromCbtEngineSchema(cbt: CbtEngineTranspiledExam): Partial<ExamData> {
+  const readingQuestions: Question[] = [];
+  const listeningQuestions: Question[] = [];
+  const passagesList: ReadingPassageItem[] = [];
+
+  const isListening = cbt.skill === 'listening';
+
+  if (Array.isArray(cbt.passages)) {
+    cbt.passages.forEach((p, pIdx) => {
+      const pIndex = p.passage_number || pIdx + 1;
+      const passageQuestions: Question[] = [];
+
+      if (Array.isArray(p.question_groups)) {
+        p.question_groups.forEach((g) => {
+          if (Array.isArray(g.questions)) {
+            g.questions.forEach((q) => {
+              const qId = `${isListening ? 'L' : 'R'}${q.question_number}`;
+              const qItem: Question = {
+                question_id: qId,
+                section: isListening ? 'listening' : 'reading',
+                question_type: g.question_type as QuestionType,
+                question_text: q.question_text,
+                options: q.options || g.options,
+                correct_answer: q.correct_answer || undefined,
+                acceptable_answers: q.acceptable_answers || (q.correct_answer ? [q.correct_answer] : undefined),
+                explanation: q.explanation || undefined,
+                instruction: g.instructions,
+                context_content: g.context_content,
+                passage_index: (pIndex > 3 ? 3 : Math.max(1, pIndex)) as (1 | 2 | 3),
+                max_score: 1
+              };
+              passageQuestions.push(qItem);
+              if (isListening) {
+                listeningQuestions.push(qItem);
+              } else {
+                readingQuestions.push(qItem);
+              }
+            });
+          }
+        });
+      }
+
+      passagesList.push({
+        passage_index: (pIndex > 3 ? 3 : Math.max(1, pIndex)) as (1 | 2 | 3),
+        title: p.title || `Reading Passage ${pIndex}`,
+        text: p.content,
+        questions: passageQuestions
+      });
+    });
+  }
+
+  const allQuestions = [...listeningQuestions, ...readingQuestions];
+  const t1 = cbt.writing_tasks?.find(t => t.task_number === 1);
+  const t2 = cbt.writing_tasks?.find(t => t.task_number === 2);
+
+  return {
+    exam_code: cbt.exam_id,
+    title: cbt.title,
+    test_type: 'TEST',
+    duration_mins: cbt.duration_minutes || 60,
+    skills: [cbt.skill],
+    exam_type: 'one_skill',
+    passages: passagesList.length > 0 ? passagesList : undefined,
+    passage_text: passagesList[0]?.text || '',
+    reading_passage: passagesList[0]?.text || '',
+    passage_title: passagesList[0]?.title || '',
+    reading_passage_title: passagesList[0]?.title || '',
+    reading_questions: readingQuestions.length > 0 ? readingQuestions : undefined,
+    listening_questions: listeningQuestions.length > 0 ? listeningQuestions : undefined,
+    questions: allQuestions.length > 0 ? allQuestions : undefined,
+    writing_task1_prompt: t1?.prompt,
+    writing_task1_image: t1?.image_url,
+    writing_task2_prompt: t2?.prompt
+  };
+}
+

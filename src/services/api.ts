@@ -2099,3 +2099,33 @@ export async function seedStarterPack(): Promise<{ success: boolean; imported?: 
   }
 }
 
+/**
+ * Native Multimodal PDF pipeline: Upload raw PDF file to backend /api/admin/parse-pdf
+ * Processes file via backend without exposing GEMINI_API_KEY to browser.
+ */
+export async function uploadAndParseIeltsPdf(file: File): Promise<any> {
+  const formData = new FormData();
+  formData.append('pdf', file);
+
+  const response = await fetch('/api/admin/parse-pdf', {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || 'LỖI_KHI_TRÍCH_XUẤT_PDF');
+  }
+
+  const result = await response.json();
+  const exam = result.exam;
+  if (exam && result.testReport) {
+    exam._testReport = result.testReport;
+  }
+  if (exam && result.cbtExam) {
+    exam._cbtExam = result.cbtExam;
+  }
+  return exam;
+}
+
+

@@ -205,11 +205,13 @@ export const VisualTableEditor: React.FC<VisualTableEditorProps> = ({
       const newCells = r.cells.map((c, cI) => {
         if (cI !== colIdx) return c;
         const willBeBlank = !c.is_blank;
+        const qNum = parseInt(questionId.replace(/\D/g, ''), 10) || (rI + 1);
         return {
           ...c,
           is_blank: willBeBlank,
+          text: willBeBlank ? `[blank_${qNum}]` : (c.text?.startsWith('[blank_') ? '' : c.text),
           question_id: willBeBlank ? (c.question_id || questionId) : undefined,
-          placeholder: willBeBlank ? 'Candidate enters answer...' : undefined
+          placeholder: willBeBlank ? `[blank_${qNum}] Candidate enters answer...` : undefined
         };
       });
       return { ...r, cells: newCells };
@@ -376,9 +378,10 @@ export const VisualTableEditor: React.FC<VisualTableEditorProps> = ({
                               ? 'bg-[#6B51A5] text-white shadow-xs'
                               : 'bg-purple-50 text-[#6B51A5] hover:bg-purple-100'
                           }`}
+                          title="Click hoặc bấm chuột phải vào ô để chuyển thành ô điền đáp án [blank]"
                         >
                           <Check className="w-3 h-3" />
-                          <span>{cell.is_blank ? 'Blank Cell (Active)' : 'Mark as Blank'}</span>
+                          <span>{cell.is_blank ? 'Ô Điền Đáp Án [blank] (Active)' : 'Chuyển thành ô điền đáp án'}</span>
                         </button>
 
                         {cIdx === row.cells.length - 1 && rows.length > 1 && (

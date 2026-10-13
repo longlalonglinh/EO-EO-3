@@ -784,6 +784,8 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
                     headingsList={q.headings_list}
                     isFlagged={flaggedQuestions.has(q.question_id)}
                     onToggleFlag={handleToggleFlag}
+                    allUserAnswers={userAnswers}
+                    allQuestions={effectiveQuestions}
                   />
                 </div>
               ))

@@ -18,6 +18,7 @@ import {
 import { IELTSTableCompletion } from '../Common/IELTSTableCompletion';
 import { IELTSFlowChartCompletion } from '../Common/IELTSFlowChartCompletion';
 import { IELTSSummaryBoxCompletion } from '../Common/IELTSSummaryBoxCompletion';
+import { InlineBlankRenderer } from '../Common/InlineBlankRenderer';
 
 interface IELTSQuestionCardProps {
   question: Question;
@@ -27,6 +28,8 @@ interface IELTSQuestionCardProps {
   headingsList?: { id: string; text: string }[];
   isFlagged?: boolean;
   onToggleFlag?: (questionId: string) => void;
+  allUserAnswers?: Record<string, string>;
+  allQuestions?: Question[];
 }
 
 export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
@@ -36,7 +39,9 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
   onAnswerChange,
   headingsList = [],
   isFlagged = false,
-  onToggleFlag
+  onToggleFlag,
+  allUserAnswers = {},
+  allQuestions = []
 }) => {
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [justSaved, setJustSaved] = useState(false);
@@ -180,6 +185,21 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
     );
   };
 
+  // Set of headings claimed by other questions for Mutual Exclusion
+  const claimedHeadingsByOthers = React.useMemo(() => {
+    const claimed = new Set<string>();
+    if (!allQuestions || !allUserAnswers) return claimed;
+    allQuestions.forEach(q => {
+      if (q.question_id !== question.question_id) {
+        const ans = allUserAnswers[q.question_id];
+        if (ans && ans.trim()) {
+          claimed.add(ans.trim().toLowerCase());
+        }
+      }
+    });
+    return claimed;
+  }, [allQuestions, allUserAnswers, question.question_id]);
+
   return (
     <div
       id={`q_box_${question.question_id}`}
@@ -256,10 +276,41 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
         </div>
       </div>
 
+      {/* Context Content Box (Summary or paragraph context embedding [blank_X]) */}
+      {(question as any).context_content && !(question as any).context_content.includes('|') && (
+        <div className="p-4 bg-white rounded-2xl border border-purple-200/80 text-xs md:text-sm leading-relaxed text-[#3C2A63]">
+          <InlineBlankRenderer
+            content={(question as any).context_content}
+            userAnswers={{ [questionNumber]: userAnswer, [question.question_id]: userAnswer, ...allUserAnswers }}
+            onAnswerChange={(qNum, val) => {
+              if (qNum === questionNumber) onAnswerChange(question.question_id, val);
+              else {
+                const prefix = question.section === 'listening' ? 'L' : 'R';
+                onAnswerChange(`${prefix}${qNum}`, val);
+              }
+            }}
+          />
+        </div>
+      )}
+
       {/* Question Main Text */}
       {question.question_text && (
         <div className="font-extrabold text-[#3C2A63] text-sm md:text-base">
-          {renderQuestionTextInline(question.question_text)}
+          {question.question_text.includes('[blank_') ? (
+            <InlineBlankRenderer
+              content={question.question_text}
+              userAnswers={{ [questionNumber]: userAnswer, [question.question_id]: userAnswer, ...allUserAnswers }}
+              onAnswerChange={(qNum, val) => {
+                if (qNum === questionNumber) onAnswerChange(question.question_id, val);
+                else {
+                  const prefix = question.section === 'listening' ? 'L' : 'R';
+                  onAnswerChange(`${prefix}${qNum}`, val);
+                }
+              }}
+            />
+          ) : (
+            renderQuestionTextInline(question.question_text)
+          )}
         </div>
       )}
 
@@ -277,50 +328,70 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
       {(qType === IELTSQuestionType.MULTIPLE_CHOICE || qType === IELTSQuestionType.MULTIPLE_CHOICE_MULTIPLE_ANSWERS) && question.options && (
         <div className="space-y-2.5 pt-1">
           {isMultiSelect ? (
-            // MULTI-SELECT (CHECKBOX - CHOOSE MULTIPLE OPTIONS)
+            // MULTI-SELECT (CHECKBOX - CHOOSE MULTIPLE OPTIONS WITH SELECTION CAP)
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs text-[#7C68A5] font-bold mb-1">
-                <span>Check all applicable options:</span>
-                <span className="px-2 py-0.5 rounded-md bg-purple-100 text-[#503A7A] font-black">
+                <span>Check up to {targetMultiCount} applicable options:</span>
+                <span className={`px-2.5 py-0.5 rounded-full text-xs font-black transition-colors ${
+                  (userAnswer ? userAnswer.split(',').filter(Boolean).length : 0) >= targetMultiCount
+                    ? 'bg-purple-200 text-[#3C2A63] border border-purple-300'
+                    : 'bg-purple-100 text-[#503A7A]'
+                }`}>
                   {userAnswer ? userAnswer.split(',').filter(Boolean).length : 0} / {targetMultiCount} selected
                 </span>
               </div>
-              {question.options.map((opt, optIdx) => {
-                const letterMatch = opt.match(/^([A-Z])[\.\s]/);
-                const letter = letterMatch ? letterMatch[1] : String.fromCharCode(65 + optIdx);
-                const isChecked = isMultiSelected(letter);
-                const shapeMeta = [
-                  { shape: '●', bg: 'bg-indigo-100 text-indigo-800' },
-                  { shape: '■', bg: 'bg-blue-100 text-blue-800' },
-                  { shape: '◆', bg: 'bg-amber-100 text-amber-800' },
-                  { shape: '★', bg: 'bg-emerald-100 text-emerald-800' },
-                  { shape: '▲', bg: 'bg-purple-100 text-purple-800' }
-                ][optIdx % 5];
+              {(() => {
+                const currentSelectedCount = userAnswer
+                  ? userAnswer.split(',').map(s => s.trim().toUpperCase()).filter(Boolean).length
+                  : 0;
+                const isCapReached = currentSelectedCount >= targetMultiCount;
 
-                return (
-                  <label
-                    key={optIdx}
-                    className={`flex items-center space-x-3 p-3.5 min-h-[48px] rounded-2xl border text-xs md:text-sm cursor-pointer transition-all ${
-                      isChecked
-                        ? 'bg-[#6B51A5] border-[#6B51A5] text-white font-bold shadow-md'
-                        : 'bg-white border-purple-200/80 text-[#3C2A63] hover:bg-[#F3EFF9]'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      onChange={() => handleMultiSelectToggle(letter)}
-                      className="w-4 h-4 rounded text-[#6B51A5] border-purple-300 focus:ring-[#6B51A5]"
-                    />
-                    <span className={`w-6 h-6 rounded-lg text-xs font-black flex items-center justify-center border shadow-xs shrink-0 ${
-                      isChecked ? 'bg-white/20 text-white border-white/40' : `${shapeMeta.bg} border-purple-200`
-                    }`}>
-                      {shapeMeta.shape}
-                    </span>
-                    <span className="flex-1">{opt}</span>
-                  </label>
-                );
-              })}
+                return question.options.map((opt, optIdx) => {
+                  const letterMatch = opt.match(/^([A-Z])[\.\s]/);
+                  const letter = letterMatch ? letterMatch[1] : String.fromCharCode(65 + optIdx);
+                  const isChecked = isMultiSelected(letter);
+                  const isOptionDisabled = !isChecked && isCapReached;
+                  const shapeMeta = [
+                    { shape: '●', bg: 'bg-indigo-100 text-indigo-800' },
+                    { shape: '■', bg: 'bg-blue-100 text-blue-800' },
+                    { shape: '◆', bg: 'bg-amber-100 text-amber-800' },
+                    { shape: '★', bg: 'bg-emerald-100 text-emerald-800' },
+                    { shape: '▲', bg: 'bg-purple-100 text-purple-800' }
+                  ][optIdx % 5];
+
+                  return (
+                    <label
+                      key={optIdx}
+                      className={`flex items-center space-x-3 p-3.5 min-h-[48px] rounded-2xl border text-xs md:text-sm transition-all ${
+                        isChecked
+                          ? 'bg-[#6B51A5] border-[#6B51A5] text-white font-bold shadow-md cursor-pointer'
+                          : isOptionDisabled
+                            ? 'bg-slate-50 border-slate-200 text-slate-400 opacity-50 cursor-not-allowed select-none'
+                            : 'bg-white border-purple-200/80 text-[#3C2A63] hover:bg-[#F3EFF9] cursor-pointer'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        disabled={isOptionDisabled}
+                        onChange={() => !isOptionDisabled && handleMultiSelectToggle(letter)}
+                        className="w-4 h-4 rounded text-[#6B51A5] border-purple-300 focus:ring-[#6B51A5] disabled:cursor-not-allowed"
+                      />
+                      <span className={`w-6 h-6 rounded-lg text-xs font-black flex items-center justify-center border shadow-xs shrink-0 ${
+                        isChecked ? 'bg-white/20 text-white border-white/40' : `${shapeMeta.bg} border-purple-200`
+                      }`}>
+                        {shapeMeta.shape}
+                      </span>
+                      <span className="flex-1">{opt}</span>
+                      {isOptionDisabled && (
+                        <span className="text-[10px] text-slate-400 italic">
+                          (Cap reached)
+                        </span>
+                      )}
+                    </label>
+                  );
+                });
+              })()}
             </div>
           ) : (
             // SINGLE-SELECT (RADIO BUTTON - CHOOSE ONE OPTION)
@@ -419,64 +490,57 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
       )}
 
       {/* ========================================================= */}
-      {/* 3. MATCHING HEADINGS (LIST OF HEADINGS & DASHED DROP BOX) */}
+      {/* 3. MATCHING HEADINGS (LIST OF HEADINGS & MUTUAL EXCLUSION) */}
       {/* ========================================================= */}
       {qType === IELTSQuestionType.MATCHING_HEADINGS && (
         <div className="space-y-3 pt-1">
           {availableHeadings && availableHeadings.length > 0 && (
             <div className="p-4 bg-purple-50/90 rounded-2xl border border-purple-200 text-xs text-[#503A7A]">
-              <strong className="block mb-2 font-extrabold text-[#3C2A63] flex items-center gap-1.5">
-                <FileText className="w-4 h-4 text-[#6B51A5]" />
-                LIST OF HEADINGS
-              </strong>
+              <div className="flex items-center justify-between mb-2">
+                <strong className="font-extrabold text-[#3C2A63] flex items-center gap-1.5">
+                  <FileText className="w-4 h-4 text-[#6B51A5]" />
+                  LIST OF HEADINGS
+                </strong>
+                <span className="text-[10px] text-[#7C68A5] font-semibold">
+                  Each heading can be used once (Mutual Exclusion)
+                </span>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {availableHeadings.map((hd) => (
-                  <div 
-                    key={hd.id}
-                    draggable
-                    onDragStart={() => setDraggedItem(hd.id)}
-                    onClick={() => onAnswerChange(question.question_id, hd.id)}
-                    className="p-2 bg-white rounded-xl border border-purple-100 shadow-sm flex items-start gap-2 cursor-grab active:cursor-grabbing hover:border-purple-300 transition"
-                  >
-                    <span className="font-bold text-[#6B51A5] font-serif shrink-0">{hd.id}.</span>
-                    <span className="text-[#3C2A63] font-medium leading-tight">{hd.text}</span>
-                  </div>
-                ))}
+                {availableHeadings.map((hd) => {
+                  const isClaimedByOther = claimedHeadingsByOthers.has(hd.id.toLowerCase());
+                  const isSelectedForThis = userAnswer.trim().toLowerCase() === hd.id.toLowerCase();
+
+                  return (
+                    <div 
+                      key={hd.id}
+                      draggable={!isClaimedByOther}
+                      onDragStart={() => !isClaimedByOther && setDraggedItem(hd.id)}
+                      onClick={() => !isClaimedByOther && onAnswerChange(question.question_id, isSelectedForThis ? '' : hd.id)}
+                      className={`p-2 rounded-xl border shadow-xs flex items-start gap-2 transition select-none ${
+                        isSelectedForThis
+                          ? 'bg-[#6B51A5] text-white border-[#6B51A5] font-bold shadow-sm cursor-pointer'
+                          : isClaimedByOther
+                            ? 'bg-slate-100/90 text-slate-400 border-slate-200 opacity-40 line-through cursor-not-allowed'
+                            : 'bg-white text-[#3C2A63] border-purple-100 hover:border-purple-300 hover:bg-purple-50/50 cursor-pointer'
+                      }`}
+                    >
+                      <span className={`font-bold font-serif shrink-0 ${isSelectedForThis ? 'text-white' : isClaimedByOther ? 'text-slate-400' : 'text-[#6B51A5]'}`}>
+                        {hd.id}.
+                      </span>
+                      <span className="flex-1 leading-tight text-[11px] md:text-xs">{hd.text}</span>
+                      {isSelectedForThis && <Check className="w-3.5 h-3.5 text-white shrink-0 mt-0.5" />}
+                      {isClaimedByOther && <span className="text-[9px] no-underline font-mono text-slate-400 shrink-0">(Used)</span>}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
 
-          <div className="space-y-2">
-            <span className="text-xs font-bold text-[#7C68A5] block">
-              Drag and drop heading (or click) into the box below:
-            </span>
-
-            <div 
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                if (draggedItem) {
-                  onAnswerChange(question.question_id, draggedItem);
-                  setDraggedItem(null);
-                }
-              }}
-              className={`p-4 rounded-2xl border-2 border-dashed transition flex flex-wrap items-center justify-between gap-3 ${
-                userAnswer
-                  ? 'border-[#6B51A5] bg-purple-50/50'
-                  : 'border-purple-300 bg-white hover:border-purple-400'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-extrabold text-[#7C68A5]">SELECTED:</span>
-                {userAnswer ? (
-                  <span className="px-3 py-1 bg-[#6B51A5] text-white rounded-xl text-xs font-black font-serif shadow-sm">
-                    {userAnswer}
-                  </span>
-                ) : (
-                  <span className="text-xs text-slate-400 italic font-medium">[ Drop heading into this box ]</span>
-                )}
-              </div>
-
+          {/* Direct Dropdown with Mutual Exclusion */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-[#7C68A5] flex items-center justify-between">
+              <span>Select heading for this paragraph:</span>
               {userAnswer && (
                 <button
                   type="button"
@@ -484,10 +548,30 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
                   className="text-xs text-rose-600 hover:text-rose-800 font-bold flex items-center gap-1 cursor-pointer"
                 >
                   <X className="w-3.5 h-3.5" />
-                  <span>Clear</span>
+                  <span>Clear selection</span>
                 </button>
               )}
-            </div>
+            </label>
+
+            <select
+              value={userAnswer || ''}
+              onChange={(e) => onAnswerChange(question.question_id, e.target.value)}
+              className="w-full px-3.5 py-2.5 bg-white border border-purple-200 rounded-xl text-xs md:text-sm font-bold text-[#3C2A63] focus:outline-none focus:ring-2 focus:ring-[#6B51A5] cursor-pointer"
+            >
+              <option value="">-- Choose heading (or click list above) --</option>
+              {availableHeadings.map((hd) => {
+                const isClaimedByOther = claimedHeadingsByOthers.has(hd.id.toLowerCase());
+                return (
+                  <option 
+                    key={hd.id} 
+                    value={hd.id} 
+                    disabled={isClaimedByOther}
+                  >
+                    {hd.id}. {hd.text} {isClaimedByOther ? '(Already selected for another paragraph)' : ''}
+                  </option>
+                );
+              })}
+            </select>
           </div>
         </div>
       )}

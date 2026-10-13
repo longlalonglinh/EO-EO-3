@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { parseExamFromDocumentText } from '../services/documentExamParser';
+import { 
+  parseExamFromDocumentText,
+  normalizeInlineTokens,
+  canonicalizeToCbtQuestionType,
+  transpileToCbtEngineSchema,
+  transpileFromCbtEngineSchema
+} from '../services/documentExamParser';
 
 describe('IELTS Document & Copied Text Parser', () => {
 
@@ -364,6 +370,134 @@ Bell Laboratories created the first modern silicon solar cell in (3) ...........
     expect(qs[1].question_text).toContain('Charles Fritts');
     expect(qs[2].question_id).toBe('R3');
     expect(qs[2].question_text).toContain('Bell Laboratories');
+  });
+
+  describe('CBT Engine Transpiler & Token Normalization Rules', () => {
+    it('normalizes inline blank notations into standardized [blank_X] token', () => {
+      expect(normalizeInlineTokens('Water boils at (5) under standard pressure.', 5))
+        .toBe('Water boils at [blank_5] under standard pressure.');
+
+      expect(normalizeInlineTokens('The compound dissolves in ______ at room temperature.', 6))
+        .toBe('The compound dissolves in [blank_6] at room temperature.');
+
+      expect(normalizeInlineTokens('Photosynthesis produces glucose and ............ as a byproduct.', 7))
+        .toBe('Photosynthesis produces glucose and [blank_7] as a byproduct.');
+    });
+
+    it('strictly maps question categories to the 9 canonical CBT schema types', () => {
+      expect(canonicalizeToCbtQuestionType('multiple_choice')).toBe('multiple_choice');
+      expect(canonicalizeToCbtQuestionType('true_false_not_given')).toBe('true_false_not_given');
+      expect(canonicalizeToCbtQuestionType('yes_no_not_given')).toBe('yes_no_not_given');
+      expect(canonicalizeToCbtQuestionType('fill_in_blank')).toBe('fill_blank');
+      expect(canonicalizeToCbtQuestionType('sentence_completion')).toBe('fill_blank');
+      expect(canonicalizeToCbtQuestionType('summary_completion_box')).toBe('fill_blank');
+      expect(canonicalizeToCbtQuestionType('table_completion')).toBe('fill_blank');
+      expect(canonicalizeToCbtQuestionType('matching_headings')).toBe('matching_headings');
+      expect(canonicalizeToCbtQuestionType('matching_information')).toBe('matching_information');
+      expect(canonicalizeToCbtQuestionType('matching_features')).toBe('matching_features');
+      expect(canonicalizeToCbtQuestionType('flow_chart_completion')).toBe('flow_chart_completion');
+      expect(canonicalizeToCbtQuestionType('writing_task')).toBe('writing_task');
+    });
+
+    it('round-trip transpiles ExamData into the target deterministic CBT Engine Schema', () => {
+      const mockExam = {
+        exam_code: 'IELTS_ACAD_01',
+        title: 'Academic Reading Test 1',
+        skills: ['reading' as const],
+        duration_mins: 60,
+        passages: [
+          {
+            passage_index: 1 as const,
+            title: 'The Roman Amphitheatre',
+            text: 'Paragraph 1 text\n\nParagraph 2 text',
+            questions: [
+              {
+                question_id: 'R1',
+                section: 'reading' as const,
+                question_type: 'multiple_choice' as const,
+                question_text: 'Where was the structure constructed?',
+                options: ['A. Rome', 'B. Athens', 'C. Alexandria'],
+                correct_answer: 'A',
+                acceptable_answers: ['A', 'Rome'],
+                explanation: 'Built in Rome in 70 AD',
+                max_score: 1
+              },
+              {
+                question_id: 'R2',
+                section: 'reading' as const,
+                question_type: 'fill_in_blank' as const,
+                question_text: 'The arena had an overall capacity of ______ spectators.',
+                correct_answer: '50000',
+                acceptable_answers: ['50,000', '50000'],
+                explanation: 'Capacity reached 50,000',
+                max_score: 1
+              }
+            ]
+          }
+        ]
+      };
+
+      const cbtSchema = transpileToCbtEngineSchema(mockExam);
+
+      expect(cbtSchema.exam_id).toBe('IELTS_ACAD_01');
+      expect(cbtSchema.skill).toBe('reading');
+      expect(cbtSchema.passages).toHaveLength(1);
+      expect(cbtSchema.passages![0].content).toBe('Paragraph 1 text\n\nParagraph 2 text');
+
+      const groups = cbtSchema.passages![0].question_groups;
+      expect(groups.length).toBeGreaterThanOrEqual(1);
+
+      // Verify question 2 was normalized with [blank_2]
+      const fillQ = groups.flatMap(g => g.questions).find(q => q.question_number === 2);
+      expect(fillQ).toBeDefined();
+      expect(fillQ?.question_text).toBe('The arena had an overall capacity of [blank_2] spectators.');
+
+      // Round-trip transpile back to internal schema
+      const restored = transpileFromCbtEngineSchema(cbtSchema);
+      expect(restored.exam_code).toBe('IELTS_ACAD_01');
+      expect(restored.reading_questions).toHaveLength(2);
+      expect(restored.reading_questions![0].question_id).toBe('R1');
+      expect(restored.reading_questions![1].question_id).toBe('R2');
+    });
+  });
+
+  it('successfully extracts multi-blank summary questions even when dates or numbers precede the blanks', () => {
+    const rawSummaryWithYears = `READING PASSAGE 1
+The Evolution of Mobile Technology
+Mobile phones have transformed worldwide communication.
+
+Questions 1-2
+Complete the summary below.
+Choose NO MORE THAN TWO WORDS from the passage for each answer.
+
+In 1973, Martin Cooper placed the world's first cellular phone call utilizing a prototype handset that weighed over [1] ____________ kilograms.
+By 1992, engineers developed commercial network towers across [2] ____________ major European capitals.`;
+
+    const result = parseExamFromDocumentText(rawSummaryWithYears);
+    expect(result.questionsCount).toBe(2);
+    expect(result.exam.reading_questions).toHaveLength(2);
+    expect(result.exam.reading_questions![0].question_id).toBe('R1');
+    expect(result.exam.reading_questions![1].question_id).toBe('R2');
+  });
+
+  it('correctly handles Writing-only documents without rejecting or throwing missing question errors', () => {
+    const rawWritingPaper = `IELTS ACADEMIC WRITING TEST
+
+WRITING TASK 1
+You should spend about 20 minutes on this task.
+The chart below shows the expenditure on consumer goods in four European countries.
+Summarise the information by selecting and reporting the main features.
+
+WRITING TASK 2
+You should spend about 40 minutes on this task.
+Some people believe that unpaid community service should be a compulsory part of high school programmes.
+To what extent do you agree or disagree?`;
+
+    const result = parseExamFromDocumentText(rawWritingPaper);
+    expect(result.hasWriting).toBe(true);
+    expect(result.questionsCount).toBeGreaterThanOrEqual(1);
+    expect(result.exam.writing_task1_prompt).toContain('The chart below shows');
+    expect(result.exam.writing_task2_prompt).toContain('unpaid community service');
   });
 
 });

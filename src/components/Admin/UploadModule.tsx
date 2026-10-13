@@ -30,9 +30,10 @@ import {
 import { ExamData, Question } from '../../types';
 import { generateExamWithAI, parsePdfWithServerGemini } from '../../services/gemini';
 import { ExamTestReport, verifyAndOptimizeExam } from '../../services/examVerification';
-import { saveExamToServerDb } from '../../services/api';
+import { saveExamToServerDb, uploadAndParseIeltsPdf } from '../../services/api';
 import { saveExamToIndexedDB } from '../../services/indexedDb';
 import { sanitizeExamForSkills } from '../../utils/examUtils';
+import { transpileFromCbtEngineSchema } from '../../services/documentExamParser';
 
 interface UploadModuleProps {
   onParsedData: (data: ExamData) => void;
@@ -203,27 +204,52 @@ export const UploadModule: React.FC<UploadModuleProps> = ({
     }
   };
 
-  // Document/PDF Extraction with Pre-flight Testing
+  // Document/PDF Extraction with Native Multimodal Pipeline & Pre-flight Testing
   const handleProcessDocument = async () => {
-    if (!base64Data && !rawTextSyllabus.trim()) {
-      setErrorMsg('Please select a PDF document or paste exam syllabus text.');
+    if (!selectedFile && !base64Data && !rawTextSyllabus.trim()) {
+      setErrorMsg('Vui lòng chọn file PDF đề thi hoặc dán nội dung văn bản đề thi.');
       return;
     }
 
     setLoading(true);
     setErrorMsg(null);
     setSaveSuccessMsg(null);
-    setCurrentStep('Đang đọc và phân tích cấu trúc bài đọc, câu hỏi và đáp án từ tài liệu...');
 
     try {
-      const res = await parsePdfWithServerGemini(base64Data || '', rawTextSyllabus.trim() || undefined);
-      
+      let candidateExam: any = null;
+      let report: ExamTestReport | null = null;
+
+      if (selectedFile) {
+        setCurrentStep('Đang tải và xử lý file PDF bằng Native Multimodal Pipeline trên backend...');
+        const parsedExam = await uploadAndParseIeltsPdf(selectedFile);
+        if (parsedExam && parsedExam.passages && parsedExam.passages[0]?.question_groups) {
+          candidateExam = transpileFromCbtEngineSchema(parsedExam);
+        } else {
+          candidateExam = parsedExam;
+        }
+        if (parsedExam && parsedExam._testReport) {
+          report = parsedExam._testReport;
+        }
+      } else {
+        setCurrentStep('Đang đọc và phân tích cấu trúc bài đọc, câu hỏi và đáp án từ tài liệu...');
+        const res = await parsePdfWithServerGemini(base64Data || '', rawTextSyllabus.trim() || undefined);
+        candidateExam = res.exam;
+        report = res.testReport;
+      }
+
       setCurrentStep('Chạy kiểm tra tự động 6 điểm định dạng & mô phỏng chấm điểm...');
       await new Promise(r => setTimeout(r, 300));
 
-      const sanitized = sanitizeExamForSkills(res.exam);
+      // Guarantee 6-Point verification report exists
+      if (!report || !candidateExam) {
+        const verifyResult = verifyAndOptimizeExam(candidateExam);
+        candidateExam = verifyResult.exam;
+        report = verifyResult.report;
+      }
+
+      const sanitized = sanitizeExamForSkills(candidateExam);
       setGeneratedExam(sanitized);
-      setTestReport(res.testReport);
+      setTestReport(report);
       setRawJsonOutput(JSON.stringify(sanitized, null, 2));
 
       onParsedData(sanitized);
@@ -231,9 +257,14 @@ export const UploadModule: React.FC<UploadModuleProps> = ({
       saveExamToServerDb(sanitized).catch(() => {});
 
       const totalQs = (sanitized.reading_questions?.length || 0) + (sanitized.listening_questions?.length || 0) + (sanitized.questions?.length || 0);
-      setSaveSuccessMsg(`Trích xuất thành công ${totalQs} câu hỏi từ tài liệu "${sanitized.title}". Đã kiểm tra cấu trúc và lưu vào Central DB.`);
+      const isWritingOnly = Boolean((sanitized.writing_task1_prompt || sanitized.writing_task2_prompt) && totalQs <= 2);
+      if (isWritingOnly && (sanitized.writing_task1_prompt || sanitized.writing_task2_prompt)) {
+        setSaveSuccessMsg(`Trích xuất thành công Đề thi IELTS Writing "${sanitized.title}" (Task 1 & Task 2). Đã lưu vào Central DB và IndexedDB.`);
+      } else {
+        setSaveSuccessMsg(`Trích xuất thành công ${totalQs} câu hỏi từ tài liệu "${sanitized.title}". Đã kiểm tra cấu trúc và nạp vào cơ sở dữ liệu.`);
+      }
     } catch (err: any) {
-      console.error('Error parsing document with Gemini:', err);
+      console.error('Error parsing document:', err);
       setErrorMsg(err.message || 'Không thể trích xuất đề thi. Vui lòng kiểm tra lại file PDF hoặc copy/paste trực tiếp văn bản.');
     } finally {
       setLoading(false);
@@ -547,7 +578,7 @@ export const UploadModule: React.FC<UploadModuleProps> = ({
               <button
                 type="button"
                 onClick={handleProcessDocument}
-                disabled={loading || (!base64Data && !rawTextSyllabus.trim())}
+                disabled={loading || (!selectedFile && !base64Data && !rawTextSyllabus.trim())}
                 className="w-full py-4 bg-[#6B51A5] hover:bg-[#583F8F] text-white font-extrabold text-xs uppercase tracking-wider rounded-2xl shadow-xl shadow-purple-950/15 flex items-center justify-center space-x-2 transition cursor-pointer disabled:opacity-50"
               >
                 {loading ? (
