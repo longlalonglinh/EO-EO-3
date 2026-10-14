@@ -139,6 +139,12 @@ export async function deleteExamFromIndexedDB(examCode: string): Promise<void> {
   }
 }
 
+// Aliases for casing compatibility
+export const saveExamToIndexedDb = saveExamToIndexedDB;
+export const getAllExamsFromIndexedDb = getAllExamsFromIndexedDB;
+export const getExamFromIndexedDb = getExamFromIndexedDB;
+export const deleteExamFromIndexedDb = deleteExamFromIndexedDB;
+
 /**
  * Save submission to IndexedDB
  */

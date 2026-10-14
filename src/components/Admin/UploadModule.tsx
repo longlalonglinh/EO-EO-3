@@ -187,11 +187,13 @@ export const UploadModule: React.FC<UploadModuleProps> = ({
       setTestReport(res.testReport);
       setRawJsonOutput(JSON.stringify(sanitized, null, 2));
 
+      // Auto-save to IndexedDB first so it is available locally immediately
+      await saveExamToIndexedDB(sanitized);
+
       // Propagate to main application state
       onParsedData(sanitized);
 
-      // Auto-save to IndexedDB & Server DB
-      saveExamToIndexedDB(sanitized).catch(() => {});
+      // Persist to Server DB asynchronously
       saveExamToServerDb(sanitized).catch(() => {});
 
       setSaveSuccessMsg(`Exam ${sanitized.exam_code} successfully verified and saved to Central Database.`);
@@ -252,8 +254,10 @@ export const UploadModule: React.FC<UploadModuleProps> = ({
       setTestReport(report);
       setRawJsonOutput(JSON.stringify(sanitized, null, 2));
 
+      // Auto-save to IndexedDB first so it is available locally immediately
+      await saveExamToIndexedDB(sanitized);
+
       onParsedData(sanitized);
-      saveExamToIndexedDB(sanitized).catch(() => {});
       saveExamToServerDb(sanitized).catch(() => {});
 
       const totalQs = (sanitized.reading_questions?.length || 0) + (sanitized.listening_questions?.length || 0) + (sanitized.questions?.length || 0);

@@ -1,3 +1,8 @@
+# NOTE FOR DUAL DEPLOYMENT ARCHITECTURE:
+# GitHub Pages only hosts static frontend assets (HTML, CSS, JS from ./dist).
+# The Express backend API (server.ts) containing Gemini multimodal processing must be deployed 
+# to a Node.js/Bun hosting platform (e.g. Render, Railway, Fly.io, or VPS).
+# Configure `secrets.VITE_API_BASE_URL` in your repository to point frontend API calls to that server URL.
 name: Deploy to GitHub Pages
 
 on:
@@ -33,6 +38,8 @@ jobs:
 
       - name: Build
         run: bun run build
+        env:
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
 
       - name: Setup Pages
         uses: actions/configure-pages@v4

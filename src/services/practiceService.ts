@@ -1,6 +1,6 @@
 import { CustomPracticeDeck, PracticeUserStats, SentenceGrammarAnalysis, CardReviewState, PracticeCard, LearnerProfile, StudentProgressRecord } from '../types/practice';
 import { STARTER_PRACTICE_DECKS } from '../data/practiceDecks';
-import { fetchPracticeDecksFromGAS, initPracticeDatabaseInGAS, savePracticeDeckToGAS, syncStudentProgressToGAS, fetchStudentProgressFromGAS } from './api';
+import { fetchPracticeDecksFromGAS, initPracticeDatabaseInGAS, savePracticeDeckToGAS, syncStudentProgressToGAS, fetchStudentProgressFromGAS, getApiUrl } from './api';
 
 const STORAGE_CUSTOM_DECKS = 'custom_practice_decks_repo';
 const STORAGE_USER_STATS = 'custom_practice_user_stats';
@@ -426,7 +426,7 @@ export const practiceService = {
   // Call Server-side Gemini Grammar Analyzer
   async analyzeSentence(sentence: string, targetWord?: string, userQuestion?: string, context?: string): Promise<SentenceGrammarAnalysis> {
     try {
-      const response = await fetch('/api/gemini/analyze-grammar', {
+      const response = await fetch(getApiUrl('/api/gemini/analyze-grammar'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sentence, targetWord, userQuestion, context })
@@ -490,7 +490,7 @@ export const practiceService = {
     const newDeckId = `PRACTICE_${timestamp.toString().slice(-4)}`;
 
     try {
-      const response = await fetch('/api/gemini/generate-practice-deck', {
+      const response = await fetch(getApiUrl('/api/gemini/generate-practice-deck'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ topic: cleanTopic, category: cleanCategory, level: cleanLevel, cardCount: cleanCount })

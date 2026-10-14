@@ -12,14 +12,15 @@ interface BlankInputCellProps {
   disabled?: boolean;
   wordLimit?: number;
   wordBank?: WordBankItemMeta[];
-  onChange: (qNum: number, val: string) => void;
-  onFocusBlank?: (qNum: number) => void;
+  onChange: (questionKey: string, val: string) => void;
+  onFocusBlank?: (questionKey: string) => void;
   isActiveBlank?: boolean;
 }
 
 /**
- * Isolated Memoized Blank Input Cell
- * Prevents full markdown / table tree re-renders and cursor focus-loss during typing.
+ * Isolated Memoized Debounced Blank Input Cell (DebouncedInputCell)
+ * Manages local state with 280ms debounce + onBlur flush to prevent re-renders,
+ * cursor loss, and typing lag across complex markdown tables and summaries.
  */
 const BlankInputCell = memo(({
   qNum,
@@ -33,22 +34,52 @@ const BlankInputCell = memo(({
 }: BlankInputCellProps) => {
   const [localVal, setLocalVal] = useState(value || '');
   const inputRef = useRef<HTMLInputElement>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const qKey = String(qNum);
 
   // Sync with external value changes (e.g. click-to-fill from word bank or clear)
   useEffect(() => {
     setLocalVal(value || '');
   }, [value]);
 
+  // Clean up debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+
+  const flushChange = useCallback((val: string) => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    onChange(qKey, val);
+  }, [qKey, onChange]);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setLocalVal(val);
-    onChange(qNum, val);
+    const nextVal = e.target.value;
+    setLocalVal(nextVal);
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      onChange(qKey, nextVal);
+    }, 280);
+  };
+
+  const handleBlur = () => {
+    flushChange(localVal);
   };
 
   // Keyboard Navigation: TAB or ENTER advances to next blank
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) {
       e.preventDefault();
+      flushChange(localVal);
       // Locate all ielts blanks in current document
       const allInputs = Array.from(
         document.querySelectorAll<HTMLInputElement>('input[data-ielts-blank="true"]')
@@ -60,6 +91,7 @@ const BlankInputCell = memo(({
       }
     } else if (e.key === 'Tab' && e.shiftKey) {
       e.preventDefault();
+      flushChange(localVal);
       const allInputs = Array.from(
         document.querySelectorAll<HTMLInputElement>('input[data-ielts-blank="true"]')
       );
@@ -102,7 +134,8 @@ const BlankInputCell = memo(({
         data-q-num={qNum}
         value={localVal}
         disabled={disabled}
-        onFocus={() => onFocusBlank?.(qNum)}
+        onFocus={() => onFocusBlank?.(qKey)}
+        onBlur={handleBlur}
         onChange={handleInputChange}
         onKeyDown={handleKeyDown}
         placeholder={`[${qNum}]`}
@@ -122,7 +155,7 @@ const BlankInputCell = memo(({
             onChange={(e) => {
               if (e.target.value) {
                 setLocalVal(e.target.value);
-                onChange(qNum, e.target.value);
+                flushChange(e.target.value);
               }
             }}
             className="opacity-0 absolute inset-0 w-5 h-full cursor-pointer z-10"
@@ -148,13 +181,13 @@ BlankInputCell.displayName = 'BlankInputCell';
 
 export interface InlineBlankRendererProps {
   content: string;
-  userAnswers: Record<string | number, string>;
-  onAnswerChange: (questionNumber: number, value: string) => void;
+  userAnswers: Record<string, string> | Record<string | number, string>;
+  onAnswerChange: (questionKey: string, value: string) => void;
   disabled?: boolean;
   wordLimit?: number;
   wordBank?: WordBankItemMeta[] | string[];
-  activeBlankNum?: number | null;
-  onFocusBlank?: (questionNumber: number) => void;
+  activeBlankNum?: number | string | null;
+  onFocusBlank?: (questionKey: string) => void;
   className?: string;
 }
 
@@ -197,12 +230,17 @@ export const InlineBlankRenderer: React.FC<InlineBlankRendererProps> = ({
         const match = part.match(/\[blank_(\d+)\]/i);
         if (match) {
           const qNum = parseInt(match[1], 10);
-          // Look up user answer by number or string ID (e.g. 5, "5", "R5", "L5")
-          const currentVal = userAnswers[qNum] ?? 
-                             userAnswers[String(qNum)] ?? 
-                             userAnswers[`R${qNum}`] ?? 
-                             userAnswers[`L${qNum}`] ?? 
+          const qKey = String(qNum);
+          // Look up user answer by string key (e.g. "5", "R5", "L5") or number
+          const currentVal = (userAnswers as any)[qKey] ?? 
+                             (userAnswers as any)[qNum] ?? 
+                             (userAnswers as any)[`R${qNum}`] ?? 
+                             (userAnswers as any)[`L${qNum}`] ?? 
                              '';
+
+          const isActive = activeBlankNum !== undefined && activeBlankNum !== null
+            ? String(activeBlankNum) === qKey
+            : false;
 
           return (
             <BlankInputCell
@@ -214,7 +252,7 @@ export const InlineBlankRenderer: React.FC<InlineBlankRendererProps> = ({
               wordBank={normalizedWordBank}
               onChange={onAnswerChange}
               onFocusBlank={onFocusBlank}
-              isActiveBlank={activeBlankNum === qNum}
+              isActiveBlank={isActive}
             />
           );
         }
@@ -239,3 +277,4 @@ export const InlineBlankRenderer: React.FC<InlineBlankRendererProps> = ({
     </span>
   );
 };
+

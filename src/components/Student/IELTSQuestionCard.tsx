@@ -31,6 +31,7 @@ interface IELTSQuestionCardProps {
   onToggleFlag?: (questionId: string) => void;
   allUserAnswers?: Record<string, string>;
   allQuestions?: Question[];
+  isPreview?: boolean;
 }
 
 export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
@@ -42,7 +43,8 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
   isFlagged = false,
   onToggleFlag,
   allUserAnswers = {},
-  allQuestions = []
+  allQuestions = [],
+  isPreview = false
 }) => {
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [justSaved, setJustSaved] = useState(false);
@@ -282,12 +284,14 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
         <div className="p-4 bg-white rounded-2xl border border-purple-200/80 text-xs md:text-sm leading-relaxed text-[#3C2A63]">
           <InlineBlankRenderer
             content={(question as any).context_content}
-            userAnswers={{ [questionNumber]: userAnswer, [question.question_id]: userAnswer, ...allUserAnswers }}
-            onAnswerChange={(qNum, val) => {
-              if (qNum === questionNumber) onAnswerChange(question.question_id, val);
-              else {
+            userAnswers={{ [String(questionNumber)]: userAnswer, [question.question_id]: userAnswer, ...allUserAnswers }}
+            onAnswerChange={(qKey, val) => {
+              const parsed = parseInt(qKey, 10);
+              if (parsed === questionNumber || qKey === question.question_id || qKey === String(questionNumber)) {
+                onAnswerChange(question.question_id, val);
+              } else {
                 const prefix = question.section === 'listening' ? 'L' : 'R';
-                onAnswerChange(`${prefix}${qNum}`, val);
+                onAnswerChange(`${prefix}${qKey}`, val);
               }
             }}
           />
@@ -300,12 +304,14 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
           {question.question_text.includes('[blank_') ? (
             <InlineBlankRenderer
               content={question.question_text}
-              userAnswers={{ [questionNumber]: userAnswer, [question.question_id]: userAnswer, ...allUserAnswers }}
-              onAnswerChange={(qNum, val) => {
-                if (qNum === questionNumber) onAnswerChange(question.question_id, val);
-                else {
+              userAnswers={{ [String(questionNumber)]: userAnswer, [question.question_id]: userAnswer, ...allUserAnswers }}
+              onAnswerChange={(qKey, val) => {
+                const parsed = parseInt(qKey, 10);
+                if (parsed === questionNumber || qKey === question.question_id || qKey === String(questionNumber)) {
+                  onAnswerChange(question.question_id, val);
+                } else {
                   const prefix = question.section === 'listening' ? 'L' : 'R';
-                  onAnswerChange(`${prefix}${qNum}`, val);
+                  onAnswerChange(`${prefix}${qKey}`, val);
                 }
               }}
             />

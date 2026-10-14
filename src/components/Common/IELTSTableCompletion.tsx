@@ -60,17 +60,18 @@ export const IELTSTableCompletion: React.FC<IELTSTableCompletionProps> = ({
   allUserAnswers = {},
   disabled = false
 }) => {
-  // Handler that converts question numbers back to question IDs (e.g. 5 -> "R5" or existing questionId)
-  const handleBlankChange = (qNum: number, value: string) => {
+  // Handler that converts question numbers/keys back to question IDs (e.g. "5" -> "R5" or existing questionId)
+  const handleBlankChange = (qKey: string, value: string) => {
+    const qNum = parseInt(qKey, 10);
     // If the question matches current questionNumber
-    if (qNum === questionNumber) {
+    if (qNum === questionNumber || qKey === question.question_id || qKey === String(questionNumber)) {
       onAnswerChange(question.question_id, value);
       return;
     }
 
     // Try finding matching questionId in allUserAnswers or section format
     const sectionPrefix = question.section === 'listening' ? 'L' : 'R';
-    const targetQId = `${sectionPrefix}${qNum}`;
+    const targetQId = `${sectionPrefix}${qKey}`;
     onAnswerChange(targetQId, value);
   };
 
@@ -136,9 +137,9 @@ export const IELTSTableCompletion: React.FC<IELTSTableCompletionProps> = ({
                         <InlineBlankRenderer
                           content={cellContent}
                           userAnswers={answersMap}
-                          onAnswerChange={(qNum, val) => {
+                          onAnswerChange={(qKey, val) => {
                             if (cellQId) onAnswerChange(cellQId, val);
-                            else handleBlankChange(qNum, val);
+                            else handleBlankChange(qKey, val);
                           }}
                           disabled={disabled}
                         />

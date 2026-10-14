@@ -1,5 +1,6 @@
 import { ExamData } from '../types';
 import { ExamTestReport, verifyAndOptimizeExam } from './examVerification';
+import { getApiUrl } from './api';
 
 export interface GenerateExamOptions {
   mode?: 'topic' | 'document' | 'preset';
@@ -26,7 +27,7 @@ export interface GenerateExamResponse {
  */
 export async function generateExamWithAI(options: GenerateExamOptions): Promise<GenerateExamResponse> {
   try {
-    const response = await fetch('/api/gemini/generate-exam', {
+    const response = await fetch(getApiUrl('/api/gemini/generate-exam'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -86,7 +87,7 @@ export async function parsePdfWithGemini(pdfBase64: string, _customApiKey?: stri
  * Server-backed PDF and document parser with automated pre-flight testing
  */
 export async function parsePdfWithServerGemini(pdfBase64: string, text?: string): Promise<{ success: boolean; exam: ExamData; testReport: ExamTestReport }> {
-  const response = await fetch('/api/parse-exam', {
+  const response = await fetch(getApiUrl('/api/parse-exam'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ pdf_base64: pdfBase64, text: text })

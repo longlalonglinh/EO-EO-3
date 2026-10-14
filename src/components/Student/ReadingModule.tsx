@@ -33,6 +33,7 @@ interface ReadingModuleProps {
   examCode?: string;
   candidateId?: string;
   onTimeExpire?: () => void;
+  isPreview?: boolean;
 }
 
 export const ReadingModule: React.FC<ReadingModuleProps> = ({
@@ -46,7 +47,8 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
   durationMins = 60,
   examCode = '',
   candidateId = '',
-  onTimeExpire
+  onTimeExpire,
+  isPreview = false
 }) => {
   const [leftWidth, setLeftWidth] = useState<number>(50); // 50% default split
   const [isResizing, setIsResizing] = useState<boolean>(false);
@@ -73,7 +75,7 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
   };
 
   useEffect(() => {
-    if (Object.keys(userAnswers).length > 0) {
+    if (!isPreview && Object.keys(userAnswers).length > 0) {
       setIsSaving(true);
       const timer = setTimeout(() => {
         setAutoSaveTime(new Date().toLocaleTimeString());
@@ -81,7 +83,7 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
       }, 400);
       return () => clearTimeout(timer);
     }
-  }, [userAnswers]);
+  }, [userAnswers, isPreview]);
 
   // Track window resize to ensure fluid responsive layout on mobile, tablet, and desktop
   useEffect(() => {

@@ -1368,6 +1368,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
                         }}
                         allUserAnswers={previewAnswers}
                         allQuestions={watchedPassages[selectedPassageIdx]?.questions as any}
+                        isPreview={true}
                       />
                     );
                   })

@@ -127,18 +127,19 @@ export const IELTSSummaryBoxCompletion: React.FC<IELTSSummaryBoxCompletionProps>
         <InlineBlankRenderer
           content={contentToRender}
           userAnswers={answersMap}
-          onAnswerChange={(qNum, val) => {
-            if (qNum === questionNumber) {
+          onAnswerChange={(qKey, val) => {
+            const parsedNum = parseInt(qKey, 10);
+            if (parsedNum === questionNumber || qKey === question.question_id || qKey === String(questionNumber)) {
               onAnswerChange(question.question_id, val);
             } else {
               const sectionPrefix = question.section === 'listening' ? 'L' : 'R';
-              onAnswerChange(`${sectionPrefix}${qNum}`, val);
+              onAnswerChange(`${sectionPrefix}${qKey}`, val);
             }
           }}
           wordLimit={wordLimit}
           wordBank={items}
           activeBlankNum={activeBlankNum}
-          onFocusBlank={(qNum) => setActiveBlankNum(qNum)}
+          onFocusBlank={(qKey) => setActiveBlankNum(parseInt(qKey, 10))}
           disabled={disabled}
         />
       </div>

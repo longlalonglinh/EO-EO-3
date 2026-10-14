@@ -358,6 +358,7 @@ export interface SubmissionPayload {
   violation_logs?: CheatLog[];
   cheat_logs?: CheatLog[];
   submitted_at?: string;
+  isPreview?: boolean;
 }
 
 export interface SubmissionResponse {

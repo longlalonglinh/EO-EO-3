@@ -46,6 +46,22 @@ export {
 export const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbySNk5foVr4UMC5ZVP1YTlxjxT9qFgdI85cH5nyQ63ffqXdYVZ7SJKbmD0B3xNO3DEe/exec";
 
 /**
+ * Dual Deployment Architecture Support:
+ * When frontend is statically hosted (GitHub Pages, Vercel), backend Express server
+ * is hosted separately (Render, Railway, Fly.io, VPS) and pointed to via VITE_API_BASE_URL.
+ * When running unified in local dev or Cloud Run container, VITE_API_BASE_URL is empty
+ * and API requests cleanly resolve to relative /api/...
+ */
+export const API_BASE_URL: string = (
+  (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_API_BASE_URL) || ''
+).replace(/\/+$/, '');
+
+export const getApiUrl = (path: string): string => {
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  return API_BASE_URL ? `${API_BASE_URL}${cleanPath}` : cleanPath;
+};
+
+/**
  * Check connection status to internet and Google Apps Script API endpoint
  */
 export async function checkConnection(apiUrl: string = DEFAULT_API_URL): Promise<{
@@ -210,7 +226,7 @@ export async function fetchSubmissions(
 
   // Fetch from Centralized Server Database (/api/submissions) - Cross-Device Sync
   try {
-    const serverRes = await fetch('/api/submissions');
+    const serverRes = await fetch(getApiUrl('/api/submissions'));
     if (serverRes.ok) {
       const serverJson = await serverRes.json();
       if (serverJson && Array.isArray(serverJson.data)) {
@@ -271,7 +287,7 @@ export async function fetchCheatLogs(
 
   // Fetch from Centralized Server Database (/api/cheat-logs)
   try {
-    const sRes = await fetch('/api/cheat-logs');
+    const sRes = await fetch(getApiUrl('/api/cheat-logs'));
     if (sRes.ok) {
       const sJson = await sRes.json();
       if (sJson && Array.isArray(sJson.data)) {
@@ -322,7 +338,7 @@ export async function saveWritingScore(
 ): Promise<{ success: boolean; conflict?: boolean; message?: string }> {
   // Centralized Server DB Sync (/api/submissions/grade-writing) with Optimistic Locking
   try {
-    const serverRes = await fetch('/api/submissions/grade-writing', {
+    const serverRes = await fetch(getApiUrl('/api/submissions/grade-writing'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -420,6 +436,12 @@ export async function postToGasWithLockRetry(
   payload: any, 
   maxRetries: number = 3
 ): Promise<any> {
+  // Isolated sandbox preview: do not send any network request to Google Sheets
+  if (payload && (payload.isPreview || payload.is_preview)) {
+    console.log('[Isolated Sandbox Preview] Bypassing Google Sheets Webhook delivery.');
+    return { status: 'success', message: 'Preview sandboxed: no network request sent to Google Sheets.' };
+  }
+
   const retryDelays = [2000, 4000, 8000];
   const payloadString = typeof payload === 'string' ? payload : JSON.stringify(payload);
 
@@ -535,9 +557,35 @@ export async function submitExamPayload(
     : `SEALED-IELTS-${answersChecksum}-${Date.now().toString(36).toUpperCase()}`;
   const receiptCode = `RCPT-${(payload.exam_code || 'EXAM').toUpperCase()}-${(payload.sbd || 'USER').toUpperCase()}-${answersChecksum}-${Date.now().toString(36).toUpperCase()}`;
 
+  // Isolated Sandbox Preview Mode: Score purely in RAM without writing to IndexedDB or sending network requests
+  if (payload.isPreview) {
+    const simulatedGrading = gradeExamAnswers(examData || { exam_code: payload.exam_code, title: 'Preview' }, userAnswers);
+    return {
+      success: true,
+      submission_id: submissionId,
+      sbd: payload.sbd || 'PREVIEW_TEACHER',
+      exam_code: payload.exam_code || 'PREVIEW',
+      submission_type: submissionType,
+      listening_raw_score: simulatedGrading.listening_raw,
+      listening_max_score: simulatedGrading.listening_max,
+      listening_band: simulatedGrading.listening_band,
+      reading_raw_score: simulatedGrading.reading_raw,
+      reading_max_score: simulatedGrading.reading_max,
+      reading_band: simulatedGrading.reading_band,
+      overall_band: simulatedGrading.listening_band && simulatedGrading.reading_band
+        ? Math.round(((simulatedGrading.listening_band + simulatedGrading.reading_band) / 2) * 2) / 2
+        : simulatedGrading.reading_band || simulatedGrading.listening_band || 0,
+      detailed_results: simulatedGrading.results as any,
+      writing_status: 'PENDING_TEACHER',
+      submitted_at: timestamp,
+      is_offline_pending: false,
+      message: 'Preview simulation completed in RAM sandbox.'
+    };
+  }
+
   // 0. Attempt Authoritative Server-Side Grading & Certified Submission first
   try {
-    const serverGradeRes = await fetch('/api/submissions/grade-and-submit', {
+    const serverGradeRes = await fetch(getApiUrl('/api/submissions/grade-and-submit'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -768,7 +816,7 @@ export async function submitExamPayload(
 
   // 2.5. Centralized Server Database Submission Sync (/api/submissions)
   try {
-    fetch('/api/submissions', {
+    fetch(getApiUrl('/api/submissions'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(record)
@@ -780,7 +828,7 @@ export async function submitExamPayload(
   if (Array.isArray(rawLogs) && rawLogs.length > 0) {
     rawLogs.forEach(log => {
       saveCheatLogToIndexedDB(log).catch(() => {});
-      fetch('/api/cheat-logs', {
+      fetch(getApiUrl('/api/cheat-logs'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(log)
@@ -843,13 +891,13 @@ export async function syncPendingSubmissions(gasUrl?: string): Promise<{
   for (const item of pending) {
     try {
       // 1. Try authoritative server certification first via /api/submit or /api/submissions/grade-and-submit
-      let serverRes = await fetch('/api/submit', {
+      let serverRes = await fetch(getApiUrl('/api/submit'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(item)
       });
       if (!serverRes.ok) {
-        serverRes = await fetch('/api/submissions/grade-and-submit', {
+        serverRes = await fetch(getApiUrl('/api/submissions/grade-and-submit'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(item)
@@ -1870,7 +1918,7 @@ export async function fetchStudentProgressFromGAS(
  */
 export async function saveExamToServerDb(exam: ExamData): Promise<boolean> {
   try {
-    const res = await fetch('/api/exams', {
+    const res = await fetch(getApiUrl('/api/exams'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(exam)
@@ -1887,7 +1935,7 @@ export async function saveExamToServerDb(exam: ExamData): Promise<boolean> {
  */
 export async function fetchServerConfig(): Promise<{ gas_url?: string; spreadsheet_id?: string; last_synced_at?: string } | null> {
   try {
-    const res = await fetch('/api/config');
+    const res = await fetch(getApiUrl('/api/config'));
     if (res.ok) {
       const data = await res.json();
       return data.config || null;
@@ -1906,7 +1954,7 @@ export async function uploadImageToServer(dataUrlOrFile: string, filename?: stri
     return dataUrlOrFile || '';
   }
   try {
-    const res = await fetch('/api/upload-image', {
+    const res = await fetch(getApiUrl('/api/upload-image'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image: dataUrlOrFile, filename })
@@ -1938,7 +1986,7 @@ export async function saveServerConfig(
 ): Promise<boolean> {
   try {
     const payload = typeof config === 'string' ? { gas_url: config } : config;
-    const res = await fetch('/api/config', {
+    const res = await fetch(getApiUrl('/api/config'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -1960,7 +2008,7 @@ export async function triggerServerSheetSync(
 ): Promise<{ success: boolean; message: string; synced_count?: number; latencyMs?: number }> {
   const startTime = Date.now();
   try {
-    const res = await fetch('/api/sync-sheet', {
+    const res = await fetch(getApiUrl('/api/sync-sheet'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ exam_code: examCode, spreadsheet_id: spreadsheetId })
@@ -1987,7 +2035,7 @@ export async function triggerServerSheetSync(
  */
 export async function fetchAppsScriptWebhookCode(): Promise<string> {
   try {
-    const res = await fetch('/api/admin/apps-script-webhook');
+    const res = await fetch(getApiUrl('/api/admin/apps-script-webhook'));
     if (res.ok) {
       const data = await res.json();
       if (data.success && data.script) {
@@ -2005,7 +2053,7 @@ export async function fetchAppsScriptWebhookCode(): Promise<string> {
  */
 export async function flushServerSubmissionsQueue(): Promise<{ success: boolean; count: number }> {
   try {
-    const res = await fetch('/api/admin/flush-submissions-queue', { method: 'POST' });
+    const res = await fetch(getApiUrl('/api/admin/flush-submissions-queue'), { method: 'POST' });
     if (res.ok) {
       return await res.json();
     }
@@ -2020,7 +2068,7 @@ export async function flushServerSubmissionsQueue(): Promise<{ success: boolean;
  */
 export async function syncServerWithGas(gasUrl?: string): Promise<{ success: boolean; message: string }> {
   try {
-    const res = await fetch('/api/sync/pull-from-gas', {
+    const res = await fetch(getApiUrl('/api/sync/pull-from-gas'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ gas_url: gasUrl })
@@ -2059,7 +2107,7 @@ export async function deleteExam(examCode: string): Promise<boolean> {
 
   // 4. Delete on server
   try {
-    const res = await fetch(`/api/exams/${encodeURIComponent(cleanCode)}`, {
+    const res = await fetch(getApiUrl(`/api/exams/${encodeURIComponent(cleanCode)}`), {
       method: 'DELETE'
     });
     return res.ok;
@@ -2085,7 +2133,7 @@ export async function getExamByCode(examCode: string): Promise<ExamData | null> 
  */
 export async function seedStarterPack(): Promise<{ success: boolean; imported?: number; error?: string }> {
   try {
-    const res = await fetch('/api/admin/seed-starter', {
+    const res = await fetch(getApiUrl('/api/admin/seed-starter'), {
       method: 'POST'
     });
     if (res.ok) {
@@ -2107,7 +2155,7 @@ export async function uploadAndParseIeltsPdf(file: File): Promise<any> {
   const formData = new FormData();
   formData.append('pdf', file);
 
-  const response = await fetch('/api/admin/parse-pdf', {
+  const response = await fetch(getApiUrl('/api/admin/parse-pdf'), {
     method: 'POST',
     body: formData,
   });
