@@ -49,12 +49,20 @@ export const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbySNk5fo
  * Dual Deployment Architecture Support:
  * When frontend is statically hosted (GitHub Pages, Vercel), backend Express server
  * is hosted separately (Render, Railway, Fly.io, VPS) and pointed to via VITE_API_BASE_URL.
- * When running unified in local dev or Cloud Run container, VITE_API_BASE_URL is empty
- * and API requests cleanly resolve to relative /api/...
+ * When running unified in local dev or Cloud Run container, API requests cleanly resolve
+ * to relative /api/...
+ *
+ * CRITICAL GUARD: A Google Apps Script URL (script.google.com) is used strictly for
+ * Google Apps Script webhooks (GAS integration) and NEVER for Express API routes (/api/*).
  */
-export const API_BASE_URL: string = (
-  (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_API_BASE_URL) || ''
-).replace(/\/+$/, '');
+export const API_BASE_URL: string = (() => {
+  const envUrl = (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_API_BASE_URL) || '';
+  const trimmed = envUrl.trim().replace(/\/+$/, '');
+  if (trimmed.includes('script.google.com')) {
+    return '';
+  }
+  return trimmed;
+})();
 
 export const getApiUrl = (path: string): string => {
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
@@ -559,7 +567,13 @@ export async function submitExamPayload(
 
   // Isolated Sandbox Preview Mode: Score purely in RAM without writing to IndexedDB or sending network requests
   if (payload.isPreview) {
-    const simulatedGrading = gradeExamAnswers(examData || { exam_code: payload.exam_code, title: 'Preview' }, userAnswers);
+    const defaultExamFallback: ExamData = {
+      exam_code: payload.exam_code || 'PREVIEW',
+      title: 'Preview',
+      passages: [],
+      questions: []
+    };
+    const simulatedGrading = gradeExamAnswers(examData || defaultExamFallback, userAnswers);
     return {
       success: true,
       submission_id: submissionId,

@@ -12,6 +12,8 @@ export interface GenerateExamOptions {
   customPrompt?: string;
   text?: string;
   pdfBase64?: string;
+  testType?: 'ACADEMIC' | 'GENERAL_TRAINING';
+  archetypeMix?: 'full_cambridge' | 'headings_and_blanks' | 'objective_only';
 }
 
 export interface GenerateExamResponse {
@@ -19,6 +21,30 @@ export interface GenerateExamResponse {
   exam: ExamData;
   testReport: ExamTestReport;
   error?: string;
+}
+
+async function parseResponseSafely(response: Response, endpointDesc: string): Promise<any> {
+  const rawText = await response.text();
+  let json: any = null;
+
+  try {
+    json = JSON.parse(rawText);
+  } catch {
+    // If response was HTML or non-JSON
+    if (rawText.trim().toLowerCase().startsWith('<!doctype') || rawText.includes('<html')) {
+      if (!response.ok) {
+        throw new Error(`Máy chủ phản hồi với mã lỗi ${response.status}. Vui lòng thử lại hoặc dùng tab "Trích xuất đề từ PDF/Văn bản".`);
+      }
+      throw new Error(`Phản hồi từ ${endpointDesc} trả về trang HTML thay vì dữ liệu JSON. Vui lòng kiểm tra lại dịch vụ backend.`);
+    }
+    throw new Error(`Phản hồi từ máy chủ không hợp lệ (${rawText.slice(0, 100)}).`);
+  }
+
+  if (!response.ok) {
+    throw new Error(json?.error || `Server error (${response.status})`);
+  }
+
+  return json;
 }
 
 /**
@@ -41,16 +67,13 @@ export async function generateExamWithAI(options: GenerateExamOptions): Promise<
         durationMins: options.durationMins || 120,
         customPrompt: options.customPrompt,
         text: options.text,
-        pdf_base64: options.pdfBase64
+        pdf_base64: options.pdfBase64,
+        testType: options.testType || 'ACADEMIC',
+        archetypeMix: options.archetypeMix || 'full_cambridge'
       })
     });
 
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.error || `Server returned status ${response.status}`);
-    }
-
-    const data = await response.json();
+    const data = await parseResponseSafely(response, 'AI Exam Generator');
     if (!data.success || !data.exam) {
       throw new Error(data.error || 'Failed to generate valid exam format.');
     }
@@ -93,12 +116,7 @@ export async function parsePdfWithServerGemini(pdfBase64: string, text?: string)
     body: JSON.stringify({ pdf_base64: pdfBase64, text: text })
   });
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.error || `Server parser error: ${response.status}`);
-  }
-
-  const data = await response.json();
+  const data = await parseResponseSafely(response, 'Document Exam Parser');
   if (!data.success || !data.exam) {
     throw new Error(data.error || 'Could not parse document into IELTS Exam JSON.');
   }

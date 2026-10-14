@@ -27,7 +27,7 @@ describe('Debounced Blank, Sandbox Preview & Dual Deployment Verification', () =
               question_id: 'R1',
               section: 'reading',
               question_text: 'What is A? [blank_1]',
-              question_type: 'fill_in_the_blank',
+              question_type: 'fill_in_blank',
               correct_answer: 'apple',
               max_score: 1
             }

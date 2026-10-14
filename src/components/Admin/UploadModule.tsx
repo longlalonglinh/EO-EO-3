@@ -78,6 +78,20 @@ const PRESET_TOPICS = [
     band: 'band_8_9' as const
   },
   {
+    id: 'marine',
+    icon: '🐋',
+    title: 'Marine Megafauna & Ocean Biomixing',
+    prompt: 'Pelagic biomass depletion, thermohaline circulation, and acoustic buffers in migratory corridors',
+    band: 'band_8_9' as const
+  },
+  {
+    id: 'space_energy',
+    icon: '🚀',
+    title: 'Space-Based Solar Power & Astrophysics',
+    prompt: 'Orbital photovoltaic microwave transmission, space debris mitigation, and extraterrestrial energy harvesting',
+    band: 'band_65_75' as const
+  },
+  {
     id: 'heritage',
     icon: '🏛️',
     title: 'Cultural Heritage Preservation & Tourism',
@@ -97,6 +111,8 @@ export const UploadModule: React.FC<UploadModuleProps> = ({
   // Generator Form States
   const [selectedTopic, setSelectedTopic] = useState('Climate Action & Circular Economy');
   const [customPrompt, setCustomPrompt] = useState('');
+  const [testType, setTestType] = useState<'ACADEMIC' | 'GENERAL_TRAINING'>('ACADEMIC');
+  const [archetypeMix, setArchetypeMix] = useState<'full_cambridge' | 'headings_and_blanks' | 'objective_only'>('full_cambridge');
   const [difficulty, setDifficulty] = useState<'band_5_6' | 'band_65_75' | 'band_8_9'>('band_65_75');
   const [selectedSkills, setSelectedSkills] = useState<{ listening: boolean; reading: boolean; writing: boolean }>({
     listening: true,
@@ -116,12 +132,13 @@ export const UploadModule: React.FC<UploadModuleProps> = ({
   const [currentStep, setCurrentStep] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
+  const [copiedJson, setCopiedJson] = useState(false);
 
   // Result States
   const [generatedExam, setGeneratedExam] = useState<ExamData | null>(null);
   const [testReport, setTestReport] = useState<ExamTestReport | null>(null);
   const [rawJsonOutput, setRawJsonOutput] = useState<string | null>(null);
-  const [previewTab, setPreviewTab] = useState<'report' | 'passage' | 'questions' | 'json'>('report');
+  const [previewTab, setPreviewTab] = useState<'report' | 'passage' | 'questions' | 'writing' | 'listening' | 'json'>('report');
   const [expandedCheckId, setExpandedCheckId] = useState<string | null>(null);
 
   // Handle PDF Drag & Drop
@@ -173,7 +190,9 @@ export const UploadModule: React.FC<UploadModuleProps> = ({
         difficulty: difficulty,
         questionCount: questionCount,
         durationMins: durationMins,
-        customPrompt: customPrompt.trim() || undefined
+        customPrompt: customPrompt.trim() || undefined,
+        testType: testType,
+        archetypeMix: archetypeMix
       });
 
       setCurrentStep('3/4 Executing 6-Point Quality Verification & Auto-Repair Suite...');
@@ -409,7 +428,51 @@ export const UploadModule: React.FC<UploadModuleProps> = ({
                 />
               </div>
 
-              {/* Target Band & Skills Selector */}
+              {/* Test Module & Question Archetype Mix */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-extrabold text-[#3C2A63]">Module Format:</label>
+                  <div className="grid grid-cols-2 gap-1 bg-[#F8F6FC] p-1 rounded-2xl border border-purple-200/80">
+                    <button
+                      type="button"
+                      onClick={() => setTestType('ACADEMIC')}
+                      className={`py-1.5 px-2 rounded-xl text-[11px] font-extrabold transition cursor-pointer ${
+                        testType === 'ACADEMIC'
+                          ? 'bg-[#6B51A5] text-white shadow-xs'
+                          : 'text-[#7C68A5] hover:text-[#3C2A63]'
+                      }`}
+                    >
+                      Academic
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTestType('GENERAL_TRAINING')}
+                      className={`py-1.5 px-2 rounded-xl text-[11px] font-extrabold transition cursor-pointer ${
+                        testType === 'GENERAL_TRAINING'
+                          ? 'bg-[#6B51A5] text-white shadow-xs'
+                          : 'text-[#7C68A5] hover:text-[#3C2A63]'
+                      }`}
+                    >
+                      General
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-extrabold text-[#3C2A63]">Question Strategy:</label>
+                  <select
+                    value={archetypeMix}
+                    onChange={(e: any) => setArchetypeMix(e.target.value)}
+                    className="w-full px-3 py-2 bg-[#F8F6FC] border border-purple-200/80 rounded-2xl text-xs text-[#3C2A63] font-bold focus:outline-none focus:ring-2 focus:ring-[#6B51A5]"
+                  >
+                    <option value="full_cambridge">Full Cambridge Mix (Headings, Tables, TFNG)</option>
+                    <option value="headings_and_blanks">Headings &amp; Tables/Blanks</option>
+                    <option value="objective_only">Multiple Choice &amp; TFNG</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Target Band & Exam Duration */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <label className="text-xs font-extrabold text-[#3C2A63]">Target Band Level:</label>
@@ -644,9 +707,22 @@ export const UploadModule: React.FC<UploadModuleProps> = ({
                     </div>
                   </div>
 
-                  <span className="text-xs font-mono font-bold bg-white text-[#3C2A63] border border-purple-200 px-3 py-1.5 rounded-xl shadow-xs shrink-0">
-                    {generatedExam.exam_code}
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs font-mono font-bold bg-white text-[#3C2A63] border border-purple-200 px-3 py-1.5 rounded-xl shadow-xs">
+                      {generatedExam.exam_code}
+                    </span>
+                    {onTakeExamNow && (
+                      <button
+                        type="button"
+                        onClick={() => onTakeExamNow(generatedExam)}
+                        className="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs rounded-xl shadow-sm flex items-center gap-1.5 transition cursor-pointer"
+                        title="Vào thẳng phòng thi CBT cho học sinh"
+                      >
+                        <Play className="w-3.5 h-3.5" />
+                        <span>Làm bài ngay</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Metrics Chips */}
@@ -690,45 +766,69 @@ export const UploadModule: React.FC<UploadModuleProps> = ({
               </div>
 
               {/* Preview Sub-tabs */}
-              <div className="flex items-center space-x-2 border-b border-purple-100 pb-2">
+              <div className="flex items-center space-x-1.5 border-b border-purple-100 pb-2 overflow-x-auto">
                 <button
                   type="button"
                   onClick={() => setPreviewTab('report')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
                     previewTab === 'report' ? 'bg-[#6B51A5] text-white' : 'text-[#7C68A5] hover:bg-purple-50'
                   }`}
                 >
-                  Verification Checklist ({testReport.checks.length})
+                  Kiểm định ({testReport.checks.length})
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setPreviewTab('passage')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
                     previewTab === 'passage' ? 'bg-[#6B51A5] text-white' : 'text-[#7C68A5] hover:bg-purple-50'
                   }`}
                 >
-                  Reading Passage
+                  Bài Đọc Reading
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setPreviewTab('questions')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
                     previewTab === 'questions' ? 'bg-[#6B51A5] text-white' : 'text-[#7C68A5] hover:bg-purple-50'
                   }`}
                 >
-                  Questions ({testReport.metrics.totalQuestions})
+                  Câu hỏi ({testReport.metrics.totalQuestions})
                 </button>
+
+                {(generatedExam.writing_task1_prompt || generatedExam.writing_task2_prompt) && (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewTab('writing')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+                      previewTab === 'writing' ? 'bg-[#6B51A5] text-white' : 'text-[#7C68A5] hover:bg-purple-50'
+                    }`}
+                  >
+                    Bài Viết Writing
+                  </button>
+                )}
+
+                {generatedExam.audio_url && (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewTab('listening')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+                      previewTab === 'listening' ? 'bg-[#6B51A5] text-white' : 'text-[#7C68A5] hover:bg-purple-50'
+                    }`}
+                  >
+                    Bài Nghe Audio
+                  </button>
+                )}
 
                 <button
                   type="button"
                   onClick={() => setPreviewTab('json')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
                     previewTab === 'json' ? 'bg-[#6B51A5] text-white' : 'text-[#7C68A5] hover:bg-purple-50'
                   }`}
                 >
-                  Raw JSON
+                  Mã JSON
                 </button>
               </div>
 
@@ -770,7 +870,7 @@ export const UploadModule: React.FC<UploadModuleProps> = ({
                     <h4 className="text-sm font-extrabold text-[#3C2A63]">
                       {generatedExam.reading_passage_title || generatedExam.passage_title || 'IELTS Reading Passage'}
                     </h4>
-                    <p className="text-xs text-[#3C2A63] leading-relaxed whitespace-pre-wrap">
+                    <p className="text-xs text-[#3C2A63] leading-relaxed whitespace-pre-wrap font-serif">
                       {generatedExam.reading_passage || generatedExam.passage_text}
                     </p>
                   </div>
@@ -785,7 +885,7 @@ export const UploadModule: React.FC<UploadModuleProps> = ({
                             {q.question_id}: [{q.section.toUpperCase()}] ({q.question_type})
                           </span>
                           <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
-                            Answer: {Array.isArray(q.correct_answer) ? q.correct_answer.join(', ') : q.correct_answer}
+                            Đáp án: {Array.isArray(q.correct_answer) ? q.correct_answer.join(', ') : q.correct_answer}
                           </span>
                         </div>
                         <p className="text-xs text-[#3C2A63] font-medium">{q.question_text}</p>
@@ -808,10 +908,110 @@ export const UploadModule: React.FC<UploadModuleProps> = ({
                   </div>
                 )}
 
+                {previewTab === 'writing' && (
+                  <div className="space-y-4">
+                    {generatedExam.writing_task1_prompt && (
+                      <div className="bg-white p-4 rounded-xl border border-purple-100 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-black uppercase text-[#6B51A5] tracking-wider">
+                            Writing Task 1 (Academic Chart / Report)
+                          </h4>
+                          <span className="text-[10px] bg-purple-100 text-[#503A7A] px-2 py-0.5 rounded-full font-bold">
+                            Min 150 words
+                          </span>
+                        </div>
+                        <p className="text-xs text-[#3C2A63] leading-relaxed">
+                          {generatedExam.writing_task1_prompt}
+                        </p>
+                        {(generatedExam.writing_task1_image || generatedExam.writing_task1_image_url) && (
+                          <div className="border border-purple-100 rounded-xl overflow-hidden bg-slate-50 max-h-56 flex items-center justify-center">
+                            <img 
+                              src={generatedExam.writing_task1_image || generatedExam.writing_task1_image_url} 
+                              alt="Writing Task 1 Diagram" 
+                              className="max-h-56 object-contain"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {generatedExam.writing_task2_prompt && (
+                      <div className="bg-white p-4 rounded-xl border border-purple-100 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-black uppercase text-[#6B51A5] tracking-wider">
+                            Writing Task 2 (Discursive Essay)
+                          </h4>
+                          <span className="text-[10px] bg-purple-100 text-[#503A7A] px-2 py-0.5 rounded-full font-bold">
+                            Min 250 words
+                          </span>
+                        </div>
+                        <p className="text-xs text-[#3C2A63] leading-relaxed">
+                          {generatedExam.writing_task2_prompt}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {previewTab === 'listening' && (
+                  <div className="space-y-3">
+                    <div className="bg-white p-4 rounded-xl border border-purple-100 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-black uppercase text-[#6B51A5] tracking-wider flex items-center gap-1.5">
+                          <Headphones className="w-4 h-4" />
+                          <span>IELTS Listening Audio Stream</span>
+                        </h4>
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
+                          Stream Ready
+                        </span>
+                      </div>
+                      <p className="text-xs text-[#3C2A63] font-semibold">
+                        {generatedExam.audio_title || 'Audio Conversation Stream'}
+                      </p>
+                      {generatedExam.audio_url && (
+                        <audio 
+                          controls 
+                          className="w-full h-9 rounded-lg"
+                          src={generatedExam.audio_url}
+                        >
+                          Trình duyệt không hỗ trợ thẻ audio.
+                        </audio>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {previewTab === 'json' && (
-                  <pre className="text-[11px] text-[#3C2A63] font-mono leading-relaxed whitespace-pre-wrap">
-                    {rawJsonOutput}
-                  </pre>
+                  <div className="relative">
+                    <div className="absolute top-2 right-2 z-10">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (rawJsonOutput) {
+                            navigator.clipboard.writeText(rawJsonOutput);
+                            setCopiedJson(true);
+                            setTimeout(() => setCopiedJson(false), 2000);
+                          }
+                        }}
+                        className="px-2.5 py-1 bg-white hover:bg-purple-50 text-[#6B51A5] text-[10px] font-bold rounded-lg border border-purple-200 shadow-xs flex items-center gap-1 cursor-pointer"
+                      >
+                        {copiedJson ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-600" />
+                            <span>Đã copy!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Layers className="w-3 h-3" />
+                            <span>Copy JSON</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <pre className="text-[11px] text-[#3C2A63] font-mono leading-relaxed whitespace-pre-wrap">
+                      {rawJsonOutput}
+                    </pre>
+                  </div>
                 )}
 
               </div>

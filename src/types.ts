@@ -214,6 +214,7 @@ export interface Question {
 
   // Rich IELTS Question Attributes:
   table_data?: TableData;
+  table_markdown?: string;
   flowchart_steps?: FlowChartStep[];
   word_bank?: WordBankItem[];
   nb_condition?: boolean | string; // e.g. "NB You may use any letter more than once"

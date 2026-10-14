@@ -181,7 +181,7 @@ BlankInputCell.displayName = 'BlankInputCell';
 
 export interface InlineBlankRendererProps {
   content: string;
-  userAnswers: Record<string, string> | Record<string | number, string>;
+  userAnswers: Record<string, string>;
   onAnswerChange: (questionKey: string, value: string) => void;
   disabled?: boolean;
   wordLimit?: number;
@@ -231,15 +231,15 @@ export const InlineBlankRenderer: React.FC<InlineBlankRendererProps> = ({
         if (match) {
           const qNum = parseInt(match[1], 10);
           const qKey = String(qNum);
-          // Look up user answer by string key (e.g. "5", "R5", "L5") or number
-          const currentVal = (userAnswers as any)[qKey] ?? 
-                             (userAnswers as any)[qNum] ?? 
-                             (userAnswers as any)[`R${qNum}`] ?? 
-                             (userAnswers as any)[`L${qNum}`] ?? 
+          // Look up user answer by string key (e.g. "5", "R5", "L5") converting qNum to String(qNum) to maintain consistency with ReadingModule state
+          const currentVal = userAnswers[String(qNum)] ?? 
+                             userAnswers[qKey] ?? 
+                             userAnswers[`R${String(qNum)}`] ?? 
+                             userAnswers[`L${String(qNum)}`] ?? 
                              '';
 
           const isActive = activeBlankNum !== undefined && activeBlankNum !== null
-            ? String(activeBlankNum) === qKey
+            ? String(activeBlankNum) === String(qNum) || String(activeBlankNum) === qKey
             : false;
 
           return (
