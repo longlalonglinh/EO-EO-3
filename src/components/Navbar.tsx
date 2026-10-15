@@ -14,7 +14,9 @@ import {
   Menu,
   X,
   UserCog,
-  ChevronDown
+  ChevronDown,
+  LogOut,
+  Sparkles
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -29,6 +31,9 @@ interface NavbarProps {
   gasUrl: string;
   onOpenDiagnostics?: () => void;
   onTriggerReload?: () => void;
+  onTriggerExit?: () => void;
+  isFocusFlowMode?: boolean;
+  onToggleFocusFlowMode?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -42,7 +47,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   examCode,
   gasUrl,
   onOpenDiagnostics,
-  onTriggerReload
+  onTriggerReload,
+  onTriggerExit,
+  isFocusFlowMode = false,
+  onToggleFocusFlowMode
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -175,6 +183,41 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span className="hidden sm:inline">Student View</span>
                 <span className="sm:hidden">Student</span>
               </button>
+            )}
+
+            {/* When in Student mode actively taking test: Focus Mode toggle & Safe Exit */}
+            {activeView === 'student' && isLoggedIn && (
+              <>
+                {onToggleFocusFlowMode && (
+                  <button
+                    type="button"
+                    onClick={onToggleFocusFlowMode}
+                    className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                      isFocusFlowMode
+                        ? 'bg-purple-900 text-purple-100 border-purple-700 shadow-inner'
+                        : 'bg-[#E2DDEC] hover:bg-[#D9D3E4] text-[#3C2A63] border-purple-200'
+                    }`}
+                    title={isFocusFlowMode ? 'Thoát chế độ tập trung (Exit Flow Mode)' : 'Chế độ tập trung (Flow Mode: Giảm thiểu xao nhãng)'}
+                    aria-label="Chế độ tập trung"
+                  >
+                    <Sparkles className={`w-3.5 h-3.5 ${isFocusFlowMode ? 'text-amber-400 animate-pulse' : 'text-purple-600'}`} />
+                    <span className="hidden sm:inline">{isFocusFlowMode ? 'Flow: BẬT' : 'Tập trung'}</span>
+                  </button>
+                )}
+
+                {onTriggerExit && (
+                  <button
+                    type="button"
+                    onClick={onTriggerExit}
+                    className="px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer text-slate-600 hover:text-rose-600 hover:bg-rose-50 border border-slate-200/80 hover:border-rose-200"
+                    title="Rời khỏi bài thi (Bảo vệ tiến trình & Xác nhận an toàn)"
+                    aria-label="Rời bài thi"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Rời bài thi</span>
+                  </button>
+                )}
+              </>
             )}
 
             {onTriggerReload && (

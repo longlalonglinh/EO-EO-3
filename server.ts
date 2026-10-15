@@ -14,6 +14,9 @@ import {
   getStoredSubmissions, 
   saveStoredSubmission, 
   updateStoredWritingScore,
+  deleteStoredSubmission,
+  importSubmissions,
+  getSubmissionsStats,
   getStoredCheatLogs, 
   saveStoredCheatLog,
   getStoredConfig, 
@@ -1472,6 +1475,176 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm text thừa) theo schem
   app.get('/api/submissions', (req, res) => {
     const submissions = getStoredSubmissions();
     res.json({ success: true, data: submissions, count: submissions.length });
+  });
+
+  // Database KPI Analytics
+  app.get('/api/admin/submissions/stats', (req, res) => {
+    try {
+      const stats = getSubmissionsStats();
+      res.json({ success: true, stats });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Database Extraction (CSV / Excel & Full JSON)
+  app.get('/api/admin/submissions/export', (req, res) => {
+    try {
+      const format = (req.query.format || 'csv').toString().toLowerCase();
+      const term = (req.query.search || '').toString().toLowerCase().trim();
+      const statusFilter = (req.query.status || 'all').toString();
+      
+      let list = getStoredSubmissions();
+      if (term) {
+        list = list.filter((s: any) => 
+          String(s.sbd || '').toLowerCase().includes(term) ||
+          String(s.exam_code || '').toLowerCase().includes(term) ||
+          String(s.submission_id || '').toLowerCase().includes(term) ||
+          String(s.student_name || '').toLowerCase().includes(term)
+        );
+      }
+      if (statusFilter !== 'all') {
+        list = list.filter((s: any) => (s.writing_status || 'PENDING_TEACHER') === statusFilter);
+      }
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+      if (format === 'json') {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="ielts_submissions_backup_${timestamp}.json"`);
+        return res.send(JSON.stringify(list, null, 2));
+      }
+
+      // Format as CSV with UTF-8 BOM (\uFEFF) for Vietnamese characters in Microsoft Excel
+      const headers = [
+        'Submission ID',
+        'Candidate SBD',
+        'Candidate Name',
+        'Exam Code',
+        'Test Mode',
+        'Submitted At',
+        'Listening Raw',
+        'Listening Max',
+        'Listening Band',
+        'Reading Raw',
+        'Reading Max',
+        'Reading Band',
+        'Writing Status',
+        'Writing Band',
+        'Overall Band',
+        'Task 1 Words',
+        'Task 2 Words',
+        'Violations Count',
+        'Off Screen Seconds',
+        'Switch Count',
+        'Receipt Code',
+        'Sealed Token'
+      ];
+
+      const escapeCsvCell = (val: any) => {
+        if (val === null || val === undefined) return '""';
+        const str = String(val).replace(/"/g, '""');
+        return `"${str}"`;
+      };
+
+      const rows = list.map((s: any) => {
+        const t1Text = s.writing_task1_text || s.writing_task1 || s.writing_task1_response || '';
+        const t2Text = s.writing_task2_text || s.writing_task2 || s.writing_task2_response || '';
+        const t1Words = t1Text.trim().split(/\s+/).filter(Boolean).length;
+        const t2Words = t2Text.trim().split(/\s+/).filter(Boolean).length;
+
+        return [
+          escapeCsvCell(s.submission_id || ''),
+          escapeCsvCell(s.sbd || ''),
+          escapeCsvCell(s.student_name || ''),
+          escapeCsvCell(s.exam_code || ''),
+          escapeCsvCell(s.test_mode || 'TEST'),
+          escapeCsvCell(s.submitted_at || s.received_at || ''),
+          escapeCsvCell(s.listening_raw_score ?? s.listening_score ?? 0),
+          escapeCsvCell(s.listening_max_score ?? 40),
+          escapeCsvCell(s.listening_band !== undefined ? s.listening_band : ''),
+          escapeCsvCell(s.reading_raw_score ?? s.reading_score ?? 0),
+          escapeCsvCell(s.reading_max_score ?? 40),
+          escapeCsvCell(s.reading_band !== undefined ? s.reading_band : ''),
+          escapeCsvCell(s.writing_status || 'PENDING_TEACHER'),
+          escapeCsvCell(s.writing_band !== undefined ? s.writing_band : ''),
+          escapeCsvCell(s.overall_band !== undefined ? s.overall_band : ''),
+          escapeCsvCell(t1Words),
+          escapeCsvCell(t2Words),
+          escapeCsvCell(s.violations_count || s.cheat_count || 0),
+          escapeCsvCell(s.cumulative_off_screen_seconds || 0),
+          escapeCsvCell(s.switch_count || 0),
+          escapeCsvCell(s.offline_receipt_code || ''),
+          escapeCsvCell(s.sealed_token || '')
+        ].join(',');
+      });
+
+      const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="ielts_submissions_export_${timestamp}.csv"`);
+      return res.send(csvContent);
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Database Import / Restore Endpoint
+  app.post('/api/admin/submissions/import', (req, res) => {
+    try {
+      const items = Array.isArray(req.body) ? req.body : req.body?.submissions;
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ success: false, error: 'INVALID_IMPORT_PAYLOAD', message: 'Payload must be an array of submission objects or { submissions: [...] }' });
+      }
+
+      const outcome = importSubmissions(items);
+
+      // If requested, also enqueue for Google Sheets persistence
+      if (req.body.syncToSheets) {
+        items.forEach(item => enqueueSubmission(item));
+      }
+
+      res.json({
+        success: true,
+        imported: outcome.imported,
+        updated: outcome.updated,
+        total: outcome.total,
+        message: `Successfully imported ${outcome.imported} new and updated ${outcome.updated} submission records.`
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Direct Sync Database to Google Sheets API v4
+  app.post('/api/admin/submissions/sync-to-sheets', async (req, res) => {
+    try {
+      const flushResult = await flushSubmissionQueue();
+      res.json({
+        success: true,
+        ...flushResult,
+        flushed: flushResult.count,
+        message: flushResult.count > 0 
+          ? `Successfully synchronized ${flushResult.count} queued submissions to Google Sheets!`
+          : 'Submission queue was empty or already up-to-date.'
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Admin Single Submission Deletion
+  app.delete('/api/admin/submissions/:id', (req, res) => {
+    try {
+      const subId = req.params.id;
+      const success = deleteStoredSubmission(subId);
+      if (success) {
+        res.json({ success: true, message: `Submission ${subId} successfully deleted.` });
+      } else {
+        res.status(404).json({ success: false, error: 'SUBMISSION_NOT_FOUND' });
+      }
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
   });
 
   // TC-SECU-02: IDOR Defense on single submission retrieval

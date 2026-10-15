@@ -352,6 +352,114 @@ export function updateStoredWritingScore(
   return { success: true, submission: sub };
 }
 
+export function deleteStoredSubmission(submissionId: string): boolean {
+  const submissions = getStoredSubmissions();
+  const filtered = submissions.filter((s: any) => s.submission_id !== submissionId);
+  if (filtered.length !== submissions.length) {
+    cachedSubmissions = filtered;
+    safeWriteJson(SUBMISSIONS_FILE, filtered);
+    return true;
+  }
+  return false;
+}
+
+export function importSubmissions(importedList: any[]): { imported: number; updated: number; total: number } {
+  if (!Array.isArray(importedList) || importedList.length === 0) {
+    return { imported: 0, updated: 0, total: getStoredSubmissions().length };
+  }
+
+  const current = getStoredSubmissions();
+  let importedCount = 0;
+  let updatedCount = 0;
+
+  for (const item of importedList) {
+    if (!item) continue;
+    const subId = item.submission_id || `${item.sbd || 'IMPORT'}_${item.exam_code || 'EXAM'}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const record = {
+      ...item,
+      submission_id: subId,
+      received_at: item.received_at || item.submitted_at || new Date().toISOString()
+    };
+
+    const existingIdx = current.findIndex((s: any) => s.submission_id === subId);
+    if (existingIdx >= 0) {
+      current[existingIdx] = { ...current[existingIdx], ...record };
+      updatedCount++;
+    } else {
+      current.unshift(record);
+      importedCount++;
+    }
+  }
+
+  if (current.length > 3000) {
+    current.length = 3000;
+  }
+
+  cachedSubmissions = current;
+  safeWriteJson(SUBMISSIONS_FILE, current);
+  return { imported: importedCount, updated: updatedCount, total: current.length };
+}
+
+export function getSubmissionsStats(): {
+  total: number;
+  todayCount: number;
+  gradedWriting: number;
+  pendingWriting: number;
+  avgListeningBand: number;
+  avgReadingBand: number;
+  avgOverallBand: number;
+  totalViolations: number;
+} {
+  const submissions = getStoredSubmissions();
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  let todayCount = 0;
+  let gradedWriting = 0;
+  let pendingWriting = 0;
+  let totalViolations = 0;
+
+  const listeningBands: number[] = [];
+  const readingBands: number[] = [];
+  const overallBands: number[] = [];
+
+  for (const s of submissions) {
+    const subDate = (s.submitted_at || s.received_at || '').split('T')[0];
+    if (subDate === todayStr) {
+      todayCount++;
+    }
+
+    if (s.writing_status === 'GRADED') {
+      gradedWriting++;
+    } else {
+      pendingWriting++;
+    }
+
+    totalViolations += Number(s.violations_count || s.cheat_count || 0);
+
+    const lBand = Number(s.listening_band);
+    if (!isNaN(lBand) && lBand > 0) listeningBands.push(lBand);
+
+    const rBand = Number(s.reading_band);
+    if (!isNaN(rBand) && rBand > 0) readingBands.push(rBand);
+
+    const oBand = Number(s.overall_band);
+    if (!isNaN(oBand) && oBand > 0) overallBands.push(oBand);
+  }
+
+  const calcAvg = (arr: number[]) => arr.length > 0 ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : 0;
+
+  return {
+    total: submissions.length,
+    todayCount,
+    gradedWriting,
+    pendingWriting,
+    avgListeningBand: calcAvg(listeningBands),
+    avgReadingBand: calcAvg(readingBands),
+    avgOverallBand: calcAvg(overallBands),
+    totalViolations
+  };
+}
+
 // ---------------- CHEAT LOGS ----------------
 export function getStoredCheatLogs(): any[] {
   if (cachedCheatLogs) return cachedCheatLogs;

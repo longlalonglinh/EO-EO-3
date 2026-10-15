@@ -565,4 +565,63 @@ export async function getCumulativeProctoringData(
   return null;
 }
 
+export interface CandidateDraftBackup {
+  exam_code: string;
+  candidate_id: string;
+  timestamp: string;
+  answers: Record<string, string>;
+  writing_draft: { task1: string; task2: string } | null;
+  audio_progress_seconds: number;
+}
+
+/**
+ * Creates a comprehensive emergency backup snapshot of the candidate's active session
+ */
+export async function createCandidateDraftBackup(
+  examCode: string,
+  candidateId: string
+): Promise<CandidateDraftBackup> {
+  const answers = await getCurrentAnswersFromIndexedDB(examCode, candidateId);
+  const writingDraft = await getWritingDraftFromIndexedDB(examCode, candidateId);
+  const audioProgress = await getAudioProgressFromIndexedDB(examCode, candidateId);
+
+  return {
+    exam_code: (examCode || 'EXAM').toUpperCase(),
+    candidate_id: (candidateId || 'CANDIDATE').toUpperCase(),
+    timestamp: new Date().toISOString(),
+    answers,
+    writing_draft: writingDraft ? { task1: writingDraft.task1, task2: writingDraft.task2 } : null,
+    audio_progress_seconds: audioProgress || 0
+  };
+}
+
+/**
+ * Clears all cached drafts and answers for candidate upon fresh exam restart
+ */
+export async function clearCandidateAllDrafts(
+  examCode: string,
+  candidateId: string
+): Promise<void> {
+  await clearCurrentAnswersFromIndexedDB(examCode, candidateId);
+  const cleanCode = (examCode || 'EXAM').toUpperCase().replace(/[^A-Z0-9]/g, '_');
+  const cleanId = (candidateId || 'CANDIDATE').toUpperCase().replace(/[^A-Z0-9]/g, '_');
+  
+  const draftKey = `DRAFT_WRITING_${cleanCode}_${cleanId}`;
+  const audioKey = `AUDIO_PROGRESS_${cleanCode}_${cleanId}`;
+  
+  try {
+    localStorage.removeItem(draftKey);
+    localStorage.removeItem(audioKey);
+  } catch (e) {}
+
+  try {
+    const db = await openIndexedDB();
+    const tx = db.transaction('key_values', 'readwrite');
+    const store = tx.objectStore('key_values');
+    store.delete(draftKey);
+    store.delete(audioKey);
+  } catch (e) {}
+}
+
+
 

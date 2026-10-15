@@ -8,6 +8,8 @@ import { ProctoringMonitor } from './components/Student/ProctoringMonitor';
 import { ResultPage } from './components/Student/ResultPage';
 import { SubmitConfirmationModal } from './components/Student/SubmitConfirmationModal';
 import { ReloadConfirmationModal } from './components/Student/ReloadConfirmationModal';
+import { ExitConfirmationModal } from './components/Student/ExitConfirmationModal';
+import { SubmissionProgressModal } from './components/Student/SubmissionProgressModal';
 import { MonitoringDashboard } from './components/Admin/MonitoringDashboard';
 import { ManualGrading } from './components/Admin/ManualGrading';
 import { UploadModule } from './components/Admin/UploadModule';
@@ -39,14 +41,16 @@ import {
   Sparkles,
   Lock,
   ArrowRight,
+  ArrowLeft,
   Activity,
   Hourglass,
-  AlertTriangle
+  AlertTriangle,
+  Download
 } from 'lucide-react';
 
 import { DEFAULT_API_URL, fetchExam, prefetchExam, submitExamPayload, syncPendingSubmissions, clearExamCache, clearSessionTimers, fetchServerConfig, saveServerConfig } from './services/api';
 import { gradeExamAnswers } from './services/answerScoring';
-import { getCurrentAnswersFromIndexedDB, getWritingDraftFromIndexedDB, saveWritingDraftToIndexedDB, saveCurrentAnswersToIndexedDB, clearCurrentAnswersFromIndexedDB } from './services/indexedDb';
+import { getCurrentAnswersFromIndexedDB, getWritingDraftFromIndexedDB, saveWritingDraftToIndexedDB, saveCurrentAnswersToIndexedDB, clearCurrentAnswersFromIndexedDB, createCandidateDraftBackup } from './services/indexedDb';
 import { DEFAULT_EXAMS } from './data/defaultExams';
 import { DatabaseDiagnosticsModal } from './components/Common/DatabaseDiagnosticsModal';
 import { extractQuestionsFromRawResponse } from './services/dbDiagnostics';
@@ -171,6 +175,12 @@ export default function App() {
   // Submit confirmation dialog state
   const [isConfirmSubmitOpen, setIsConfirmSubmitOpen] = useState<boolean>(false);
 
+  // Exit confirmation modal state (Heuristic #3 & #5, Fitts's Law)
+  const [isExitModalOpen, setIsExitModalOpen] = useState(false);
+
+  // Flow State & Distraction-Free Mode (Csikszentmihalyi, Superhuman: Minimize Distractions)
+  const [isFocusFlowMode, setIsFocusFlowMode] = useState(false);
+
   // Reload confirmation modal state & beforeunload protection
   const [isReloadModalOpen, setIsReloadModalOpen] = useState(false);
   const isBypassingBeforeUnloadRef = useRef(false);
@@ -183,6 +193,15 @@ export default function App() {
 
   const handleCancelReload = () => {
     setIsReloadModalOpen(false);
+  };
+
+  const handleConfirmExit = () => {
+    setIsExitModalOpen(false);
+    setIsLoggedIn(false);
+    setSbd('');
+    setExamCode('');
+    setCurrentModule('listening');
+    setCompletedSkills({ listening: false, reading: false, writing: false });
   };
 
   // Browser beforeunload protection (Accidental browser reload / close during test)
@@ -419,6 +438,16 @@ export default function App() {
   const answeredReadingCount = Object.keys(userAnswers).filter(k => 
     allReadingQuestionIds.includes(k) && Boolean(userAnswers[k]?.trim())
   ).length;
+
+  const totalAnsweredQuestions = 
+    (hasListening ? answeredListeningCount : 0) + 
+    (hasReading ? answeredReadingCount : 0) + 
+    (hasWriting && (writingTask1.trim() || writingTask2.trim()) ? 1 : 0);
+
+  const totalPossibleQuestions = 
+    (hasListening ? (examData.listening_questions?.length ?? 0) : 0) + 
+    (hasReading ? readingQuestionsCount : 0) + 
+    (hasWriting ? (examData.writing_task1_prompt && examData.writing_task2_prompt ? 2 : 1) : 0);
 
   // Submission & Retry State
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -718,6 +747,30 @@ export default function App() {
       ...prev,
       [questionId]: value
     }));
+  };
+
+  // Emergency Draft Backup for Candidate (Dual Vault protection)
+  const handleExportDraftBackup = async () => {
+    try {
+      const backup = await createCandidateDraftBackup(examCode, sbd);
+      backup.answers = { ...userAnswers, ...backup.answers };
+      if (writingTask1 || writingTask2) {
+        backup.writing_draft = { task1: writingTask1, task2: writingTask2 };
+      }
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `IELTS_DRAFT_${examCode}_${sbd}_${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setSkillNotice('💾 Đã tải bản sao lưu bài thi (.json) về máy tính an toàn!');
+      setTimeout(() => setSkillNotice(null), 4000);
+    } catch (e: any) {
+      setSkillNotice('⚠️ Không thể xuất bản sao lưu: ' + (e?.message || 'Lỗi'));
+    }
   };
 
   // Submit Exam & Batching Payload (handles both STANDARD candidate click and TIMEOUT_FORCED)
@@ -1420,6 +1473,9 @@ function doPost(e) {
         gasUrl={gasUrl}
         onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
         onTriggerReload={() => setIsReloadModalOpen(true)}
+        onTriggerExit={() => setIsExitModalOpen(true)}
+        isFocusFlowMode={isFocusFlowMode}
+        onToggleFocusFlowMode={() => setIsFocusFlowMode(prev => !prev)}
       />
 
       {/* Non-blocking Offline / Online Toast Notification */}
@@ -1492,7 +1548,7 @@ function doPost(e) {
       )}
 
       {/* MAIN CONTAINER */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
+      <main className={`flex-1 w-full mx-auto transition-all duration-300 ${isFocusFlowMode ? 'max-w-[98%] p-2 sm:p-4' : 'max-w-7xl p-4 sm:p-6'}`}>
         
         {/* STUDENT VIEW */}
         {activeView === 'student' && (
@@ -1650,24 +1706,38 @@ function doPost(e) {
 
                     </div>
 
-                    {/* SUBMIT BUTTON: Distinct visual hierarchy separating final submission from navigation tabs */}
-                    <button
-                      onClick={() => setIsConfirmSubmitOpen(true)}
-                      disabled={isSubmitting}
-                      className="px-5 sm:px-6 py-2.5 sm:py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-[11px] sm:text-xs uppercase tracking-wider rounded-xl sm:rounded-2xl shadow-lg shadow-emerald-950/15 flex items-center justify-center gap-2 transition disabled:opacity-50 cursor-pointer shrink-0 active:scale-95"
-                    >
-                      {isSubmitting ? (
-                        <>
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>Submitting Exam...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Send className="w-4 h-4" />
-                          <span>SUBMIT EXAM</span>
-                        </>
-                      )}
-                    </button>
+                    {/* ACTIONS: Emergency Backup & Final Submission */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleExportDraftBackup}
+                        title="Tải bản sao lưu bài làm đang làm (.json) về máy tính"
+                        className="px-3 sm:px-4 py-2.5 sm:py-3 bg-white hover:bg-purple-50 text-[#3C2A63] border border-purple-200/90 font-bold text-[11px] sm:text-xs rounded-xl sm:rounded-2xl shadow-xs flex items-center justify-center gap-1.5 transition cursor-pointer shrink-0 active:scale-95"
+                      >
+                        <Download className="w-3.5 h-3.5 text-[#6B51A5]" />
+                        <span className="hidden sm:inline">Lưu bản sao (.json)</span>
+                        <span className="sm:hidden">Lưu</span>
+                      </button>
+
+                      {/* SUBMIT BUTTON: Distinct visual hierarchy separating final submission from navigation tabs */}
+                      <button
+                        onClick={() => setIsConfirmSubmitOpen(true)}
+                        disabled={isSubmitting}
+                        className="px-5 sm:px-6 py-2.5 sm:py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-[11px] sm:text-xs uppercase tracking-wider rounded-xl sm:rounded-2xl shadow-lg shadow-emerald-950/15 flex items-center justify-center gap-2 transition disabled:opacity-50 cursor-pointer shrink-0 active:scale-95"
+                      >
+                        {isSubmitting ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            <span>Đang nộp...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Send className="w-4 h-4" />
+                            <span>SUBMIT EXAM</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -1912,6 +1982,26 @@ function doPost(e) {
                   targetSkill={activeTargetSkill}
                   writingTask1Words={writingTask1.trim().split(/\s+/).filter(Boolean).length}
                   writingTask2Words={writingTask2.trim().split(/\s+/).filter(Boolean).length}
+                />
+
+                {/* Safe Exam Abandonment & Exit Confirmation Modal (Heuristic #3 & #5, Fitts's Law) */}
+                <ExitConfirmationModal
+                  isOpen={isExitModalOpen}
+                  onClose={() => setIsExitModalOpen(false)}
+                  onConfirmExit={handleConfirmExit}
+                  answeredCount={totalAnsweredQuestions}
+                  totalQuestions={totalPossibleQuestions}
+                  examCode={examCode}
+                />
+
+                {/* Real-time Candidate Submission Progress Modal */}
+                <SubmissionProgressModal
+                  isOpen={isSubmitting}
+                  isForcedTimeout={isForcedSubmitting}
+                  sbd={sbd}
+                  examCode={examCode}
+                  answeredCount={totalAnsweredQuestions}
+                  totalQuestions={totalPossibleQuestions}
                 />
 
               </div>

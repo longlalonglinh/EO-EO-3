@@ -57,7 +57,7 @@ export const questionZodSchema = z.object({
 });
 
 export const passageZodSchema = z.object({
-  passage_index: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  passage_index: z.number().min(1).max(10).optional().default(1),
   title: z.string().optional().default('Reading Passage'),
   text: z.string().optional().default(''),
   questions: z.array(questionZodSchema).optional().default([])
@@ -96,33 +96,54 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
   isSaving = false
 }) => {
   const [activeSection, setActiveSection] = useState<'reading' | 'listening' | 'writing' | 'settings'>('reading');
-  const [selectedPassageIdx, setSelectedPassageIdx] = useState<0 | 1 | 2>(0);
+  const [selectedPassageIdx, setSelectedPassageIdx] = useState<number>(0);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
   const [splitScreenPreview, setSplitScreenPreview] = useState(false);
   const [tokenizerToast, setTokenizerToast] = useState<string | null>(null);
   const [previewAnswers, setPreviewAnswers] = useState<Record<string, string>>({});
   const passageTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // Helper to format initial passages with embedded questions
+  // Helper to format initial passages with embedded questions (preserves single-passage or partial-passage exams)
   const formatInitialData = (data: ExamData): ExamFormValues => {
     const rawPassages = data.passages || [];
     const allReadingQs = data.reading_questions || (data.questions || []).filter(q => q.section === 'reading');
     const allListeningQs = data.listening_questions || (data.questions || []).filter(q => q.section === 'listening');
 
-    const formattedPassages = [1, 2, 3].map((pNum, idx) => {
-      const existingP = rawPassages.find(p => p.passage_index === pNum) || rawPassages[idx];
-      const pQs = (existingP?.questions && existingP.questions.length > 0) 
-        ? existingP.questions 
+    // Extract genuine passages without forcefully padding to 3
+    let sourcePassages = rawPassages.filter(p => Boolean(p.text?.trim() || (p.questions && p.questions.length > 0)));
+    if (sourcePassages.length === 0) {
+      if (allReadingQs.length > 0) {
+        const pIndices = Array.from(new Set(allReadingQs.map(q => q.passage_index || 1))).sort((a, b) => a - b);
+        sourcePassages = pIndices.map(pNum => ({
+          passage_index: pNum as 1 | 2 | 3,
+          title: `Reading Passage ${pNum}`,
+          text: pNum === 1 ? (data.passage_text || '') : '',
+          questions: allReadingQs.filter(q => (q.passage_index || 1) === pNum)
+        }));
+      } else {
+        sourcePassages = [{
+          passage_index: 1,
+          title: data.passage_title || data.reading_passage_title || 'Reading Passage 1',
+          text: data.passage_text || data.reading_passage || '',
+          questions: []
+        }];
+      }
+    }
+
+    const formattedPassages = sourcePassages.map((p, idx) => {
+      const pNum = (p.passage_index || idx + 1) as 1 | 2 | 3;
+      const pQs = (p.questions && p.questions.length > 0) 
+        ? p.questions 
         : allReadingQs.filter(q => q.passage_index === pNum || (!q.passage_index && idx === 0));
 
       return {
-        passage_index: pNum as 1 | 2 | 3,
-        title: existingP?.title || `Reading Passage ${pNum}`,
-        text: existingP?.text || (pNum === 1 ? (data.passage_text || '') : ''),
+        passage_index: pNum,
+        title: p.title || `Reading Passage ${pNum}`,
+        text: p.text || (idx === 0 ? (data.passage_text || '') : ''),
         questions: pQs.map(q => ({
           question_id: q.question_id,
           section: 'reading' as const,
-          passage_index: pNum as 1 | 2 | 3,
+          passage_index: pNum,
           question_text: q.question_text || '',
           question_type: q.question_type || 'multiple_choice',
           options: q.options || [],
@@ -231,10 +252,19 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
     mode: 'onChange'
   });
 
+  const watchedPassages = watch('passages') || [];
+  const safePassageIdx = Math.min(selectedPassageIdx, Math.max(0, (watchedPassages.length || 1) - 1));
+
+  // Manage dynamic passages (allows 1, 2, or 3 passages for flexible partial exams)
+  const passagesArray = useFieldArray({
+    control,
+    name: 'passages'
+  });
+
   // Manage dynamic questions inside current selected passage
   const currentPassageQuestionsArray = useFieldArray({
     control,
-    name: `passages.${selectedPassageIdx}.questions`
+    name: `passages.${safePassageIdx}.questions` as any
   });
 
   // Manage listening questions
@@ -243,7 +273,27 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
     name: 'listening_questions'
   });
 
-  const watchedPassages = watch('passages');
+  const handleAddPassage = () => {
+    const currentList = watchedPassages || [];
+    if (currentList.length >= 3) return;
+    const nextIdx = currentList.length + 1;
+    passagesArray.append({
+      passage_index: (nextIdx > 3 ? 3 : nextIdx) as 1 | 2 | 3,
+      title: `Reading Passage ${nextIdx}`,
+      text: '',
+      questions: []
+    });
+    setSelectedPassageIdx(currentList.length);
+  };
+
+  const handleRemoveCurrentPassage = () => {
+    const currentList = watchedPassages || [];
+    if (currentList.length <= 1) return;
+    passagesArray.remove(safePassageIdx);
+    const newIdx = Math.max(0, safePassageIdx - 1);
+    setSelectedPassageIdx(newIdx);
+  };
+
   const watchedExamCode = watch('exam_code');
   const watchedTask1Image = watch('writing_task1_image');
 
@@ -342,11 +392,15 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
   const t1Prompt = watchedValues.writing_task1_prompt?.trim();
   const t1Img = watchedValues.writing_task1_image?.trim();
   const t2Prompt = watchedValues.writing_task2_prompt?.trim();
+  const isOneSkillWriting = targetSkills.length === 1 && targetSkills[0] === 'writing';
+  const hasEitherWritingTask = Boolean(t1Prompt || t1Img) || Boolean(t2Prompt);
+  const hasBothWritingTasks = Boolean(t1Prompt || t1Img) && Boolean(t2Prompt);
+
   const writingCheck = !hasWritingSkill 
     ? 'na' 
-    : (Boolean(t1Prompt || t1Img) && Boolean(t2Prompt))
+    : (hasBothWritingTasks || (isOneSkillWriting && hasEitherWritingTask))
     ? 'pass'
-    : (Boolean(t1Prompt || t1Img) || Boolean(t2Prompt))
+    : hasEitherWritingTask
     ? 'warn'
     : 'fail';
 
@@ -372,7 +426,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
       id: 'writing',
       title: 'Writing Prompts',
       status: writingCheck,
-      desc: writingCheck === 'pass' ? 'Task 1 and Task 2 prompts provided' : writingCheck === 'warn' ? 'Only 1 of 2 writing tasks has a prompt' : writingCheck === 'fail' ? 'Writing prompts are empty' : 'Not required (Writing omitted)',
+      desc: writingCheck === 'pass' ? (hasBothWritingTasks ? 'Task 1 and Task 2 prompts provided' : 'Single Writing Task configured (One-skill mode)') : writingCheck === 'warn' ? 'Only 1 of 2 writing tasks has a prompt' : writingCheck === 'fail' ? 'Writing prompts are empty' : 'Not required (Writing omitted)',
       tab: 'writing' as const
     },
     {
@@ -393,29 +447,31 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
     const flatReadingQuestions: Question[] = [];
     const rawPassages = formData.passages || [];
 
-    const standardizedPassages: ReadingPassageItem[] = rawPassages.map((p, pIdx) => {
-      const pNumber = ((p.passage_index || pIdx + 1) as 1 | 2 | 3);
-      const validQs = (p.questions || [])
-        .filter(q => q && (q.question_text?.trim() || q.correct_answer?.trim()))
-        .map((q, qIdx) => ({
-          ...q,
-          question_id: q.question_id?.trim() || `R${pNumber}_Q${qIdx + 1}`,
-          section: 'reading' as const,
+    const standardizedPassages: ReadingPassageItem[] = rawPassages
+      .map((p, pIdx) => {
+        const pNumber = ((p.passage_index || pIdx + 1) as 1 | 2 | 3);
+        const validQs = (p.questions || [])
+          .filter(q => q && (q.question_text?.trim() || q.correct_answer?.trim()))
+          .map((q, qIdx) => ({
+            ...q,
+            question_id: q.question_id?.trim() || `R${pNumber}_Q${qIdx + 1}`,
+            section: 'reading' as const,
+            passage_index: pNumber,
+            question_type: (q.question_type || 'multiple_choice') as QuestionType,
+            correct_answer: q.correct_answer?.trim() || '',
+            max_score: q.max_score || 1
+          }));
+
+        validQs.forEach(q => flatReadingQuestions.push(q));
+
+        return {
           passage_index: pNumber,
-          question_type: (q.question_type || 'multiple_choice') as QuestionType,
-          correct_answer: q.correct_answer?.trim() || '',
-          max_score: q.max_score || 1
-        }));
-
-      validQs.forEach(q => flatReadingQuestions.push(q));
-
-      return {
-        passage_index: pNumber,
-        title: p.title?.trim() || `Reading Passage ${pNumber}`,
-        text: p.text || '',
-        questions: validQs
-      };
-    });
+          title: p.title?.trim() || `Reading Passage ${pNumber}`,
+          text: p.text || '',
+          questions: validQs
+        };
+      })
+      .filter((p, idx) => idx === 0 || p.text.trim().length > 0 || p.questions.length > 0);
 
     // Sanitize listening questions
     const flatListeningQuestions: Question[] = (formData.listening_questions || [])
@@ -490,30 +546,34 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
       });
     }
     if (allowWriting && (finalTask1Prompt || finalTask2Prompt || finalTask1Img)) {
+      const writingTasks: any[] = [];
+      if (finalTask1Prompt || finalTask1Img) {
+        writingTasks.push({
+          id: 'task-1',
+          task_number: 1,
+          title: 'Writing Task 1 (Report)',
+          prompt: finalTask1Prompt,
+          image_url: finalTask1Img,
+          imageUrl: finalTask1Img,
+          min_words: 150,
+          suggested_time_minutes: finalTask2Prompt ? 20 : (formData.writing_duration_mins || 60)
+        });
+      }
+      if (finalTask2Prompt) {
+        writingTasks.push({
+          id: 'task-2',
+          task_number: 2,
+          title: 'Writing Task 2 (Essay)',
+          prompt: finalTask2Prompt,
+          min_words: 250,
+          suggested_time_minutes: (finalTask1Prompt || finalTask1Img) ? 40 : (formData.writing_duration_mins || 60)
+        });
+      }
       sections.push({
         skill: 'writing',
         title: 'IELTS Writing Section',
         durationMinutes: formData.writing_duration_mins || 60,
-        tasks: [
-          {
-            id: 'task-1',
-            task_number: 1,
-            title: 'Writing Task 1 (Report)',
-            prompt: finalTask1Prompt,
-            image_url: finalTask1Img,
-            imageUrl: finalTask1Img,
-            min_words: 150,
-            suggested_time_minutes: 20
-          },
-          {
-            id: 'task-2',
-            task_number: 2,
-            title: 'Writing Task 2 (Essay)',
-            prompt: finalTask2Prompt,
-            min_words: 250,
-            suggested_time_minutes: 40
-          }
-        ]
+        tasks: writingTasks
       });
     }
 
@@ -602,10 +662,10 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
     // Replace selected range in textarea
     const fullText = textarea.value;
     const newText = fullText.substring(0, start) + token + fullText.substring(end);
-    setValue(`passages.${selectedPassageIdx}.text`, newText, { shouldDirty: true });
+    setValue(`passages.${safePassageIdx}.text`, newText, { shouldDirty: true });
 
     // Auto-create matching fill_in_the_blank question item
-    const pNumber = (selectedPassageIdx + 1) as 1 | 2 | 3;
+    const pNumber = (safePassageIdx + 1) as 1 | 2 | 3;
     const wordCount = selected.split(/\s+/).length;
     const limitDesc = wordCount <= 1 ? 'NO MORE THAN ONE WORD' : wordCount <= 2 ? 'NO MORE THAN TWO WORDS' : 'NO MORE THAN THREE WORDS';
 
@@ -958,6 +1018,66 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-[10px] font-black text-purple-700 uppercase mr-1">One Skill:</span>
+            
+            {/* Reading Presets */}
+            <button
+              type="button"
+              onClick={() => {
+                setValue('exam_type', 'one_skill');
+                setValue('skills', ['reading']);
+                setValue('duration_mins', 20);
+                setValue('reading_duration_mins', 20);
+                // Keep only 1 passage
+                const currPassages = watch('passages') || [];
+                if (currPassages.length > 1) {
+                  setValue('passages', [currPassages[0]], { shouldDirty: true });
+                } else if (currPassages.length === 0) {
+                  setValue('passages', [{ passage_index: 1, title: 'Reading Passage 1', text: '', questions: [] }], { shouldDirty: true });
+                }
+                setSelectedPassageIdx(0);
+                setValue('listening_questions', []);
+                setValue('audio_url', '');
+                setValue('audio_title', '');
+                setValue('writing_task1_prompt', '');
+                setValue('writing_task1_image', '');
+                setValue('writing_task2_prompt', '');
+                setActiveSection('reading');
+              }}
+              className="px-2 py-1 text-[11px] font-bold bg-white text-[#503A7A] hover:bg-purple-100 rounded-lg border border-purple-200 transition cursor-pointer shadow-2xs"
+              title="Đề lẻ Reading chỉ 1 bài đọc (Gợi ý 20 phút)"
+            >
+              📖 Đọc 1 Bài (20m)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setValue('exam_type', 'one_skill');
+                setValue('skills', ['reading']);
+                setValue('duration_mins', 40);
+                setValue('reading_duration_mins', 40);
+                const currPassages = watch('passages') || [];
+                if (currPassages.length === 1) {
+                  setValue('passages', [
+                    currPassages[0],
+                    { passage_index: 2, title: 'Reading Passage 2', text: '', questions: [] }
+                  ], { shouldDirty: true });
+                } else if (currPassages.length > 2) {
+                  setValue('passages', [currPassages[0], currPassages[1]], { shouldDirty: true });
+                }
+                setSelectedPassageIdx(0);
+                setValue('listening_questions', []);
+                setValue('audio_url', '');
+                setValue('audio_title', '');
+                setValue('writing_task1_prompt', '');
+                setValue('writing_task1_image', '');
+                setValue('writing_task2_prompt', '');
+                setActiveSection('reading');
+              }}
+              className="px-2 py-1 text-[11px] font-bold bg-white text-[#503A7A] hover:bg-purple-100 rounded-lg border border-purple-200 transition cursor-pointer shadow-2xs"
+              title="Đề lẻ Reading chỉ 2 bài đọc (Gợi ý 40 phút)"
+            >
+              📖 Đọc 2 Bài (40m)
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -973,9 +1093,30 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
                 setValue('writing_task2_prompt', '');
                 setActiveSection('reading');
               }}
-              className="px-2.5 py-1 text-[11px] font-bold bg-white text-[#503A7A] hover:bg-purple-100 rounded-lg border border-purple-200 transition cursor-pointer shadow-2xs"
+              className="px-2 py-1 text-[11px] font-bold bg-white text-[#503A7A] hover:bg-purple-100 rounded-lg border border-purple-200 transition cursor-pointer shadow-2xs"
+              title="Đề Reading 3 bài đọc tiêu chuẩn (60 phút)"
             >
-              📖 Reading (60m)
+              📖 Đọc Full 3 Bài (60m)
+            </button>
+
+            {/* Listening Presets */}
+            <button
+              type="button"
+              onClick={() => {
+                setValue('exam_type', 'one_skill');
+                setValue('skills', ['listening']);
+                setValue('duration_mins', 15);
+                setValue('listening_duration_mins', 15);
+                setValue('passages', []);
+                setValue('writing_task1_prompt', '');
+                setValue('writing_task1_image', '');
+                setValue('writing_task2_prompt', '');
+                setActiveSection('listening');
+              }}
+              className="px-2 py-1 text-[11px] font-bold bg-white text-[#503A7A] hover:bg-purple-100 rounded-lg border border-purple-200 transition cursor-pointer shadow-2xs"
+              title="Đề lẻ Listening 1 phần (khoảng 6-10 câu, 15 phút)"
+            >
+              🎧 Nghe 1 Phần (15m)
             </button>
             <button
               type="button"
@@ -990,9 +1131,51 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
                 setValue('writing_task2_prompt', '');
                 setActiveSection('listening');
               }}
-              className="px-2.5 py-1 text-[11px] font-bold bg-white text-[#503A7A] hover:bg-purple-100 rounded-lg border border-purple-200 transition cursor-pointer shadow-2xs"
+              className="px-2 py-1 text-[11px] font-bold bg-white text-[#503A7A] hover:bg-purple-100 rounded-lg border border-purple-200 transition cursor-pointer shadow-2xs"
+              title="Đề Listening đầy đủ 4 phần (35 phút)"
             >
-              🎧 Listening (35m)
+              🎧 Nghe Đầy Đủ (35m)
+            </button>
+
+            {/* Writing Presets */}
+            <button
+              type="button"
+              onClick={() => {
+                setValue('exam_type', 'one_skill');
+                setValue('skills', ['writing']);
+                setValue('duration_mins', 20);
+                setValue('writing_duration_mins', 20);
+                setValue('passages', []);
+                setValue('listening_questions', []);
+                setValue('audio_url', '');
+                setValue('audio_title', '');
+                setValue('writing_task2_prompt', '');
+                setActiveSection('writing');
+              }}
+              className="px-2 py-1 text-[11px] font-bold bg-white text-[#503A7A] hover:bg-purple-100 rounded-lg border border-purple-200 transition cursor-pointer shadow-2xs"
+              title="Đề lẻ Writing chỉ Task 1 Báo cáo/Biểu đồ (20 phút)"
+            >
+              ✍️ Chỉ Task 1 (20m)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setValue('exam_type', 'one_skill');
+                setValue('skills', ['writing']);
+                setValue('duration_mins', 40);
+                setValue('writing_duration_mins', 40);
+                setValue('passages', []);
+                setValue('listening_questions', []);
+                setValue('audio_url', '');
+                setValue('audio_title', '');
+                setValue('writing_task1_prompt', '');
+                setValue('writing_task1_image', '');
+                setActiveSection('writing');
+              }}
+              className="px-2 py-1 text-[11px] font-bold bg-white text-[#503A7A] hover:bg-purple-100 rounded-lg border border-purple-200 transition cursor-pointer shadow-2xs"
+              title="Đề lẻ Writing chỉ Task 2 Nghị luận (40 phút)"
+            >
+              ✍️ Chỉ Task 2 (40m)
             </button>
             <button
               type="button"
@@ -1007,9 +1190,10 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
                 setValue('audio_title', '');
                 setActiveSection('writing');
               }}
-              className="px-2.5 py-1 text-[11px] font-bold bg-white text-[#503A7A] hover:bg-purple-100 rounded-lg border border-purple-200 transition cursor-pointer shadow-2xs"
+              className="px-2 py-1 text-[11px] font-bold bg-white text-[#503A7A] hover:bg-purple-100 rounded-lg border border-purple-200 transition cursor-pointer shadow-2xs"
+              title="Đề Writing cả 2 Task (60 phút)"
             >
-              ✍️ Writing (60m)
+              ✍️ Cả 2 Task (60m)
             </button>
 
             <span className="text-[10px] font-black text-indigo-700 uppercase ml-2 mr-1">Two Skills:</span>
@@ -1144,42 +1328,68 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
           
           {/* Left Column: Visual Builder */}
           <div className="space-y-6">
-            {/* Passage 1, 2, 3 Selector */}
-          <div className="flex items-center gap-2">
-            {[0, 1, 2].map((idx) => {
-              const pNum = idx + 1;
-              const pCount = watchedPassages[idx]?.questions?.length || 0;
-              const isSel = selectedPassageIdx === idx;
-              return (
+            {/* Dynamic Passage Selector (Supports 1, 2, or 3 Passages) */}
+            <div className="flex flex-wrap items-center gap-2">
+              {(watchedPassages || []).map((p, idx) => {
+                const pNum = idx + 1;
+                const pCount = p?.questions?.length || 0;
+                const isSel = safePassageIdx === idx;
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setSelectedPassageIdx(idx)}
+                    className={`px-4 py-2 rounded-2xl text-xs font-black transition flex items-center gap-2 cursor-pointer ${
+                      isSel
+                        ? 'bg-[#3C2A63] text-white shadow-md'
+                        : 'bg-[#F5F2F9] text-[#503A7A] hover:bg-[#E2DDEC] border border-purple-100'
+                    }`}
+                  >
+                    <BookOpen className="w-3.5 h-3.5" />
+                    <span>Passage {pNum}</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20">
+                      {pCount} câu hỏi
+                    </span>
+                  </button>
+                );
+              })}
+
+              {/* Quick Button to Add Passage if less than 3 */}
+              {(watchedPassages || []).length < 3 && (
                 <button
-                  key={idx}
                   type="button"
-                  onClick={() => setSelectedPassageIdx(idx as 0 | 1 | 2)}
-                  className={`px-4 py-2 rounded-2xl text-xs font-black transition flex items-center gap-2 cursor-pointer ${
-                    isSel
-                      ? 'bg-[#3C2A63] text-white shadow-md'
-                      : 'bg-[#F5F2F9] text-[#503A7A] hover:bg-[#E2DDEC] border border-purple-100'
-                  }`}
+                  onClick={handleAddPassage}
+                  className="px-3.5 py-2 rounded-2xl text-xs font-black text-[#6B51A5] bg-purple-50 hover:bg-purple-100 border border-dashed border-purple-300 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  title="Thêm bài đọc lẻ (Passage 2 hoặc Passage 3)"
                 >
-                  <BookOpen className="w-3.5 h-3.5" />
-                  <span>Passage {pNum}</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20">
-                    {pCount} questions
-                  </span>
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ Thêm bài đọc</span>
                 </button>
-              );
-            })}
-          </div>
+              )}
+
+              {/* Quick Button to Remove Current Passage if more than 1 */}
+              {(watchedPassages || []).length > 1 && (
+                <button
+                  type="button"
+                  onClick={handleRemoveCurrentPassage}
+                  className="px-3 py-2 rounded-2xl text-xs font-black text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition flex items-center gap-1.5 cursor-pointer ml-auto shadow-2xs"
+                  title="Xóa bài đọc hiện tại"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Xóa Passage {safePassageIdx + 1}</span>
+                </button>
+              )}
+            </div>
 
           {/* Current Passage Details */}
           <div className="bg-white rounded-3xl p-6 border border-purple-100 shadow-xl shadow-purple-950/5 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-black text-[#3C2A63] uppercase tracking-wider flex items-center gap-2">
                 <BookOpen className="w-4 h-4 text-[#6B51A5]" />
-                <span>Passage {selectedPassageIdx + 1} Content</span>
+                <span>Passage {safePassageIdx + 1} Content</span>
               </h3>
               <span className="text-xs text-[#7C68A5] font-semibold">
-                Passage Index: {selectedPassageIdx + 1}
+                Passage Index: {safePassageIdx + 1} (Tổng {watchedPassages.length} bài đọc)
               </span>
             </div>
 
@@ -1190,13 +1400,13 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
               </label>
               <input
                 type="text"
-                {...register(`passages.${selectedPassageIdx}.title`)}
+                {...register(`passages.${safePassageIdx}.title`)}
                 placeholder="e.g. Passage 1: The History and Evolution of Renewable Energy Technologies"
                 className="w-full px-4 py-2.5 bg-[#F8F6FC] rounded-2xl border border-purple-100 text-xs font-bold text-[#3C2A63] focus:outline-none focus:ring-2 focus:ring-[#6B51A5]"
               />
-              {errors.passages?.[selectedPassageIdx]?.title && (
+              {errors.passages?.[safePassageIdx]?.title && (
                 <p className="text-xs text-rose-600 mt-1 font-bold">
-                  {errors.passages[selectedPassageIdx]?.title?.message}
+                  {errors.passages[safePassageIdx]?.title?.message}
                 </p>
               )}
             </div>
@@ -1232,7 +1442,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
 
               {/* Textarea with ref for selection extraction */}
               {(() => {
-                const { ref: formRef, ...rest } = register(`passages.${selectedPassageIdx}.text`);
+                const { ref: formRef, ...rest } = register(`passages.${safePassageIdx}.text`);
                 return (
                   <textarea
                     rows={10}
@@ -1246,9 +1456,9 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
                   />
                 );
               })()}
-              {errors.passages?.[selectedPassageIdx]?.text && (
+              {errors.passages?.[safePassageIdx]?.text && (
                 <p className="text-xs text-rose-600 mt-1 font-bold">
-                  {errors.passages[selectedPassageIdx]?.text?.message}
+                  {errors.passages[safePassageIdx]?.text?.message}
                 </p>
               )}
             </div>
@@ -1260,7 +1470,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
               <div>
                 <h3 className="text-sm font-black text-[#3C2A63] uppercase tracking-wider flex items-center gap-2">
                   <HelpCircle className="w-4 h-4 text-[#6B51A5]" />
-                  <span>Questions Inside Passage {selectedPassageIdx + 1}</span>
+                  <span>Questions Inside Passage {safePassageIdx + 1}</span>
                 </h3>
                 <p className="text-xs text-[#7C68A5]">
                   Standardized directly within this passage structure for synchronous ReadingModule compatibility.
@@ -1281,13 +1491,13 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
             <div className="space-y-4 pt-2">
               {currentPassageQuestionsArray.fields.length === 0 ? (
                 <div className="p-8 text-center bg-purple-50/50 rounded-2xl border border-dashed border-purple-200 text-xs text-[#7C68A5]">
-                  No questions currently added to Passage {selectedPassageIdx + 1}. Click &quot;Add Question&quot; above to create one.
+                  No questions currently added to Passage {safePassageIdx + 1}. Click &quot;Add Question&quot; above to create one.
                 </div>
               ) : (
                 currentPassageQuestionsArray.fields.map((field, qIdx) => (
                   <QuestionEditorItem
                     key={field.id}
-                    prefix={`passages.${selectedPassageIdx}.questions.${qIdx}`}
+                    prefix={`passages.${safePassageIdx}.questions.${qIdx}`}
                     index={qIdx}
                     register={register}
                     watch={watch}
@@ -1314,7 +1524,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
                       Student CBT Live Simulation
                     </h4>
                     <p className="text-[10px] text-[#7C68A5]">
-                      Mô phỏng thời gian thực giao diện học sinh (Passage {selectedPassageIdx + 1})
+                      Mô phỏng thời gian thực giao diện học sinh (Passage {safePassageIdx + 1})
                     </p>
                   </div>
                 </div>
@@ -1332,10 +1542,10 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
               {/* Passage Article Preview */}
               <div className="p-4 bg-[#FAF8FD] rounded-2xl border border-purple-100 space-y-2">
                 <h5 className="text-xs font-black text-[#503A7A]">
-                  {watchedPassages[selectedPassageIdx]?.title || `Reading Passage ${selectedPassageIdx + 1}`}
+                  {watchedPassages[safePassageIdx]?.title || `Reading Passage ${safePassageIdx + 1}`}
                 </h5>
                 <div className="text-xs font-serif leading-relaxed text-[#3C2A63] whitespace-pre-wrap max-h-56 overflow-y-auto p-2.5 bg-white rounded-xl border border-purple-50">
-                  {watchedPassages[selectedPassageIdx]?.text || 'Chưa có nội dung đoạn văn bài đọc...'}
+                  {watchedPassages[safePassageIdx]?.text || 'Chưa có nội dung đoạn văn bài đọc...'}
                 </div>
               </div>
 
@@ -1343,19 +1553,19 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
               <div className="space-y-3 pt-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black text-[#3C2A63]">
-                    Câu hỏi ({watchedPassages[selectedPassageIdx]?.questions?.length || 0})
+                    Câu hỏi ({watchedPassages[safePassageIdx]?.questions?.length || 0})
                   </span>
                   <span className="text-[10px] text-[#7C68A5] font-semibold">
                     Interactive CBT Mode
                   </span>
                 </div>
 
-                {(!watchedPassages[selectedPassageIdx]?.questions || watchedPassages[selectedPassageIdx]?.questions?.length === 0) ? (
+                {(!watchedPassages[safePassageIdx]?.questions || watchedPassages[safePassageIdx]?.questions?.length === 0) ? (
                   <div className="p-6 text-center text-xs text-[#7C68A5] bg-purple-50/50 rounded-2xl border border-dashed border-purple-200">
                     Chưa có câu hỏi nào. Dùng tính năng bôi đen để tạo ô trống hoặc bấm &quot;Add Question&quot;.
                   </div>
                 ) : (
-                  watchedPassages[selectedPassageIdx]?.questions?.map((q, qIdx) => {
+                  watchedPassages[safePassageIdx]?.questions?.map((q, qIdx) => {
                     const fallbackQId = q.question_id || `R${qIdx + 1}`;
                     return (
                       <IELTSQuestionCard
@@ -1367,7 +1577,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
                           setPreviewAnswers(prev => ({ ...prev, [qid]: ans }));
                         }}
                         allUserAnswers={previewAnswers}
-                        allQuestions={watchedPassages[selectedPassageIdx]?.questions as any}
+                        allQuestions={watchedPassages[safePassageIdx]?.questions as any}
                         isPreview={true}
                       />
                     );
@@ -1418,11 +1628,16 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
 
           {/* Listening Questions Array */}
           <div className="bg-white rounded-3xl p-6 border border-purple-100 shadow-xl shadow-purple-950/5 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-black text-[#3C2A63] uppercase tracking-wider flex items-center gap-2">
-                <HelpCircle className="w-4 h-4 text-[#6B51A5]" />
-                <span>Listening Questions ({listeningQuestionsArray.fields.length})</span>
-              </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-black text-[#3C2A63] uppercase tracking-wider flex items-center gap-2">
+                  <HelpCircle className="w-4 h-4 text-[#6B51A5]" />
+                  <span>Listening Questions ({listeningQuestionsArray.fields.length})</span>
+                </h3>
+                <p className="text-[11px] text-[#7C68A5]">
+                  💡 Hỗ trợ tạo đề nghe lẻ 1 phần (Part 1, 2, 3 hoặc 4) với số câu hỏi tùy ý (ví dụ 6-10 câu), không bắt buộc phải đủ 40 câu.
+                </p>
+              </div>
 
               <button
                 type="button"
@@ -1437,7 +1652,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
             <div className="space-y-4">
               {listeningQuestionsArray.fields.length === 0 ? (
                 <div className="p-8 text-center bg-purple-50/50 rounded-2xl border border-dashed border-purple-200 text-xs text-[#7C68A5]">
-                  No listening questions currently added. Click &quot;Add Listening Question&quot; above to create one.
+                  Chưa có câu hỏi Listening nào. Bấm &quot;Add Listening Question&quot; phía trên để thêm câu hỏi (không bắt buộc đủ 40 câu).
                 </div>
               ) : (
                 listeningQuestionsArray.fields.map((field, qIdx) => (
@@ -1461,11 +1676,88 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
       {/* SECTION 3: WRITING MODULE */}
       {activeSection === 'writing' && (
         <div className="space-y-6">
+          {/* Quick Writing Task Mode Selector */}
+          <div className="bg-purple-50/70 border border-purple-200/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <span className="text-xs font-black text-[#3C2A63] flex items-center gap-1.5">
+                <PenTool className="w-4 h-4 text-[#6B51A5]" />
+                <span>Chế độ đề thi Writing linh hoạt:</span>
+              </span>
+              <p className="text-[11px] text-[#7C68A5]">
+                Bạn có thể tạo đề lẻ chỉ có 1 bài viết (chỉ Task 1 hoặc chỉ Task 2) hoặc tạo đầy đủ cả 2 Task.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => {
+                  setValue('writing_task2_prompt', '', { shouldDirty: true });
+                  setValue('writing_duration_mins', 20, { shouldDirty: true });
+                  if (watch('exam_type') === 'one_skill') {
+                    setValue('duration_mins', 20, { shouldDirty: true });
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer border shadow-2xs ${
+                  Boolean(watch('writing_task1_prompt') || watch('writing_task1_image')) && !watch('writing_task2_prompt')
+                    ? 'bg-[#6B51A5] text-white border-purple-400'
+                    : 'bg-white text-[#503A7A] hover:bg-purple-100 border-purple-200'
+                }`}
+                title="Chỉ tạo Writing Task 1 (Báo cáo/biểu đồ - gợi ý 20 phút)"
+              >
+                Chỉ làm Task 1 (20m)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setValue('writing_task1_prompt', '', { shouldDirty: true });
+                  setValue('writing_task1_image', '', { shouldDirty: true });
+                  setValue('writing_duration_mins', 40, { shouldDirty: true });
+                  if (watch('exam_type') === 'one_skill') {
+                    setValue('duration_mins', 40, { shouldDirty: true });
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer border shadow-2xs ${
+                  !watch('writing_task1_prompt') && !watch('writing_task1_image') && Boolean(watch('writing_task2_prompt'))
+                    ? 'bg-[#6B51A5] text-white border-purple-400'
+                    : 'bg-white text-[#503A7A] hover:bg-purple-100 border-purple-200'
+                }`}
+                title="Chỉ tạo Writing Task 2 (Nghị luận xã hội - gợi ý 40 phút)"
+              >
+                Chỉ làm Task 2 (40m)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setValue('writing_duration_mins', 60, { shouldDirty: true });
+                  if (watch('exam_type') === 'one_skill') {
+                    setValue('duration_mins', 60, { shouldDirty: true });
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer border shadow-2xs ${
+                  Boolean(watch('writing_task1_prompt') || watch('writing_task1_image')) && Boolean(watch('writing_task2_prompt'))
+                    ? 'bg-[#6B51A5] text-white border-purple-400'
+                    : 'bg-white text-[#503A7A] hover:bg-purple-100 border-purple-200'
+                }`}
+                title="Cấu hình cả 2 Task (60 phút)"
+              >
+                Cả 2 Task (60m)
+              </button>
+            </div>
+          </div>
+
           <div className="bg-white rounded-3xl p-6 border border-purple-100 shadow-xl shadow-purple-950/5 space-y-4">
-            <h3 className="text-sm font-black text-[#3C2A63] uppercase tracking-wider flex items-center gap-2">
-              <PenTool className="w-4 h-4 text-[#6B51A5]" />
-              <span>Academic Writing Task 1 (Report)</span>
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-black text-[#3C2A63] uppercase tracking-wider flex items-center gap-2">
+                <PenTool className="w-4 h-4 text-[#6B51A5]" />
+                <span>Academic Writing Task 1 (Report)</span>
+              </h3>
+              <span className="text-xs text-[#7C68A5] font-semibold">
+                {watch('writing_task1_prompt') ? '✓ Đã nhập đề bài' : '(Tùy chọn nếu đề chỉ có Task 2)'}
+              </span>
+            </div>
 
             <div>
               <label className="block text-xs font-black text-[#3C2A63] mb-1">
@@ -1474,7 +1766,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
               <textarea
                 rows={4}
                 {...register('writing_task1_prompt')}
-                placeholder="The graph below shows the changes in..."
+                placeholder="The graph below shows the changes in... (Để trống nếu bạn tạo đề thi chỉ có Task 2)"
                 className="w-full p-3.5 bg-[#F8F6FC] rounded-2xl border border-purple-100 text-xs font-medium text-[#3C2A63] focus:outline-none focus:ring-2 focus:ring-[#6B51A5]"
               />
             </div>
@@ -1492,10 +1784,15 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
           </div>
 
           <div className="bg-white rounded-3xl p-6 border border-purple-100 shadow-xl shadow-purple-950/5 space-y-4">
-            <h3 className="text-sm font-black text-[#3C2A63] uppercase tracking-wider flex items-center gap-2">
-              <PenTool className="w-4 h-4 text-[#6B51A5]" />
-              <span>Academic Writing Task 2 (Discursive Essay)</span>
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-black text-[#3C2A63] uppercase tracking-wider flex items-center gap-2">
+                <PenTool className="w-4 h-4 text-[#6B51A5]" />
+                <span>Academic Writing Task 2 (Discursive Essay)</span>
+              </h3>
+              <span className="text-xs text-[#7C68A5] font-semibold">
+                {watch('writing_task2_prompt') ? '✓ Đã nhập đề bài' : '(Tùy chọn nếu đề chỉ có Task 1)'}
+              </span>
+            </div>
 
             <div>
               <label className="block text-xs font-black text-[#3C2A63] mb-1">
@@ -1504,7 +1801,7 @@ export const VisualExamBuilder: React.FC<VisualExamBuilderProps> = ({
               <textarea
                 rows={5}
                 {...register('writing_task2_prompt')}
-                placeholder="Some people think that universities should provide graduates with the knowledge and skills needed in the workplace..."
+                placeholder="Some people think that universities should provide graduates with the knowledge and skills needed in the workplace... (Để trống nếu bạn tạo đề thi chỉ có Task 1)"
                 className="w-full p-3.5 bg-[#F8F6FC] rounded-2xl border border-purple-100 text-xs font-medium text-[#3C2A63] focus:outline-none focus:ring-2 focus:ring-[#6B51A5]"
               />
             </div>

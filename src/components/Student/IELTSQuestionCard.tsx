@@ -48,14 +48,22 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
 }) => {
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [justSaved, setJustSaved] = useState(false);
+  const [isSavingLocal, setIsSavingLocal] = useState(false);
   const prevAnswerRef = useRef(userAnswer);
 
   useEffect(() => {
     if (prevAnswerRef.current !== userAnswer && userAnswer && userAnswer.trim().length > 0) {
-      setJustSaved(true);
-      const timer = setTimeout(() => setJustSaved(false), 1400);
+      setIsSavingLocal(true);
+      const saveTimer = setTimeout(() => {
+        setIsSavingLocal(false);
+        setJustSaved(true);
+      }, 150);
+      const timer = setTimeout(() => setJustSaved(false), 2400);
       prevAnswerRef.current = userAnswer;
-      return () => clearTimeout(timer);
+      return () => {
+        clearTimeout(saveTimer);
+        clearTimeout(timer);
+      };
     }
     prevAnswerRef.current = userAnswer;
   }, [userAnswer]);
@@ -243,13 +251,18 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
             </span>
           )}
 
-          {/* Micro-indicator: Instant auto-save visibility (Heuristic #1) */}
-          {justSaved && (
-            <span className="flex items-center gap-1 text-[10px] font-extrabold text-emerald-800 bg-emerald-100/90 border border-emerald-300 px-2 py-0.5 rounded-full animate-fadeIn shadow-2xs">
-              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-              <span>Saved</span>
+          {/* Micro-indicator: Instant auto-save visibility (Heuristic #1 & Gulf of Evaluation) */}
+          {isSavingLocal ? (
+            <span className="flex items-center gap-1.5 text-[10px] font-extrabold text-amber-800 bg-amber-100/90 border border-amber-300 px-2.5 py-0.5 rounded-full animate-pulse shadow-2xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-ping" />
+              <span>Đang lưu...</span>
             </span>
-          )}
+          ) : justSaved ? (
+            <span className="flex items-center gap-1.5 text-[10px] font-extrabold text-emerald-800 bg-emerald-100/90 border border-emerald-300 px-2.5 py-0.5 rounded-full animate-fadeIn shadow-2xs">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>✓ Đã tự động lưu</span>
+            </span>
+          ) : null}
         </div>
 
         <div className="flex items-center space-x-2 shrink-0">
@@ -844,6 +857,7 @@ export const IELTSQuestionCard: React.FC<IELTSQuestionCardProps> = ({
           )}
         </div>
       )}
+
     </div>
   );
 };

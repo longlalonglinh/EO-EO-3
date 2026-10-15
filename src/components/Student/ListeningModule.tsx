@@ -104,6 +104,16 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
     globalNumber: q.question_number || (idx + 1)
   }));
 
+  // Auto-switch to the first part that actually contains questions (supports single-part tests)
+  useEffect(() => {
+    if (questionsWithPart.length > 0) {
+      const partsWithQuestions = Array.from(new Set(questionsWithPart.map(q => Number(q.computedPart)))).sort((a: number, b: number) => a - b);
+      if (partsWithQuestions.length > 0 && !partsWithQuestions.includes(Number(activePart))) {
+        setActivePart(partsWithQuestions[0] as 1 | 2 | 3 | 4);
+      }
+    }
+  }, [questionsWithPart, activePart]);
+
   const filteredQuestions = questionsWithPart.filter(q => q.computedPart === activePart);
 
   // Calculate answered stats
@@ -519,13 +529,13 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
 
         {/* Answered Counter Pill & Auto-Save Feedback */}
         <div className="flex items-center space-x-3 shrink-0">
-          <span className={`text-[11px] font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 border transition-all ${
+          <span className={`text-[11px] font-extrabold px-3 py-1.5 rounded-xl flex items-center gap-1.5 border transition-all shadow-2xs ${
             isSaving 
-              ? 'bg-amber-50 text-amber-800 border-amber-200' 
-              : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-          }`}>
-            <Save className={`w-3.5 h-3.5 ${isSaving ? 'animate-spin text-amber-600' : 'text-emerald-700'}`} />
-            <span>{isSaving ? 'Saving...' : autoSaveTime ? `Saved (${autoSaveTime})` : 'Auto-Saved'}</span>
+              ? 'bg-amber-50 text-amber-900 border-amber-300 animate-pulse' 
+              : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+          }`} title="Tiến trình làm bài thi được tự động lưu liên tục vào IndexedDB offline">
+            <Save className={`w-3.5 h-3.5 ${isSaving ? 'animate-spin text-amber-600' : 'text-emerald-600'}`} />
+            <span>{isSaving ? 'Đang lưu...' : autoSaveTime ? `✓ Đã tự động lưu (${autoSaveTime})` : '✓ Đã bảo vệ dữ liệu'}</span>
           </span>
 
           <div className="text-xs text-[#7C68A5] font-medium flex items-center gap-2">
@@ -548,7 +558,7 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
             const partAnswered = partQuestions.filter(q => Boolean(userAnswers[q.question_id]?.trim())).length;
             const isActive = activePart === partNum;
 
-            if (partQuestions.length === 0 && partNum > 1 && questions.length <= 10) return null;
+            if (partQuestions.length === 0) return null;
 
             return (
               <button
@@ -698,24 +708,28 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
               {answeredCount} / {totalQuestions} Answered
             </span>
 
-            {/* 3-State Legend */}
+            {/* 4-State Standardized Legend (Heuristic #4 & Audit Issue #3) */}
             <div className="hidden lg:flex items-center gap-2.5 text-[10px] text-[#7C68A5] font-semibold border-l border-purple-100 pl-3">
               <span className="flex items-center gap-1">
                 <span className="w-2.5 h-2.5 rounded bg-slate-100 border border-slate-300 inline-block" />
-                <span>Unanswered</span>
+                <span>Chưa làm</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded bg-purple-100 border-2 border-[#6B51A5] inline-block" />
+                <span>Phần hiện tại</span>
               </span>
               <span className="flex items-center gap-1">
                 <span className="w-2.5 h-2.5 rounded bg-emerald-600 inline-block" />
-                <span>Answered</span>
+                <span>Đã trả lời</span>
               </span>
               <span className="flex items-center gap-1">
                 <span className="w-2.5 h-2.5 rounded bg-amber-400 border border-amber-500 inline-block" />
-                <span>Flagged</span>
+                <span>Đánh dấu</span>
               </span>
             </div>
           </div>
 
-          {/* All Questions Grid with 3 unambiguous states */}
+          {/* All Questions Grid with 4 unambiguous states (Never green unless answered) */}
           <div className="flex-1 overflow-x-auto max-w-full pb-1">
             <div className="flex items-center gap-1 min-w-max justify-center">
               {questionsWithPart.map((q, idx) => {
@@ -723,13 +737,13 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
                 const isFlagged = flaggedQuestions.has(q.question_id);
                 const isCurrentPart = activePart === q.computedPart;
 
-                let stateClasses = 'bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200'; // Unanswered
+                let stateClasses = 'bg-slate-100 text-slate-700 border border-slate-300 hover:bg-slate-200'; // Unanswered
                 if (isFlagged) {
                   stateClasses = 'bg-amber-400 text-amber-950 font-black border border-amber-500 shadow-2xs hover:bg-amber-500'; // Flagged
                 } else if (isAnswered) {
                   stateClasses = 'bg-emerald-600 text-white font-black shadow-xs hover:bg-emerald-700'; // Answered
                 } else if (isCurrentPart) {
-                  stateClasses = 'bg-purple-50 text-[#503A7A] border border-purple-300 hover:bg-purple-100 font-bold'; // Current part unattempted
+                  stateClasses = 'bg-purple-100 text-[#503A7A] border-2 border-purple-400 font-bold hover:bg-purple-200'; // Current part unattempted
                 }
 
                 return (
@@ -752,7 +766,8 @@ export const ListeningModule: React.FC<ListeningModuleProps> = ({
                       }, 50);
                     }}
                     className={`w-7 h-7 rounded-lg text-[11px] font-black transition-all cursor-pointer flex items-center justify-center relative ${stateClasses}`}
-                    title={`Question ${q.globalNumber} (Part ${q.computedPart}) - ${isFlagged ? 'Flagged for review' : isAnswered ? 'Answered' : 'Unanswered'}`}
+                    title={`Câu ${q.globalNumber} (Part ${q.computedPart}) - ${isFlagged ? 'Đã đánh dấu xem lại' : isAnswered ? 'Đã trả lời' : 'Chưa làm'}`}
+                    aria-label={`Câu ${q.globalNumber} - ${isFlagged ? 'Đã đánh dấu' : isAnswered ? 'Đã trả lời' : 'Chưa làm'}`}
                   >
                     <span>{q.globalNumber}</span>
                     {isFlagged && (

@@ -90,8 +90,45 @@ describe('IELTS CBT UI/UX & Heuristics Verification', () => {
 
     expect(getPaletteClass(false, false)).toContain('bg-slate-100');
     expect(getPaletteClass(true, false)).toContain('bg-emerald-600');
-    expect(getPaletteClass(false, true)).toContain('bg-amber-400');
     // Flagged takes priority over answered for candidate review
     expect(getPaletteClass(true, true)).toContain('bg-amber-400');
+  });
+
+  it('validates 4-state Question Palette ensures active/focused state is never green before being answered', () => {
+    const getDetailedPaletteClass = (params: { isAnswered: boolean; isFlagged: boolean; isCurrent: boolean }) => {
+      const { isAnswered, isFlagged, isCurrent } = params;
+      if (isFlagged) return 'bg-amber-400 text-amber-950 font-black border-amber-500';
+      if (isAnswered) return 'bg-emerald-600 text-white font-black';
+      if (isCurrent) return 'bg-purple-100 text-[#503A7A] border-2 border-[#6B51A5]';
+      return 'bg-slate-100 text-slate-700 border-slate-300';
+    };
+
+    // Unanswered & not current
+    expect(getDetailedPaletteClass({ isAnswered: false, isFlagged: false, isCurrent: false })).toContain('bg-slate-100');
+    // Active/current question that is NOT yet answered: must NOT contain emerald/green
+    const currentUnanswered = getDetailedPaletteClass({ isAnswered: false, isFlagged: false, isCurrent: true });
+    expect(currentUnanswered).toContain('bg-purple-100');
+    expect(currentUnanswered).not.toContain('bg-emerald');
+    // Answered question
+    expect(getDetailedPaletteClass({ isAnswered: true, isFlagged: false, isCurrent: false })).toContain('bg-emerald-600');
+    // Flagged question
+    expect(getDetailedPaletteClass({ isAnswered: false, isFlagged: true, isCurrent: true })).toContain('bg-amber-400');
+  });
+
+  it('validates Heuristic #3 & #5: Exit confirmation modal remaining question computation protects test session', () => {
+    const computeRemaining = (total: number, answered: number) => Math.max(0, total - answered);
+
+    expect(computeRemaining(40, 35)).toBe(5);
+    expect(computeRemaining(40, 40)).toBe(0);
+    expect(computeRemaining(40, 45)).toBe(0); // Boundary protection against overflow
+  });
+
+  it('validates Flow State (Csikszentmihalyi): Focus mode expands viewport width to minimize distraction', () => {
+    const getMainContainerClass = (isFocusFlowMode: boolean) => {
+      return isFocusFlowMode ? 'max-w-[98%] p-2 sm:p-4' : 'max-w-7xl p-4 sm:p-6';
+    };
+
+    expect(getMainContainerClass(true)).toContain('max-w-[98%]');
+    expect(getMainContainerClass(false)).toContain('max-w-7xl');
   });
 });

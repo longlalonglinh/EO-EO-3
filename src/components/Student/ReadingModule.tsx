@@ -472,13 +472,13 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
               </button>
             )}
 
-            <span className={`text-[11px] font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 border transition-all ${
+            <span className={`text-[11px] font-extrabold px-3 py-1.5 rounded-xl flex items-center gap-1.5 border transition-all shadow-2xs ${
               isSaving 
-                ? 'bg-amber-50 text-amber-800 border-amber-200' 
-                : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-            }`}>
-              <Save className={`w-3.5 h-3.5 ${isSaving ? 'animate-spin text-amber-600' : 'text-emerald-700'}`} />
-              <span>{isSaving ? 'Saving...' : autoSaveTime ? `Saved (${autoSaveTime})` : 'Auto-saving'}</span>
+                ? 'bg-amber-50 text-amber-900 border-amber-300 animate-pulse' 
+                : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+            }`} title="Tiến trình làm bài thi được tự động lưu liên tục vào IndexedDB offline">
+              <Save className={`w-3.5 h-3.5 ${isSaving ? 'animate-spin text-amber-600' : 'text-emerald-600'}`} />
+              <span>{isSaving ? 'Đang lưu...' : autoSaveTime ? `✓ Đã tự động lưu (${autoSaveTime})` : '✓ Đã bảo vệ dữ liệu'}</span>
             </span>
 
             <span className="hidden lg:inline text-xs text-[#7C68A5] font-medium">
@@ -811,38 +811,46 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
               {totalAnswered} / {all40Questions.length} Answered
             </span>
 
-            {/* 3-State Legend */}
+            {/* 4-State Standardized Legend (Heuristic #4 & Audit Issue #3) */}
             <div className="hidden lg:flex items-center gap-2.5 text-[10px] text-[#7C68A5] font-semibold border-l border-purple-100 pl-3">
               <span className="flex items-center gap-1">
                 <span className="w-2.5 h-2.5 rounded bg-slate-100 border border-slate-300 inline-block" />
-                <span>Unanswered</span>
+                <span>Chưa làm</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded bg-purple-100 border-2 border-[#6B51A5] inline-block" />
+                <span>Đang chọn</span>
               </span>
               <span className="flex items-center gap-1">
                 <span className="w-2.5 h-2.5 rounded bg-emerald-600 inline-block" />
-                <span>Answered</span>
+                <span>Đã trả lời</span>
               </span>
               <span className="flex items-center gap-1">
                 <span className="w-2.5 h-2.5 rounded bg-amber-400 border border-amber-500 inline-block" />
-                <span>Flagged</span>
+                <span>Đánh dấu</span>
               </span>
             </div>
           </div>
 
-          {/* Center 40 Questions Grid with 3 unambiguous states */}
+          {/* Center 40 Questions Grid with 4 unambiguous states (Never green unless answered) */}
           <div className="flex-1 overflow-x-auto max-w-full pb-1">
             <div className="flex items-center gap-1 min-w-max justify-center">
               {all40Questions.map((q, idx) => {
                 const isAnswered = !!userAnswers[q.question_id] && userAnswers[q.question_id].trim() !== '';
                 const isFlagged = flaggedQuestions.has(q.question_id);
+                const isCurrent = highlightedQuestionId === q.question_id;
                 const isCurrentPassage = activePassageIndex === q.assignedPassage;
 
-                let stateClasses = 'bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200'; // Unanswered
+                // Priority: Flagged > Answered > Current active > Current passage > Unanswered
+                let stateClasses = 'bg-slate-100 text-slate-700 border border-slate-300 hover:bg-slate-200'; // Unanswered
                 if (isFlagged) {
-                  stateClasses = 'bg-amber-400 text-amber-950 font-black border border-amber-500 shadow-2xs hover:bg-amber-500'; // Flagged
+                  stateClasses = 'bg-amber-400 text-amber-950 font-black border border-amber-500 shadow-2xs hover:bg-amber-500';
                 } else if (isAnswered) {
                   stateClasses = 'bg-emerald-600 text-white font-black shadow-xs hover:bg-emerald-700'; // Answered
+                } else if (isCurrent) {
+                  stateClasses = 'bg-purple-100 text-[#503A7A] border-2 border-[#6B51A5] font-black ring-2 ring-purple-300 shadow-sm'; // Current active unattempted
                 } else if (isCurrentPassage) {
-                  stateClasses = 'bg-purple-50 text-[#503A7A] border border-purple-300 hover:bg-purple-100 font-bold'; // Current passage unattempted
+                  stateClasses = 'bg-purple-50 text-[#503A7A] border border-purple-200 hover:bg-purple-100 font-bold'; // Current passage unattempted
                 }
 
                 return (
@@ -851,10 +859,13 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
                     type="button"
                     onClick={() => handleJumpToQuestion(q)}
                     className={`w-7 h-7 rounded-lg text-[11px] font-black transition-all cursor-pointer flex items-center justify-center relative ${stateClasses} ${
-                      highlightedQuestionId === q.question_id ? 'ring-2 ring-[#6B51A5] scale-110 z-10' : ''
+                      isCurrent ? 'ring-2 ring-[#6B51A5] scale-110 z-10' : ''
                     }`}
-                    title={`Question ${q.globalNumber} (Passage ${q.assignedPassage}) - ${
-                      isFlagged ? 'Flagged for review' : isAnswered ? 'Answered' : 'Not answered'
+                    title={`Câu ${q.globalNumber} (Passage ${q.assignedPassage}) - ${
+                      isFlagged ? 'Đã đánh dấu xem lại' : isAnswered ? 'Đã trả lời' : isCurrent ? 'Đang chọn' : 'Chưa làm'
+                    }`}
+                    aria-label={`Câu ${q.globalNumber} - ${
+                      isFlagged ? 'Đã đánh dấu xem lại' : isAnswered ? 'Đã trả lời' : 'Chưa làm'
                     }`}
                   >
                     <span>{q.globalNumber}</span>
@@ -885,11 +896,11 @@ export const ReadingModule: React.FC<ReadingModuleProps> = ({
             <button
               type="button"
               onClick={() => {
-                if (activePassageIndex < 3) {
+                if (activePassageIndex < normalizedPassages.length) {
                   setActivePassageIndex((activePassageIndex + 1) as 1 | 2 | 3);
                 }
               }}
-              disabled={activePassageIndex >= 3}
+              disabled={activePassageIndex >= normalizedPassages.length}
               className="px-3 py-1.5 bg-[#6B51A5] hover:bg-[#583F8F] text-white disabled:opacity-30 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow-md"
             >
               <span>Next Passage</span>

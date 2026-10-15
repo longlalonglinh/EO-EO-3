@@ -58,10 +58,33 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
   examCode = 'IELTS01',
   candidateId = 'STUDENT',
   testMode = 'TEST',
-  durationMins = 60,
+  durationMins: propDurationMins,
   onTimeExpire
 }) => {
-  const [activeTab, setActiveTab] = useState<'task1' | 'task2'>('task1');
+  const hasTask1Explicit = Boolean(
+    task1Prompt?.trim() || 
+    task1Image?.trim() ||
+    (tasks && tasks.some(t => (t.task_number === 1 || t.id === 'task-1') && Boolean(t.prompt?.trim() || t.image_url || t.imageUrl)))
+  );
+  const hasTask2Explicit = Boolean(
+    task2Prompt?.trim() || 
+    (tasks && tasks.some(t => (t.task_number === 2 || t.id === 'task-2') && Boolean(t.prompt?.trim())))
+  );
+
+  const isTask2Only = !hasTask1Explicit && hasTask2Explicit;
+  const isTask1Only = hasTask1Explicit && !hasTask2Explicit;
+
+  const durationMins = propDurationMins ?? (isTask1Only ? 20 : isTask2Only ? 40 : 60);
+
+  const [activeTab, setActiveTab] = useState<'task1' | 'task2'>(() => (isTask2Only ? 'task2' : 'task1'));
+
+  useEffect(() => {
+    if (isTask2Only && activeTab !== 'task2') {
+      setActiveTab('task2');
+    } else if (isTask1Only && activeTab !== 'task1') {
+      setActiveTab('task1');
+    }
+  }, [isTask2Only, isTask1Only, activeTab]);
   const [pasteWarning, setErrorPasteWarning] = useState<string | null>(null);
   const [autoSaveTime, setAutoSaveTime] = useState<string>('');
   const [restoredNotice, setRestoredNotice] = useState<string | null>(null);
@@ -360,45 +383,49 @@ export const WritingModule: React.FC<WritingModuleProps> = ({
       {/* Tabs Switcher for Task 1 and Task 2 with Live Word Count Indicators & Split Ratio Controls */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex bg-[#E2DDEC] p-1.5 rounded-2xl w-fit space-x-2">
-          <button
-            type="button"
-            onClick={() => setActiveTab('task1')}
-            className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2.5 cursor-pointer ${
-              activeTab === 'task1'
-                ? 'bg-[#6B51A5] text-white shadow-md'
-                : 'text-[#3C2A63] hover:text-[#503A7A]'
-            }`}
-          >
-            <span>Writing Task 1 (Min 150 words)</span>
-            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold flex items-center gap-1 ${
-              task1WordCount >= 150 
-                ? 'bg-emerald-200 text-emerald-950 font-black' 
-                : 'bg-rose-200 text-rose-950 font-black'
-            }`}>
-              {task1WordCount >= 150 ? <CheckCircle2 className="w-3 h-3 text-emerald-800 inline" /> : <AlertTriangle className="w-3 h-3 text-rose-800 inline" />}
-              {task1WordCount} words
-            </span>
-          </button>
+          {!isTask2Only && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('task1')}
+              className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2.5 cursor-pointer ${
+                activeTab === 'task1'
+                  ? 'bg-[#6B51A5] text-white shadow-md'
+                  : 'text-[#3C2A63] hover:text-[#503A7A]'
+              }`}
+            >
+              <span>Writing Task 1 (Min 150 words)</span>
+              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold flex items-center gap-1 ${
+                task1WordCount >= 150 
+                  ? 'bg-emerald-200 text-emerald-950 font-black' 
+                  : 'bg-rose-200 text-rose-950 font-black'
+              }`}>
+                {task1WordCount >= 150 ? <CheckCircle2 className="w-3 h-3 text-emerald-800 inline" /> : <AlertTriangle className="w-3 h-3 text-rose-800 inline" />}
+                {task1WordCount} words
+              </span>
+            </button>
+          )}
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('task2')}
-            className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2.5 cursor-pointer ${
-              activeTab === 'task2'
-                ? 'bg-[#6B51A5] text-white shadow-md'
-                : 'text-[#3C2A63] hover:text-[#503A7A]'
-            }`}
-          >
-            <span>Writing Task 2 (Min 250 words)</span>
-            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold flex items-center gap-1 ${
-              task2WordCount >= 250 
-                ? 'bg-emerald-200 text-emerald-950 font-black' 
-                : 'bg-rose-200 text-rose-950 font-black'
-            }`}>
-              {task2WordCount >= 250 ? <CheckCircle2 className="w-3 h-3 text-emerald-800 inline" /> : <AlertTriangle className="w-3 h-3 text-rose-800 inline" />}
-              {task2WordCount} words
-            </span>
-          </button>
+          {!isTask1Only && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('task2')}
+              className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2.5 cursor-pointer ${
+                activeTab === 'task2'
+                  ? 'bg-[#6B51A5] text-white shadow-md'
+                  : 'text-[#3C2A63] hover:text-[#503A7A]'
+              }`}
+            >
+              <span>Writing Task 2 (Min 250 words)</span>
+              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold flex items-center gap-1 ${
+                task2WordCount >= 250 
+                  ? 'bg-emerald-200 text-emerald-950 font-black' 
+                  : 'bg-rose-200 text-rose-950 font-black'
+              }`}>
+                {task2WordCount >= 250 ? <CheckCircle2 className="w-3 h-3 text-emerald-800 inline" /> : <AlertTriangle className="w-3 h-3 text-rose-800 inline" />}
+                {task2WordCount} words
+              </span>
+            </button>
+          )}
         </div>
 
         {/* Quick Split Ratio Presets for Desktop & Tablet */}

@@ -21,7 +21,9 @@ import {
   RefreshCw,
   Wifi,
   WifiOff,
-  ShieldCheck
+  ShieldCheck,
+  Printer,
+  Copy
 } from 'lucide-react';
 import { SubmissionResponse, ExamData } from '../../types';
 import { GeminiAnalysisModal } from './Practice/GeminiAnalysisModal';
@@ -92,8 +94,22 @@ export const ResultPage: React.FC<ResultPageProps> = ({
   const [selectedWordForAI, setSelectedWordForAI] = useState<string | undefined>(undefined);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
+  const [copiedReceipt, setCopiedReceipt] = useState(false);
 
   const isOffline = !!result.is_offline_pending || result.sync_status === 'QUEUED_OFFLINE';
+
+  const handleCopyReceipt = () => {
+    const code = result.offline_receipt_code || result.submission_id;
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(code);
+      setCopiedReceipt(true);
+      setTimeout(() => setCopiedReceipt(false), 3000);
+    }
+  };
+
+  const handlePrintScorecard = () => {
+    window.print();
+  };
 
   const handleEmergencyExport = () => {
     const exportData = {
@@ -103,21 +119,24 @@ export const ResultPage: React.FC<ResultPageProps> = ({
       submitted_at: result.submitted_at || new Date().toISOString(),
       sealed_token: result.sealed_token,
       offline_receipt_code: result.offline_receipt_code,
-      sync_status: result.sync_status || 'QUEUED_OFFLINE',
+      sync_status: result.sync_status || (isOffline ? 'QUEUED_OFFLINE' : 'CERTIFIED_ONLINE'),
+      listening_raw_score: result.listening_raw_score,
+      listening_band: result.listening_band,
+      reading_raw_score: result.reading_raw_score,
+      reading_band: result.reading_band,
+      overall_band: result.overall_band,
+      writing_status: result.writing_status,
       user_answers: userAnswers,
       writing_task1: writingTask1,
       writing_task2: writingTask2,
-      raw_scores: {
-        listening: result.listening_raw_score,
-        reading: result.reading_raw_score
-      }
+      detailed_results: result.detailed_results
     };
 
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `IELTS_SUBMISSION_${result.exam_code}_${result.sbd}_${result.submission_id}.json`;
+    a.download = `IELTS_OFFICIAL_RESULT_${result.exam_code}_${result.sbd}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -212,70 +231,94 @@ export const ResultPage: React.FC<ResultPageProps> = ({
         </div>
       </div>
 
-      {/* Offline Sealed Receipt & Emergency Export Card */}
-      {isOffline && (
-        <div className="bg-amber-50 border-2 border-amber-300 rounded-3xl p-6 shadow-xl space-y-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-amber-700 shrink-0" />
-                <h3 className="text-base font-black text-amber-950">
-                  TEST RESPONSES SEALED LOCALLY IN INDEXEDDB
-                </h3>
-              </div>
-              <p className="text-xs text-amber-900 leading-relaxed max-w-2xl">
-                Because local workstation connectivity was interrupted at submission time, the system encrypted and cryptographically sealed your responses in secure IndexedDB storage. As soon as connectivity returns, Background Sync will push your submission to the grading server.
-              </p>
+      {/* Official Examination Receipt & Export Action Bar */}
+      <div className={`border-2 rounded-3xl p-6 shadow-xl space-y-4 ${
+        isOffline 
+          ? 'bg-amber-50 border-amber-300' 
+          : 'bg-white border-purple-200/80 shadow-purple-950/5'
+      }`}>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className={`w-5 h-5 shrink-0 ${isOffline ? 'text-amber-700' : 'text-emerald-600'}`} />
+              <h3 className={`text-base font-black ${isOffline ? 'text-amber-950' : 'text-[#3C2A63]'}`}>
+                {isOffline ? 'BÀI THI ĐÃ NIÊM PHONG AN TOÀN TRÊN MÁY TÍNH (OFFLINE SEALED)' : 'XÁC NHẬN NỘP BÀI THI CHÍNH THỨC (OFFICIAL EXAM RECEIPT)'}
+              </h3>
             </div>
+            <p className={`text-xs leading-relaxed max-w-2xl ${isOffline ? 'text-amber-900' : 'text-[#7C68A5]'}`}>
+              {isOffline 
+                ? 'Hệ thống đã mã hóa và lưu trữ bài làm vào bộ nhớ IndexedDB an toàn. Ngay khi kết nối mạng được khôi phục, bài thi sẽ tự động gửi lên Google Sheets và cập nhật điểm.'
+                : 'Bài thi đã được ghi nhận vào cơ sở dữ liệu hệ thống và chấm điểm tự động. Bạn có thể in phiếu điểm hoặc lưu bản sao kết quả về máy.'}
+            </p>
+          </div>
 
-            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            {isOffline && (
               <button
                 type="button"
                 onClick={handleManualSync}
                 disabled={isSyncing}
-                className="px-4 py-2 bg-amber-700 hover:bg-amber-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm cursor-pointer disabled:opacity-50"
+                className="px-4 py-2.5 bg-amber-700 hover:bg-amber-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm cursor-pointer disabled:opacity-50"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                <span>{isSyncing ? 'Syncing...' : 'Retry Server Sync'}</span>
+                <span>{isSyncing ? 'Đang đồng bộ...' : 'Thử đồng bộ lại'}</span>
               </button>
-
-              <button
-                type="button"
-                onClick={handleEmergencyExport}
-                className="px-4 py-2 bg-white hover:bg-amber-100 text-amber-950 border border-amber-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm cursor-pointer"
-                title="Download JSON file containing full response receipt and cryptographic seal"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Export Emergency Receipt (.json)</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="bg-white/80 border border-amber-200 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-amber-900">Sealed Receipt Hash:</span>
-              <code className="font-mono font-black text-amber-950 bg-amber-100 px-2 py-0.5 rounded">
-                {result.offline_receipt_code || 'SEALED-OFFLINE'}
-              </code>
-            </div>
-
-            {result.sealed_token && (
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-amber-900">Security Token:</span>
-                <code className="font-mono text-[11px] text-amber-950 bg-amber-100 px-2 py-0.5 rounded max-w-[200px] truncate" title={result.sealed_token}>
-                  {result.sealed_token}
-                </code>
-              </div>
             )}
+
+            <button
+              type="button"
+              onClick={handlePrintScorecard}
+              className="px-4 py-2.5 bg-[#6B51A5] hover:bg-[#583F8F] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm cursor-pointer"
+              title="In phiếu kết quả bài thi hoặc lưu file PDF"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>In phiếu điểm / PDF</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleEmergencyExport}
+              className="px-4 py-2.5 bg-white hover:bg-purple-50 text-[#3C2A63] border border-purple-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm cursor-pointer"
+              title="Tải tệp JSON chứa toàn bộ câu trả lời và điểm số"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Tải kết quả (.json)</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-white/80 border border-purple-100 rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-[#503A7A]">Mã biên nhận (Receipt Code):</span>
+            <code className="font-mono font-black text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
+              {result.offline_receipt_code || result.submission_id}
+            </code>
+            <button
+              type="button"
+              onClick={handleCopyReceipt}
+              className="px-2.5 py-1 bg-purple-100 hover:bg-purple-200 text-[#3C2A63] rounded-lg text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
+            >
+              <Copy className="w-3 h-3" />
+              <span>{copiedReceipt ? '✓ Đã sao chép!' : 'Sao chép'}</span>
+            </button>
           </div>
 
-          {syncFeedback && (
-            <div className="text-xs font-bold p-2.5 rounded-xl bg-white border border-amber-200 text-amber-950 animate-fadeIn">
-              {syncFeedback}
+          {result.sealed_token && (
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-[#7C68A5]">Chữ ký số:</span>
+              <code className="font-mono text-[11px] text-[#503A7A] bg-slate-100 px-2 py-0.5 rounded max-w-[220px] truncate" title={result.sealed_token}>
+                {result.sealed_token}
+              </code>
             </div>
           )}
         </div>
-      )}
+
+        {syncFeedback && (
+          <div className="text-xs font-bold p-2.5 rounded-xl bg-white border border-amber-200 text-amber-950 animate-fadeIn">
+            {syncFeedback}
+          </div>
+        )}
+      </div>
 
       {/* Raw & Band Score Display Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">

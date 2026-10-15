@@ -2190,4 +2190,121 @@ export async function uploadAndParseIeltsPdf(file: File): Promise<any> {
   return exam;
 }
 
+/**
+ * Fetch database analytical metrics for Candidate Submissions
+ */
+export async function fetchSubmissionsStats(): Promise<{
+  success: boolean;
+  stats?: {
+    total: number;
+    todayCount: number;
+    gradedWriting: number;
+    pendingWriting: number;
+    avgListeningBand: number;
+    avgReadingBand: number;
+    avgOverallBand: number;
+    totalViolations: number;
+  };
+  error?: string;
+}> {
+  try {
+    const res = await fetch(getApiUrl('/api/admin/submissions/stats'));
+    if (res.ok) {
+      const data = await res.json();
+      return { success: true, stats: data.stats };
+    }
+    return { success: false, error: 'Failed to fetch submission stats' };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Download Submissions as Excel-friendly CSV with UTF-8 BOM
+ */
+export async function exportSubmissionsCSV(searchTerm: string = '', status: string = 'all'): Promise<void> {
+  const query = new URLSearchParams({
+    format: 'csv',
+    search: searchTerm,
+    status
+  });
+  const url = getApiUrl(`/api/admin/submissions/export?${query.toString()}`);
+  const a = document.createElement('a');
+  a.href = url;
+  a.setAttribute('download', `ielts_submissions_${Date.now()}.csv`);
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+/**
+ * Download Submissions as full JSON database archive
+ */
+export async function exportSubmissionsJSON(searchTerm: string = '', status: string = 'all'): Promise<void> {
+  const query = new URLSearchParams({
+    format: 'json',
+    search: searchTerm,
+    status
+  });
+  const url = getApiUrl(`/api/admin/submissions/export?${query.toString()}`);
+  const a = document.createElement('a');
+  a.href = url;
+  a.setAttribute('download', `ielts_submissions_backup_${Date.now()}.json`);
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+/**
+ * Import a list of submissions into the centralized database
+ */
+export async function importSubmissionsJSON(
+  submissions: any[],
+  syncToSheets: boolean = false
+): Promise<{ success: boolean; imported?: number; updated?: number; total?: number; error?: string }> {
+  try {
+    const res = await fetch(getApiUrl('/api/admin/submissions/import'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ submissions, syncToSheets })
+    });
+    const data = await res.json();
+    return data;
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Flush and immediately push all queued submissions to Google Sheets API v4
+ */
+export async function syncDatabaseToSheets(): Promise<{ success: boolean; flushed?: number; message?: string; error?: string }> {
+  try {
+    const res = await fetch(getApiUrl('/api/admin/submissions/sync-to-sheets'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+    return data;
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Delete a submission from the server database
+ */
+export async function deleteSubmission(submissionId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const res = await fetch(getApiUrl(`/api/admin/submissions/${encodeURIComponent(submissionId)}`), {
+      method: 'DELETE'
+    });
+    const data = await res.json();
+    return data;
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+
 
